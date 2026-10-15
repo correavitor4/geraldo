@@ -1,70 +1,62 @@
-import collections
-import time
-import numpy as np
 import sounddevice as sd
-import torch
-from faster_whisper import WhisperModel
-from config import SAMPLE_RATE
+import numpy as np
+import time
 
 class WakeWordDetector:
-    def __init__(self, target_word: str = "geraldo"):
+    def __init__(self, target_word: str = "geraldo", sample_rate: int = 16000, chunk_size: int = 1024, stt_engine=None):
         self.target_word = target_word.lower()
-        print(f"[Geraldo] Carregando detector de wake word ({self.target_word})...")
-
-        # Modelo tiny leve rodando em INT8
-        self.tiny_model = WhisperModel("tiny", device="cpu", compute_type="int8")
-
-        # Silero VAD para detecção de presença de voz
-        self.vad_model, _ = torch.hub.load(
-            repo_or_dir="snakers4/silero-vad",
-            model="silero_vad",
-            trust_repo=True
-        )
+        self.sample_rate = sample_rate
+        self.chunk_size = chunk_size
+        self.stt = stt_engine
+        print("[Geraldo:Audio] Wake word escutando no microfone padrão do sistema.")
 
     def wait_for_wake_word(self) -> bool:
-        print(f"\n[Geraldo] Dormindo... Diga Geraldo para acordar.")
+        print(f"\n[Geraldo] Dormindo... Diga {self.target_word.capitalize()} para acordar.")
+        
+        buffer_duration = 1.8
+        buffer_len = int(self.sample_rate * buffer_duration)
+        audio_buffer = np.zeros(buffer_len, dtype=np.float32)
 
-        # Janela deslizante de 1.5s
-        buffer_len = int(SAMPLE_RATE * 1.5)
-        audio_ring = collections.deque(maxlen=buffer_len)
-        block_size = 512
+        ambient_noise = 0.008
+        speech_triggered = False
+        speech_start = 0.0
 
-        speech_frames = 0
-        cooldown_until = 0
+        # device=None utiliza o microfone padrão definido no sistema (PipeWire/PulseAudio)
+        with sd.InputStream(device=None, samplerate=self.sample_rate, channels=1, dtype='float32', blocksize=self.chunk_size) as stream:
+            for _ in range(5):
+                stream.read(self.chunk_size)
 
-        with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="float32", blocksize=block_size) as stream:
             while True:
-                data, _ = stream.read(block_size)
-                samples = data.flatten()
-                audio_ring.extend(samples)
+                data, _ = stream.read(self.chunk_size)
+                chunk = data.flatten()
 
-                tensor_chunk = torch.from_numpy(samples)
-                prob = self.vad_model(tensor_chunk, SAMPLE_RATE).item()
+                audio_buffer = np.roll(audio_buffer, -len(chunk))
+                audio_buffer[-len(chunk):] = chunk
 
-                if prob > 0.6:
-                    speech_frames += 1
+                rms = float(np.sqrt(np.mean(chunk**2)))
+
+                if rms < ambient_noise * 1.5:
+                    ambient_noise = 0.95 * ambient_noise + 0.05 * rms
+
+                voice_threshold = max(ambient_noise * 2.8, 0.016)
+
+                if rms > voice_threshold:
+                    if not speech_triggered:
+                        speech_triggered = True
+                        speech_start = time.time()
                 else:
-                    speech_frames = max(0, speech_frames - 1)
-
-                # Se detectou voz consistente por pelo menos ~0.35s
-                if speech_frames >= 11 and time.time() > cooldown_until:
-                    audio_segment = np.array(audio_ring, dtype=np.float32)
-
-                    segments, _ = self.tiny_model.transcribe(
-                        audio_segment,
-                        beam_size=1,
-                        language="pt",
-                        vad_filter=False
-                    )
-
-                    raw_text = " ".join([seg.text.strip().lower() for seg in segments])
-                    cleaned = raw_text.replace(",", "").replace(".", "").replace("!", "").replace("?", "").strip()
-
-                    # Verifica se o nome Geraldo foi falado
-                    if "geraldo" in cleaned or "gerald" in cleaned:
-                        print(f"[Geraldo] Acordou! Detectado: {raw_text}")
-                        return True
-
-                    cooldown_until = time.time() + 1.0
-                    speech_frames = 0
-
+                    if speech_triggered and (time.time() - speech_start > 0.4):
+                        speech_triggered = False
+                        
+                        if self.stt:
+                            peak = np.max(np.abs(audio_buffer))
+                            sample = audio_buffer * (0.85 / peak) if peak > 0.01 else audio_buffer
+                            transcription = self.stt.transcribe_quick(sample).lower()
+                            
+                            matches = ["geraldo", "eraldo", "gerald", "geral", "ei geraldo", "olá geraldo"]
+                            if any(m in transcription for m in matches):
+                                print(f"[Geraldo] Acordou! Palavra confirmada: '{transcription}'")
+                                return True
+                        else:
+                            print("[Geraldo] Acordou!")
+                            return True

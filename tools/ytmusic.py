@@ -1,80 +1,87 @@
-import subprocess
-import shutil
-import urllib.parse
-import threading
-import time
 from ytmusicapi import YTMusic
+import subprocess
+import re
 
 class YTMusicPlayer:
-    _ytmusic = None
+    _yt = None
 
     @classmethod
-    def get_api(cls):
-        if cls._ytmusic is None:
-            try:
-                cls._ytmusic = YTMusic()
-            except Exception:
-                cls._ytmusic = None
-        return cls._ytmusic
+    def get_instance(cls):
+        if cls._yt is None:
+            cls._yt = YTMusic()
+        return cls._yt
 
     @classmethod
-    def _force_play(cls):
-        """Aguarda a aba abrir e dispara o play via MPRIS."""
-        time.sleep(3.0)
-        if shutil.which("playerctl"):
-            subprocess.run(["playerctl", "play"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    def stop(cls, *args, **kwargs) -> str:
+        subprocess.run(["playerctl", "stop"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return "Mídia parada."
 
     @classmethod
-    def play_song(cls, query: str) -> str:
-        """Busca a música, corrige o termo e abre no navegador disparando a reprodução."""
-        clean_query = query.strip()
-        if not clean_query:
-            return "Qual música você gostaria de ouvir?"
+    def play_song(cls, query: str, item_type: str = "auto", *args, **kwargs) -> str:
+        yt = cls.get_instance()
+        
+        # Limpeza de fonética e ruídos comuns de transcrição do Whisper
+        clean = query.strip()
+        clean = re.sub(r'\bdiana winehouse\b', 'Amy Winehouse', clean, flags=re.IGNORECASE)
+        clean = re.sub(r'^(tokyo album|talk to album|talk to|toque o álbum|toque o album|toque|tocar|ouvir|coloque)\s+', '', clean, flags=re.IGNORECASE)
+        clean = re.sub(r'^(the\s+)', '', clean, flags=re.IGNORECASE).strip()
 
-        video_id = None
-        track_name = clean_query
-        artist_name = ""
+        # Detecta se o pedido visa um álbum
+        is_album_intent = (
+            item_type == "album" or 
+            any(w in query.lower() for w in ["álbum", "album", "discografia", "live at the bbc", "completo"])
+        )
 
-        yt = cls.get_api()
-        if yt:
-            try:
-                results = yt.search(clean_query, filter="songs")
-                if not results:
-                    results = yt.search(clean_query)
-
-                if results:
-                    top = results[0]
-                    video_id = top.get("videoId")
-                    track_name = top.get("title", clean_query)
-                    if "artists" in top and top["artists"]:
-                        artist_name = top["artists"][0].get("name", "")
-            except Exception as e:
-                print(f"[Geraldo:YTMusic Error]: {e}")
-
-        if video_id:
-            url = f"https://music.youtube.com/watch?v={video_id}"
-            msg_art = f" de {artist_name}" if artist_name else ""
-            response_text = f"Tocando {track_name}{msg_art} no YouTube Music."
-        else:
-            encoded = urllib.parse.quote_plus(clean_query)
-            url = f"https://music.youtube.com/search?q={encoded}"
-            response_text = f"Buscando {clean_query} no YouTube Music."
+        query_busca = re.sub(r'\b(álbum|album|completo)\b', '', clean, flags=re.IGNORECASE).strip()
 
         try:
-            subprocess.Popen(
-                ["xdg-open", url],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True
-            )
-            threading.Thread(target=cls._force_play, daemon=True).start()
-            return response_text
-        except Exception as e:
-            return f"Não foi possível abrir o navegador: {e}"
+            # 1. Se houver intenção de álbum, busca primeiro com filter="albums"
+            if is_album_intent:
+                albums = yt.search(query_busca, filter="albums", limit=4)
+                if albums:
+                    first_album = albums[0]
+                    album_title = first_album.get("title", "")
+                    artist_name = first_album.get("artists", [{}])[0].get("name", "")
+                    browse_id = first_album.get("browseId")
 
-    @classmethod
-    def stop(cls) -> str:
-        if shutil.which("playerctl"):
-            subprocess.run(["playerctl", "pause"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            return "Reprodução pausada."
-        return "Nenhum controle de mídia disponível."
+                    # Obtém os detalhes completos do álbum para extrair o playlistId e a 1ª faixa
+                    album_data = yt.get_album(browse_id)
+                    playlist_id = album_data.get("audioPlaylistId")
+                    tracks = album_data.get("tracks", [])
+
+                    if playlist_id:
+                        if tracks:
+                            first_video_id = tracks[0].get("videoId")
+                            target_url = f"https://music.youtube.com/watch?v={first_video_id}&list={playlist_id}"
+                        else:
+                            target_url = f"https://music.youtube.com/playlist?list={playlist_id}"
+                    else:
+                        target_url = f"https://music.youtube.com/browse/{browse_id}"
+
+                    # Abre diretamente no YouTube Music no navegador / PWA
+                    subprocess.Popen(["xdg-open", target_url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    return f"Abrindo o álbum {album_title} de {artist_name} no YouTube Music."
+
+            # 2. Busca padrão por músicas/faixas individuais
+            results = yt.search(query_busca, filter="songs", limit=4)
+            if not results:
+                results = yt.search(query_busca, limit=4)
+
+            if not results:
+                return f"Não encontrei resultados para {clean} no YouTube Music."
+
+            first_track = results[0]
+            video_id = first_track.get("videoId")
+            title = first_track.get("title", clean)
+            artist = first_track.get("artists", [{}])[0].get("name", "")
+
+            target_url = f"https://music.youtube.com/watch?v={video_id}"
+            subprocess.Popen(["xdg-open", target_url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+            if artist:
+                return f"Tocando {title} de {artist} no YouTube Music."
+            return f"Tocando {title} no YouTube Music."
+
+        except Exception as e:
+            print(f"[Geraldo:YTMusic Error]: {e}")
+            return "Ocorreu uma falha ao consultar o YouTube Music."

@@ -33,3 +33,14 @@ class TextToSpeech:
         )
 
         return self.output_file
+    def speak(self, text: str):
+        """Sintetiza e reproduz o áudio imediatamente via PipeWire."""
+        wav_path = self.synthesize(text)
+        if wav_path:
+            import shutil
+            player = "pw-play" if shutil.which("pw-play") else "aplay"
+            subprocess.run(
+                [player, wav_path],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )

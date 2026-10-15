@@ -1,61 +1,50 @@
-# audio/recorder.py
-import queue
-import time
-import numpy as np
 import sounddevice as sd
-import torch
-from config import SAMPLE_RATE, CHUNK_SIZE, VAD_THRESHOLD, SILENCE_LIMIT_SEC
+import numpy as np
+import time
 
 class AudioRecorder:
-    def __init__(self):
-        print("Carregando Silero VAD...")
-        self.model, _ = torch.hub.load(
-            repo_or_dir="snakers4/silero-vad",
-            model="silero_vad",
-            trust_repo=True
-        )
-        self.audio_queue = queue.Queue()
-
-    def _audio_callback(self, indata, frames, time_info, status):
-        if status:
-            print(f"Status do microfone: {status}", flush=True)
-        self.audio_queue.put(indata.copy())
+    def __init__(self, sample_rate: int = 16000, chunk_size: int = 1024):
+        self.sample_rate = sample_rate
+        self.chunk_size = chunk_size
+        self.energy_threshold = 0.016
+        self.silence_limit = 1.5
 
     def record_until_silence(self) -> np.ndarray:
-        self.audio_queue.queue.clear()
-        self.model.reset_states()
-
-        audio_frames = []
-        is_speaking = False
+        print("[Geraldo] Escutando... Pode falar.")
+        recorded_chunks = []
         silence_start = None
+        has_spoken = False
+        start_time = time.time()
 
-        print("\n[Geraldo] Escutando... Pode falar.")
-
-        with sd.InputStream(
-            samplerate=SAMPLE_RATE,
-            channels=1,
-            dtype="float32",
-            blocksize=CHUNK_SIZE,
-            callback=self._audio_callback
-        ):
+        # device=None utiliza o microfone padrão do sistema
+        with sd.InputStream(device=None, samplerate=self.sample_rate, channels=1, dtype='float32', blocksize=self.chunk_size) as stream:
             while True:
-                chunk = self.audio_queue.get()
-                audio_frames.append(chunk)
+                data, _ = stream.read(self.chunk_size)
+                chunk = data.flatten()
+                recorded_chunks.append(chunk)
 
-                tensor_chunk = torch.from_numpy(chunk.squeeze())
-                speech_prob = self.model(tensor_chunk, SAMPLE_RATE).item()
+                rms = np.sqrt(np.mean(chunk**2))
 
-                if speech_prob > VAD_THRESHOLD:
-                    if not is_speaking:
+                if rms > self.energy_threshold:
+                    if not has_spoken:
                         print("[Geraldo] Voz detectada...")
-                        is_speaking = True
+                        has_spoken = True
                     silence_start = None
                 else:
-                    if is_speaking:
+                    if has_spoken:
                         if silence_start is None:
                             silence_start = time.time()
-                        elif time.time() - silence_start >= SILENCE_LIMIT_SEC:
+                        elif time.time() - silence_start > self.silence_limit:
                             print("[Geraldo] Silêncio detectado. Fim da gravação.")
                             break
 
-        return np.concatenate(audio_frames, axis=0).flatten()
+                if not has_spoken and (time.time() - start_time > 6.0):
+                    break
+
+        audio = np.concatenate(recorded_chunks, axis=0) if recorded_chunks else np.array([], dtype=np.float32)
+
+        peak = np.max(np.abs(audio)) if len(audio) > 0 else 0
+        if peak > 0.01:
+            audio = audio * (0.9 / peak)
+
+        return audio

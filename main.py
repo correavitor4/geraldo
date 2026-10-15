@@ -1,55 +1,66 @@
 import sys
-from audio.wakeword import WakeWordDetector
-from audio.recorder import AudioRecorder
-from audio.player import AudioPlayer
+import time
 from brain.stt import SpeechToText
 from brain.llm import BrainLLM
 from brain.tts import TextToSpeech
+from audio.wakeword import WakeWordDetector
+from audio.recorder import AudioRecorder
+from audio.feedback import play_wake_beep
+from ui.waybar import set_state
 
 def main():
-    print("Iniciando Geraldo...")
-
-    detector = WakeWordDetector(target_word="geraldo")
-    recorder = AudioRecorder()
-    stt = SpeechToText(model_size="base", device="cpu", compute_type="int8")
-    llm = BrainLLM()
-    player = AudioPlayer()
+    print("[Geraldo] Inicializando assistente...")
+    set_state("dormindo")
     
-    # Apontando para o novo modelo Faber Medium
-    tts = TextToSpeech(model_path="voz_faber.onnx")
+    stt = SpeechToText()
+    llm = BrainLLM()
+    tts = TextToSpeech()
+    
+    wakeword = WakeWordDetector(stt_engine=stt)
+    recorder = AudioRecorder()
 
-    print("\n[Geraldo] Sistema pronto e em modo de espera! (Ctrl+C para encerrar)\n")
+    while True:
+        try:
+            # 1. Dormindo
+            set_state("dormindo")
+            if wakeword.wait_for_wake_word():
+                # Toca som estilo Alexa
+                play_wake_beep()
+                time.sleep(0.18)
 
-    try:
-        while True:
-            if detector.wait_for_wake_word():
-                player.play_beep()
+                # 2. Escutando
+                set_state("escutando")
+                audio_data = recorder.record_until_silence()
+                if audio_data is None or len(audio_data) == 0:
+                    continue
 
-            audio_data = recorder.record_until_silence()
+                # 3. Pensando (Whisper + LLM + Tools)
+                set_state("pensando")
+                print("[Geraldo] Transcrevendo comando...")
+                user_text = stt.transcribe(audio_data)
+                if not user_text:
+                    continue
 
-            print("[Geraldo] Transcrevendo comando...")
-            user_text = stt.transcribe(audio_data)
+                print(f"[Você]: {user_text}")
 
-            if not user_text.strip():
-                print("[Geraldo] Nada compreendido.")
-                continue
+                print("[Geraldo] Pensando...")
+                response_text = llm.ask(user_text)
 
-            print(f"\n[Você]: {user_text}")
+                # 4. Falando
+                if response_text:
+                    set_state("falando")
+                    print(f"[Geraldo]: {response_text}")
+                    print("[Geraldo] Falando...")
+                    tts.speak(response_text)
 
-            print("[Geraldo] Pensando...")
-            reply_text = llm.ask(user_text)
-
-            print(f"[Geraldo]: {reply_text}")
-
-            if reply_text:
-                print("[Geraldo] Falando...")
-                wav_path = tts.synthesize(reply_text)
-                player.play(wav_path)
-
-    except KeyboardInterrupt:
-        print("\nGeraldo encerrado.")
-        sys.exit(0)
+        except KeyboardInterrupt:
+            set_state("dormindo")
+            print("\n[Geraldo] Encerrando...")
+            sys.exit(0)
+        except Exception as e:
+            print(f"[Geraldo:Erro]: {e}")
+            set_state("dormindo")
+            time.sleep(1)
 
 if __name__ == "__main__":
     main()
-
