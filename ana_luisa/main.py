@@ -20,14 +20,14 @@ def main():
 
     try:
         while True:
-            # 1. Aguarda ouvir "Geraldo"
+            # 1. Espera a wake word "Geraldo"
             if detector.wait_for_wake_word():
                 player.play_beep()
 
-            # 2. Grava a ordem/pergunta até o silêncio
+            # 2. Grava comando do microfone
             audio_data = recorder.record_until_silence()
 
-            # 3. Transcreve o comando
+            # 3. Transcrição STT
             print("[Geraldo] Transcrevendo comando...")
             user_text = stt.transcribe(audio_data)
 
@@ -37,14 +37,13 @@ def main():
 
             print(f"\n[Você]: {user_text}")
 
-            # 4. Processa resposta com Llama
+            # 4. Raciocínio e execução de tools
             print("[Geraldo] Pensando...")
-            response = llm.ask(user_text)
-            reply_text = response.get("content", "")
+            reply_text = llm.ask(user_text)
 
             print(f"[Geraldo]: {reply_text}")
 
-            # 5. Fala a resposta
+            # 5. Fala a resposta por voz
             if reply_text:
                 print("[Geraldo] Falando...")
                 wav_path = tts.synthesize(reply_text)
