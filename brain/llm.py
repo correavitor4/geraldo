@@ -5,17 +5,38 @@ import urllib.error
 from config import OLLAMA_HOST, LLM_MODEL, SYSTEM_PROMPT
 from tools.system import SystemTools
 from tools.ytmusic import YTMusicPlayer
+from tools.news import NewsTools
 
 SYSTEM_PROMPT_TOOLS = SYSTEM_PROMPT + """
-REGRA DE MÚSICA E YOUTUBE MUSIC:
-- Se o usuário pedir para tocar música, banda, artista ou gênero: chame a ferramenta "play_ytmusic".
-- CORREÇÃO DE NOMES: Se a transcrição de voz parecer um erro fonético de nome de cantor ou música (ex: "bob mali" -> "Bob Marley", "zé ramalho", "the winner take it all" -> "ABBA The Winner Takes It All"), CORRIJA o texto do parâmetro "query" para o nome correto do artista/música antes de chamar a ferramenta.
-- Se pedir para parar/pausar: use "stop_ytmusic" ou "play_pause_media".
-- Para clima e previsão do tempo: chame "get_weather".
-- Para horas ou data: chame "get_current_time".
+REGRA PARA NOTÍCIAS E CONSULTAS EXTERNAS:
+- Se o usuário perguntar sobre notícias, fatos recentes, acontecimentos ou tópicos da atualidade (ex: política, economia, esportes, empresas): chame a ferramenta "get_news" passando o tema exato no parâmetro "query".
+- Ao receber o resultado de "get_news":
+  * NUNCA use introduções meta como "Boletim de rádio", "Boletim jornalístico", "Aqui está o resumo:" ou tópicos com listas.
+  * Responda de forma direta, natural e falada.
+  * Se a notícia trouxer a resposta para a dúvida do usuário, responda a dúvida usando esses fatos. Se os títulos não responderem com precisão à pergunta específica, informe brevemente as manchetes mais recentes encontradas.
+- Para músicas: use "play_ytmusic".
+- Para clima: use "get_weather".
+- Para horas: use "get_current_time".
 """
 
 TOOLS_SCHEMA = [
+    {
+        "type": "function",
+        "function": {
+            "name": "get_news",
+            "description": "Busca noticias recentes sobre qualquer assunto, tema especifico ou categoria geral.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Tema específico da notícia (ex: 'pesquisa eleitoral', 'inteligência artificial', 'futebol') ou categorias: geral, tecnologia, economia, mundo."
+                    }
+                },
+                "required": ["query"]
+            }
+        }
+    },
     {
         "type": "function",
         "function": {
@@ -100,6 +121,7 @@ class BrainLLM:
         self.api_url = f"{OLLAMA_HOST}/api/chat"
         self.history = collections.deque(maxlen=max_history_turns)
         self.tools_map = {
+            "get_news": NewsTools.get_news,
             "play_ytmusic": YTMusicPlayer.play_song,
             "stop_ytmusic": YTMusicPlayer.stop,
             "play_pause_media": SystemTools.play_pause_media,
@@ -136,7 +158,7 @@ class BrainLLM:
             "messages": messages,
             "tools": TOOLS_SCHEMA,
             "stream": False,
-            "options": {"temperature": 0.1}
+            "options": {"temperature": 0.15}
         }
 
         try:
@@ -152,7 +174,31 @@ class BrainLLM:
                     print(f"[Geraldo:Tool] Executando {fn_name}({fn_args})...")
                     tool_result = self.tools_map[fn_name](**fn_args) if fn_args else self.tools_map[fn_name]()
 
-                    reply_text = str(tool_result)
+                    tool_messages = list(messages)
+                    tool_messages.append(message)
+                    tool_messages.append({
+                        "role": "tool",
+                        "content": str(tool_result)
+                    })
+
+                    follow_up = self._post_json({
+                        "model": LLM_MODEL,
+                        "messages": tool_messages,
+                        "stream": False,
+                        "options": {"temperature": 0.15}
+                    })
+                    final_msg = follow_up.get("message", {})
+                    reply_text = final_msg.get("content", "").strip()
+
+                    recusas = ["tempo real", "não posso fornecer", "nao posso fornecer", "desculpe, mas não", "como uma inteligência artificial"]
+                    if not reply_text or any(r in reply_text.lower() for r in recusas):
+                        reply_text = str(tool_result)
+
+                    # Remove prefixos indesejados caso o modelo insista neles
+                    for prefix in ["boletim de rádio jornalístico matinal:", "boletim jornalístico:", "boletim:"]:
+                        if reply_text.lower().startswith(prefix):
+                            reply_text = reply_text[len(prefix):].strip()
+
                     self.history.append({"role": "user", "content": user_prompt})
                     self.history.append({"role": "assistant", "content": reply_text})
                     return reply_text
@@ -167,4 +213,3 @@ class BrainLLM:
         except Exception as e:
             print(f"[Geraldo:LLM Error]: {e}")
             return "Desculpe, tive uma falha ao processar a resposta."
-
