@@ -4,37 +4,48 @@ import urllib.request
 import urllib.error
 from config import OLLAMA_HOST, LLM_MODEL, SYSTEM_PROMPT
 from tools.system import SystemTools
+from tools.ytmusic import YTMusicPlayer
 
 SYSTEM_PROMPT_TOOLS = SYSTEM_PROMPT + """
-REGRA OBRIGATÓRIA DE FERRAMENTAS:
-- Ao receber o resultado da ferramenta "get_weather", transmita a resposta com naturalidade em voz alta.
-- Mantenha sempre todos os acentos ortográficos (Anápolis, máxima, mínima, graus Celsius).
-- NUNCA abrevie graus Celsius nem use simbolos como o grau ou porcentagem.
-- Nunca diga que nao pode responder ou que nao tem acesso a dados em tempo real.
+REGRA DE MÚSICA E YOUTUBE MUSIC:
+- Se o usuário pedir para tocar música, banda, artista ou gênero: chame a ferramenta "play_ytmusic".
+- CORREÇÃO DE NOMES: Se a transcrição de voz parecer um erro fonético de nome de cantor ou música (ex: "bob mali" -> "Bob Marley", "zé ramalho", "the winner take it all" -> "ABBA The Winner Takes It All"), CORRIJA o texto do parâmetro "query" para o nome correto do artista/música antes de chamar a ferramenta.
+- Se pedir para parar/pausar: use "stop_ytmusic" ou "play_pause_media".
+- Para clima e previsão do tempo: chame "get_weather".
+- Para horas ou data: chame "get_current_time".
 """
 
 TOOLS_SCHEMA = [
     {
         "type": "function",
         "function": {
+            "name": "play_ytmusic",
+            "description": "Corrige o nome e abre a musica ou artista no YouTube Music pelo navegador.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Nome corrigido da musica ou artista."
+                    }
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "stop_ytmusic",
+            "description": "Pausa ou para a reproducao de midia.",
+            "parameters": {"type": "object", "properties": {}, "required": []}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "play_pause_media",
-            "description": "Pausa ou retoma a musica ou video tocando no computador.",
-            "parameters": {"type": "object", "properties": {}, "required": []}
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "next_media",
-            "description": "Pula para a proxima faixa de musica.",
-            "parameters": {"type": "object", "properties": {}, "required": []}
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "previous_media",
-            "description": "Volta para a faixa de musica anterior.",
+            "description": "Pausa ou retoma a reproducao atual.",
             "parameters": {"type": "object", "properties": {}, "required": []}
         }
     },
@@ -49,7 +60,7 @@ TOOLS_SCHEMA = [
                     "change": {
                         "type": "string",
                         "enum": ["+", "-", "mute"],
-                        "description": "Sinal + para aumentar volume, - para diminuir, ou mute."
+                        "description": "Sinal + para aumentar, - para diminuir, ou mute."
                     }
                 },
                 "required": ["change"]
@@ -68,14 +79,14 @@ TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "get_weather",
-            "description": "Consulta o clima, temperatura atual, sensação térmica, umidade e previsão com mínimas e máximas de hoje ou da semana.",
+            "description": "Consulta o clima e previsao de tempo.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "query_type": {
                         "type": "string",
                         "enum": ["hoje", "semana"],
-                        "description": "Use semana se o usuario perguntou sobre a semana ou previsao estendida. Caso contrario use hoje."
+                        "description": "hoje ou semana"
                     }
                 },
                 "required": []
@@ -89,9 +100,9 @@ class BrainLLM:
         self.api_url = f"{OLLAMA_HOST}/api/chat"
         self.history = collections.deque(maxlen=max_history_turns)
         self.tools_map = {
+            "play_ytmusic": YTMusicPlayer.play_song,
+            "stop_ytmusic": YTMusicPlayer.stop,
             "play_pause_media": SystemTools.play_pause_media,
-            "next_media": SystemTools.next_media,
-            "previous_media": SystemTools.previous_media,
             "set_volume": SystemTools.set_volume,
             "get_current_time": SystemTools.get_current_time,
             "get_weather": SystemTools.get_weather,
@@ -141,35 +152,12 @@ class BrainLLM:
                     print(f"[Geraldo:Tool] Executando {fn_name}({fn_args})...")
                     tool_result = self.tools_map[fn_name](**fn_args) if fn_args else self.tools_map[fn_name]()
 
-                    # Para clima ou relógio, o retorno da tool já é perfeito e 100% acentuado
-                    if fn_name in ["get_weather", "get_current_time"]:
-                        reply_text = str(tool_result)
-                        self.history.append({"role": "user", "content": user_prompt})
-                        self.history.append({"role": "assistant", "content": reply_text})
-                        return reply_text
-
-                    tool_messages = list(messages)
-                    tool_messages.append(message)
-                    tool_messages.append({
-                        "role": "tool",
-                        "content": str(tool_result)
-                    })
-
-                    follow_up = self._post_json({
-                        "model": LLM_MODEL,
-                        "messages": tool_messages,
-                        "stream": False,
-                        "options": {"temperature": 0.1}
-                    })
-                    final_msg = follow_up.get("message", {})
-                    reply_text = final_msg.get("content", "").strip() or str(tool_result)
-
+                    reply_text = str(tool_result)
                     self.history.append({"role": "user", "content": user_prompt})
                     self.history.append({"role": "assistant", "content": reply_text})
                     return reply_text
 
             reply_text = message.get("content", "")
-
             if reply_text:
                 self.history.append({"role": "user", "content": user_prompt})
                 self.history.append({"role": "assistant", "content": reply_text})
