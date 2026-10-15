@@ -11,8 +11,8 @@ from tools.ytmusic import YTMusicPlayer
 from tools.news import NewsTools
 from tools.search import WebSearchTools
 from tools.timer import TimerManager
+from tools.calendar import CalendarTools
 
-# Inicia o loop de timers em segundo plano
 TimerManager.start_background_loop()
 
 def get_dynamic_system_prompt() -> str:
@@ -22,37 +22,89 @@ def get_dynamic_system_prompt() -> str:
     data_contexto = f"{dia_nome}, {agora.day} de {agora.strftime('%B')} de {agora.year}, {agora.strftime('%H:%M')}."
 
     return SYSTEM_PROMPT + f"""
-VOCÊ É O GERALDO, ASSISTENTE DE VOZ PARA LINUX.
+VOCÊ É O GERALDO, ASSISTENTE DE VOZ PESSOAL PARA LINUX.
 
 CONTEXTO TEMPORAL:
 - HOJE É {data_contexto}
-- O ANO É {agora.year}. NUNCA mencione que seu conhecimento parou em 2023 ou 2024. Você tem acesso à internet em tempo real via ferramentas.
+- O ANO É {agora.year}.
 
-FERRAMENTAS:
-- "set_timer": Para contagens regressivas de tempo.
-- "set_alarm": Para alarmes em horários determinados do relógio.
-- "control_stopwatch": Para cronômetro progressivo ("start", "pause", "reset").
-- "cancel_timers": Para cancelar timers/alarmes.
-- "search_web": Para dúvidas, pesquisas eleitorais e dados recentes.
-- "play_ytmusic": APENAS com ordem explícita de tocar música ou álbum.
-
-DIRETRIZES:
-- NUNCA use markdown nem introduções de radialista. Responda em no máximo 2 a 3 frases.
+DIRETRIZES DE COMUNICAÇÃO:
+- Os compromissos da agenda são do USUÁRIO (diga "você tem..." ou "você não tem compromissos"). NUNCA fale que os compromissos são seus.
+- NUNCA use markdown nem jargões de radialista.
 """
 
 TOOLS_SCHEMA = [
     {
         "type": "function",
         "function": {
-            "name": "set_timer",
-            "description": "Define um timer de contagem regressiva em minutos, segundos ou horas.",
+            "name": "get_calendar_events",
+            "description": "Consulta compromissos no Google Calendar para uma data específica.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "minutes": {"type": "integer", "description": "Minutos de duração."},
-                    "seconds": {"type": "integer", "description": "Segundos de duração."},
-                    "hours": {"type": "integer", "description": "Horas de duração."},
-                    "label": {"type": "string", "description": "Rótulo opcional."}
+                    "date_query": {
+                        "type": "string",
+                        "description": "Data a consultar: 'hoje', 'amanhã', 'segunda', 'dia 20', etc."
+                    }
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_weather",
+            "description": "Consulta a previsão do tempo e clima.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query_type": {"type": "string", "enum": ["hoje", "amanhã", "semana"]}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_news",
+            "description": "Busca notícias e reportagens jornalísticas detalhadas.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Tema específico ou 'geral'."}
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_web",
+            "description": "Busca dados factuais na web via DuckDuckGo.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Termo de busca objetivo."}
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_timer",
+            "description": "Define timer regressivo.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "minutes": {"type": "integer"},
+                    "seconds": {"type": "integer"},
+                    "hours": {"type": "integer"},
+                    "label": {"type": "string"}
                 },
                 "required": []
             }
@@ -62,13 +114,13 @@ TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "set_alarm",
-            "description": "Define um alarme para um horário específico.",
+            "description": "Define alarme em horário específico.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "hour": {"type": "integer", "description": "Hora (0-23)."},
-                    "minute": {"type": "integer", "description": "Minuto (0-59)."},
-                    "label": {"type": "string", "description": "Rótulo opcional."}
+                    "hour": {"type": "integer"},
+                    "minute": {"type": "integer"},
+                    "label": {"type": "string"}
                 },
                 "required": ["hour", "minute"]
             }
@@ -104,7 +156,7 @@ TOOLS_SCHEMA = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "Nome da música, álbum ou artista."},
+                    "query": {"type": "string"},
                     "item_type": {"type": "string", "enum": ["musica", "album", "auto"]}
                 },
                 "required": ["query"]
@@ -114,50 +166,8 @@ TOOLS_SCHEMA = [
     {
         "type": "function",
         "function": {
-            "name": "search_web",
-            "description": "Busca dados factuais na web via DuckDuckGo.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Termo de busca objetivo."}
-                },
-                "required": ["query"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_news",
-            "description": "Busca notícias e manchetes jornalísticas.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Tema específico ou 'geral'."}
-                },
-                "required": ["query"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_weather",
-            "description": "Consulta a previsão do tempo.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query_type": {"type": "string", "enum": ["hoje", "amanhã", "semana"]}
-                },
-                "required": []
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
             "name": "get_current_time",
-            "description": "Consulta data e hora atual do relógio.",
+            "description": "Consulta data e hora atual.",
             "parameters": {"type": "object", "properties": {}, "required": []}
         }
     },
@@ -165,7 +175,7 @@ TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "set_volume",
-            "description": "Altera o volume (+, -, mute).",
+            "description": "Altera volume (+, -, mute).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -179,11 +189,65 @@ TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "play_pause_media",
-            "description": "Alterna entre reproduzir e pausar a mídia.",
+            "description": "Alterna play/pause.",
             "parameters": {"type": "object", "properties": {}, "required": []}
         }
     }
 ]
+
+def phonetize_time_patterns(text: str) -> str:
+    horas_map = {
+        0: "meia-noite", 1: "uma", 2: "duas", 3: "três", 4: "quatro",
+        5: "cinco", 6: "seis", 7: "sete", 8: "oito", 9: "nove",
+        10: "dez", 11: "onze", 12: "meio-dia",
+        13: "uma da tarde", 14: "duas da tarde", 15: "três da tarde",
+        16: "quatro da tarde", 17: "cinco da tarde", 18: "seis da tarde",
+        19: "sete da noite", 20: "oito da noite", 21: "nove da noite",
+        22: "dez da noite", 23: "onze da noite"
+    }
+
+    def repl_time_colon(m):
+        h = int(m.group(2))
+        minute = int(m.group(3))
+        nome_h = horas_map.get(h, str(h))
+        artigo = "à " if h in [1, 13] else ("ao " if h in [0, 12] else "às ")
+        
+        if minute == 0:
+            return f"{artigo}{nome_h}"
+        elif minute == 30:
+            h_base = h if h <= 12 else (h - 12)
+            sufixo = " da tarde" if 12 < h < 18 else (" da noite" if h >= 18 else " da manhã")
+            art = "à " if h_base in [1, 13] else "às "
+            return f"{art}{horas_map.get(h_base, str(h_base))} e meia{sufixo}"
+        else:
+            h_base = h if h <= 12 else (h - 12)
+            sufixo = " da tarde" if 12 < h < 18 else (" da noite" if h >= 18 else " da manhã")
+            art = "à " if h_base in [1, 13] else "às "
+            return f"{art}{horas_map.get(h_base, str(h_base))} e {minute}{sufixo}"
+
+    text = re.sub(r'\b(às|as|à|a)?\s*(\d{1,2}):(\d{2})\b', repl_time_colon, text, flags=re.IGNORECASE)
+
+    def repl_time_h(m):
+        h = int(m.group(2))
+        minute = int(m.group(3)) if m.group(3) else 0
+        nome_h = horas_map.get(h, str(h))
+        artigo = "à " if h in [1, 13] else ("ao " if h in [0, 12] else "às ")
+
+        if minute == 0:
+            return f"{artigo}{nome_h}"
+        elif minute == 30:
+            h_base = h if h <= 12 else (h - 12)
+            sufixo = " da tarde" if 12 < h < 18 else (" da noite" if h >= 18 else " da manhã")
+            art = "à " if h_base in [1, 13] else "às "
+            return f"{art}{horas_map.get(h_base, str(h_base))} e meia{sufixo}"
+        else:
+            h_base = h if h <= 12 else (h - 12)
+            sufixo = " da tarde" if 12 < h < 18 else (" da noite" if h >= 18 else " da manhã")
+            art = "à " if h_base in [1, 13] else "às "
+            return f"{art}{horas_map.get(h_base, str(h_base))} e {minute}{sufixo}"
+
+    text = re.sub(r'\b(às|as|à|a)?\s*(\d{1,2})h(\d{2})?\b', repl_time_h, text, flags=re.IGNORECASE)
+    return text
 
 def clean_for_speech(text: str) -> str:
     text = re.sub(r"\*\*([^*]+)\*\*", r"\1", text)
@@ -191,6 +255,7 @@ def clean_for_speech(text: str) -> str:
     text = re.sub(r"#+\s*", "", text)
     text = re.sub(r"^[-\*]\s*", "", text, flags=re.MULTILINE)
     text = re.sub(r'["\']', '', text)
+    text = phonetize_time_patterns(text)
     return text.strip()
 
 class BrainLLM:
@@ -198,6 +263,10 @@ class BrainLLM:
         self.api_url = f"{OLLAMA_HOST}/api/chat"
         self.history = collections.deque(maxlen=max_history_turns)
         self.tools_map = {
+            "get_calendar_events": CalendarTools.get_events,
+            "get_weather": SystemTools.get_weather,
+            "get_news": NewsTools.get_news,
+            "search_web": WebSearchTools.search_web,
             "set_timer": TimerManager.add_timer,
             "set_alarm": TimerManager.add_alarm,
             "control_stopwatch": TimerManager.stopwatch_control,
@@ -207,9 +276,6 @@ class BrainLLM:
             "play_pause_media": SystemTools.play_pause_media,
             "set_volume": SystemTools.set_volume,
             "get_current_time": SystemTools.get_current_time,
-            "get_weather": SystemTools.get_weather,
-            "get_news": NewsTools.get_news,
-            "search_web": WebSearchTools.search_web,
         }
 
     def reset_memory(self):
@@ -222,7 +288,7 @@ class BrainLLM:
             data=json.dumps(payload).encode("utf-8"),
             headers={"Content-Type": "application/json"}
         )
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=35) as resp:
             return json.loads(resp.read().decode("utf-8"))
 
     def _execute_tool_safely(self, fn_name: str, fn_args: dict):
@@ -238,81 +304,115 @@ class BrainLLM:
                 break
         return func(**filtered_args)
 
-    def _try_deterministic_timer_or_alarm(self, text: str) -> str:
-        t_low = text.lower()
+    def _handle_morning_routine(self) -> str:
+        # Limpa o histórico de comandos passados para evitar contaminação
+        self.history.clear()
 
-        # 1. Cancelamentos
-        if any(w in t_low for w in ["cancelar", "cancela", "pare", "parar", "desative", "desativa"]):
-            if any(w in t_low for w in ["timer", "temporizador", "alarme", "cronômetro", "cronometro"]):
-                return TimerManager.cancel_all()
+        weather_info = SystemTools.get_weather("hoje")
+        agenda_info = CalendarTools.get_events("hoje")
 
-        # 2. Interceptador de Alarme
-        if "alarme" in t_low:
-            # Padrão: 10 e meia -> 10:30
-            m_meia = re.search(r'(\d{1,2})\s*e\s*meia\b', t_low)
-            if m_meia:
-                h = int(m_meia.group(1))
-                return TimerManager.add_alarm(hour=h, minute=30)
+        sys_prompt = (
+            "Você é o Geraldo, assistente de voz pessoal. O usuário acabou de te saudar com bom dia. "
+            "Responda estritamente nesta ordem:\n"
+            "1. Um 'Bom dia!' cordial;\n"
+            "2. Resumo da previsão do tempo de hoje;\n"
+            "3. O estado da agenda dele para HOJE (use 'você tem...' ou 'você não tem compromissos hoje').\n"
+            "NUNCA fale de amanhã e NUNCA diga que os compromissos são seus. Seja direto e sem markdown."
+        )
+        user_content = f"Previsão de Hoje: {weather_info}\nAgenda de Hoje: {agenda_info}"
 
-            # Padrão: 10 e 30 / 10:30
-            m_hm = re.search(r'(\d{1,2})\s*(?:e|:|h|horas?)\s*(\d{1,2})\b', t_low)
-            if m_hm:
-                h = int(m_hm.group(1))
-                m = int(m_hm.group(2))
-                return TimerManager.add_alarm(hour=h, minute=m)
-
-            # Padrão: alarme para as 7 / 7 horas
-            m_h = re.search(r'(?:para|às|as)\s*(\d{1,2})\b', t_low)
-            if m_h:
-                h = int(m_h.group(1))
-                return TimerManager.add_alarm(hour=h, minute=0)
-
-        # 3. Interceptador de Timer
-        if any(w in t_low for w in ["timer", "temporizador"]):
-            m_sec = re.search(r'(\d+)\s*(?:segundos?|segs?|s)\b', t_low)
-            m_min = re.search(r'(\d+)\s*(?:minutos?|mins?|m)\b', t_low)
-            m_hor = re.search(r'(\d+)\s*(?:horas?|hrs?|h)\b', t_low)
-
-            if m_sec or m_min or m_hor:
-                s = int(m_sec.group(1)) if m_sec else 0
-                m = int(m_min.group(1)) if m_min else 0
-                h = int(m_hor.group(1)) if m_hor else 0
-
-                m_label = re.search(r'para (?:o |a )?([a-zA-Z0-9çãõáéíóú]+)', t_low)
-                label = m_label.group(1).capitalize() if m_label else "Timer"
-                return TimerManager.add_timer(minutes=m, seconds=s, hours=h, label=label)
-
-        return ""
+        try:
+            res = self._post_json({
+                "model": LLM_MODEL,
+                "messages": [
+                    {"role": "system", "content": sys_prompt},
+                    {"role": "user", "content": user_content}
+                ],
+                "stream": False,
+                "options": {"temperature": 0.1}
+            })
+            return clean_for_speech(res.get("message", {}).get("content", ""))
+        except Exception:
+            return clean_for_speech(f"Bom dia! {weather_info}. {agenda_info}")
 
     def ask(self, user_prompt: str) -> str:
         normalized = user_prompt
-        # Normalizações fonéticas
+
+        # Normalizações fonéticas de expressões temporais
+        normalized = re.sub(r'\b(para\s+o\s+manhã|para\s+a\s+manhã|pra\s+a\s+manhã|pra\s+o\s+manhã)\b', 'para amanhã', normalized, flags=re.IGNORECASE)
+        normalized = re.sub(r'\b(para\s+o\s+manha|para\s+a\s+manha|pra\s+a\s+manha|pra\s+o\s+manha)\b', 'para amanhã', normalized, flags=re.IGNORECASE)
+        normalized = re.sub(r'\b(pra\s+manhã|para\s+manhã|pra\s+manha|para\s+manha)\b', 'para amanhã', normalized, flags=re.IGNORECASE)
         normalized = re.sub(r'\ba\s+larme\b', 'alarme', normalized, flags=re.IGNORECASE)
         normalized = re.sub(r'\b(defino|defina|coloque|bote)\s+a\s+larme\b', 'defina alarme', normalized, flags=re.IGNORECASE)
         normalized = re.sub(r'\b(táme|taimer|táime)\b', 'timer', normalized, flags=re.IGNORECASE)
-        normalized = re.sub(r'\b(ele sim|inici|inicie)\b', 'inicie', normalized, flags=re.IGNORECASE)
         normalized = re.sub(r'\b(tokyo|talk to)\b', 'toque', normalized, flags=re.IGNORECASE)
-        normalized = re.sub(r'\bdiana winehouse\b', 'Amy Winehouse', normalized, flags=re.IGNORECASE)
-        normalized = re.sub(r'\bbpc\b', 'BBC', normalized, flags=re.IGNORECASE)
         normalized = re.sub(r'\b(numa|em uma|numa|em)\s+12\b', 'em uma dúzia', normalized, flags=re.IGNORECASE)
 
-        # Interceptador determinístico
-        fast_reply = self._try_deterministic_timer_or_alarm(normalized)
-        if fast_reply:
-            self.history.append({"role": "user", "content": normalized})
-            self.history.append({"role": "assistant", "content": fast_reply})
-            return fast_reply
+        clean_prompt = re.sub(r'[^\w\s]', '', normalized).lower().strip()
 
-        lowered = normalized.lower()
+        # 1. ROTINA DE BOM DIA (Captura ampla: "bom dia", "boa dia", "bom dia bom dia", etc.)
+        if re.search(r'\b(bom\s+dia|boa\s+dia)\b', clean_prompt):
+            print("[Geraldo] Executando rotina matinal: Clima + Google Calendar (Hoje)...")
+            reply = self._handle_morning_routine()
+            self.history.append({"role": "user", "content": normalized})
+            self.history.append({"role": "assistant", "content": reply})
+            return reply
+
+        # 2. Interceptador de Agenda Determinístico (sem contaminar com o dia de ontem/amanhã)
+        if any(w in clean_prompt for w in ["agenda", "compromisso", "compromissos"]):
+            alvo = "hoje"
+            if "amanhã" in clean_prompt or "amanha" in clean_prompt:
+                alvo = "amanhã"
+            elif "depois de amanhã" in clean_prompt or "depois de amanha" in clean_prompt:
+                alvo = "depois de amanhã"
+            else:
+                for dia in ["segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo"]:
+                    if dia in clean_prompt:
+                        alvo = dia
+                        break
+
+            print(f"[Geraldo:Calendar] Consulta direta da agenda para: '{alvo}'")
+            res_agenda = CalendarTools.get_events(alvo)
+
+            sys_instruction = (
+                f"Você é o Geraldo. Transmita os compromissos da agenda do usuário para {alvo} de forma falada e natural em no máximo 2 frases. "
+                "Lembre-se: os compromissos são do USUÁRIO (diga 'você tem...'). NUNCA use markdown."
+            )
+            follow_up = self._post_json({
+                "model": LLM_MODEL,
+                "messages": [
+                    {"role": "system", "content": sys_instruction},
+                    {"role": "user", "content": f"Pergunta: {normalized}\nDados da agenda para {alvo}: {res_agenda}"}
+                ],
+                "stream": False,
+                "options": {"temperature": 0.1}
+            })
+            reply_text = clean_for_speech(follow_up.get("message", {}).get("content", "") or res_agenda)
+            
+            # Limpa o histórico de agenda para não herdar a data em comandos futuros
+            self.history.clear()
+            self.history.append({"role": "user", "content": normalized})
+            self.history.append({"role": "assistant", "content": reply_text})
+            return reply_text
+
+        # 3. Agradecimentos
         agradecimentos = ["obrigado", "muito obrigado", "valeu", "valeu geraldo", "agradecido", "obrigada"]
-        if any(lowered.startswith(a) for a in agradecimentos):
+        if any(clean_prompt.startswith(a) for a in agradecimentos):
             self.history.clear()
             return "De nada! Sempre que precisar é só chamar."
+
+        if any(w in clean_prompt for w in ["notícia", "noticia", "notícias", "noticias", "manchetes", "resumo das"]):
+            if "goiás" in clean_prompt or "goias" in clean_prompt:
+                user_prompt_tool = "get_news sobre Goiás"
+            else:
+                user_prompt_tool = normalized
+        else:
+            user_prompt_tool = normalized
 
         system_content = get_dynamic_system_prompt()
         messages = [{"role": "system", "content": system_content}]
         messages.extend(list(self.history))
-        messages.append({"role": "user", "content": normalized})
+        messages.append({"role": "user", "content": user_prompt_tool})
 
         payload = {
             "model": LLM_MODEL,
@@ -331,38 +431,38 @@ class BrainLLM:
                 fn_name = tool_call.get("function", {}).get("name")
                 fn_args = tool_call.get("function", {}).get("arguments", {})
 
-                # Injeta o ano atual para buscas políticas ou fatos recentes
-                if fn_name in ["search_web", "get_news"]:
-                    q = fn_args.get("query", "")
-                    termos_eleicao = ["eleição", "eleicoes", "eleições", "eleitoral", "presidente", "segundo turno", "disputa"]
-                    if any(t in q.lower() for t in termos_eleicao) and "202" not in q:
-                        ano_atual = datetime.datetime.now().year
-                        fn_args["query"] = f"{q} {ano_atual}"
-
                 if fn_name in self.tools_map:
                     print(f"[Geraldo:Tool] Executando {fn_name}({fn_args})...")
                     tool_result = self._execute_tool_safely(fn_name, fn_args)
 
-                    if fn_name in ["set_timer", "set_alarm", "control_stopwatch", "cancel_timers", "play_ytmusic", "stop_ytmusic", "play_pause_media", "set_volume", "get_current_time", "get_weather"]:
+                    if fn_name in ["set_timer", "set_alarm", "control_stopwatch", "cancel_timers", "play_ytmusic", "stop_ytmusic", "play_pause_media", "set_volume", "get_current_time"]:
                         reply_text = clean_for_speech(str(tool_result))
                         self.history.append({"role": "user", "content": normalized})
                         self.history.append({"role": "assistant", "content": reply_text})
                         return reply_text
 
                     ano_atual = datetime.datetime.now().year
-                    sys_instruction = (
-                        f"Você é o Geraldo. O ano atual é {ano_atual}. Resuma as informações abaixo em no máximo 2 a 3 frases "
-                        "diretas e estritamente factuais. NUNCA diga quando foi seu corte de conhecimento e nunca use markdown. Vá direto aos fatos."
-                    )
+
+                    if fn_name == "get_news":
+                        sys_instruction = (
+                            f"Você é o Geraldo. Apresente um resumo detalhado e abrangente das notícias a seguir "
+                            f"para áudio, explicando os fatos com clareza em vários parágrafos fluídos. "
+                            f"NUNCA use markdown e nunca mencione corte de conhecimento."
+                        )
+                    else:
+                        sys_instruction = (
+                            f"Você é o Geraldo. O ano atual é {ano_atual}. Resuma as informações abaixo em no máximo 2 a 3 frases "
+                            "diretas e estritamente factuais. NUNCA use markdown nem fale sobre corte de conhecimento."
+                        )
 
                     follow_up = self._post_json({
                         "model": LLM_MODEL,
                         "messages": [
                             {"role": "system", "content": sys_instruction},
-                            {"role": "user", "content": f"Pergunta: {normalized}\nDados: {tool_result}"}
+                            {"role": "user", "content": f"Pergunta: {normalized}\nDados levantados: {tool_result}"}
                         ],
                         "stream": False,
-                        "options": {"temperature": 0.1}
+                        "options": {"temperature": 0.2}
                     })
                     final_msg = follow_up.get("message", {})
                     raw_reply = final_msg.get("content", "").strip() or str(tool_result)
