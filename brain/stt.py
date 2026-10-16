@@ -12,10 +12,9 @@ class SpeechToText:
     ):
         cpu_total = os.cpu_count() or 4
         print(f"[Geraldo] Inicializando STT Dual-Engine...")
-        print(f"  -> Wake Word: {wake_model_size.upper()} (int8, 2 threads)")
+        print(f"  -> Wake Word: {wake_model_size.upper()} (int8, estrito)")
         print(f"  -> Comandos:  {cmd_model_size.upper()} (int8, {cpu_total} threads)")
 
-        # Modelo leve para o loop de escuta contínua (wake word)
         self.model_wake = WhisperModel(
             wake_model_size,
             device=device,
@@ -24,7 +23,6 @@ class SpeechToText:
             num_workers=1
         )
 
-        # Modelo robusto para transcrever o comando após acordar
         self.model_cmd = WhisperModel(
             cmd_model_size,
             device=device,
@@ -40,7 +38,7 @@ class SpeechToText:
         )
 
     def transcribe_quick(self, audio_data: np.ndarray) -> str:
-        """Usado exclusivamente para detectar a wake word ('Geraldo') rapidamente."""
+        """Validação estrita para a wake word."""
         if audio_data is None or len(audio_data) == 0:
             return ""
 
@@ -52,12 +50,17 @@ class SpeechToText:
             temperature=0.0,
             initial_prompt="Geraldo.",
             condition_on_previous_text=False,
-            vad_filter=False
+            vad_filter=True,
+            vad_parameters=dict(min_silence_duration_ms=300, threshold=0.5)
         )
-        return " ".join([seg.text.strip() for seg in segments]).strip()
+        text = " ".join([seg.text.strip() for seg in segments]).strip().lower()
+        
+        # Filtro estrito: só retorna se contiver "geraldo" de fato
+        if "geraldo" in text:
+            return text
+        return ""
 
     def transcribe(self, audio_data: np.ndarray) -> str:
-        """Usado para o comando de voz completo após o assistente acordar."""
         if audio_data is None or len(audio_data) == 0:
             return ""
 
@@ -69,6 +72,7 @@ class SpeechToText:
             temperature=0.0,
             initial_prompt=self.vocab_prompt,
             condition_on_previous_text=False,
-            vad_filter=False
+            vad_filter=True,
+            vad_parameters=dict(min_silence_duration_ms=500)
         )
         return " ".join([seg.text.strip() for seg in segments]).strip()

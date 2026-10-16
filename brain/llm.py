@@ -2,12 +2,12 @@ import collections
 import json
 import urllib.request
 import urllib.error
-import inspect
 import re
 import datetime
 import random
 import threading
 from config import OLLAMA_HOST, LLM_MODEL, SYSTEM_PROMPT
+from brain.nlu import IntentEngine
 from tools.system import SystemTools
 from tools.ytmusic import YTMusicPlayer
 from tools.news import NewsTools
@@ -18,202 +18,10 @@ from tools.calendar import CalendarTools
 TimerManager.start_background_loop()
 
 LLM_OPTIONS = {
-    "temperature": 0.1,
-    "num_ctx": 2048,
-    "num_predict": 128
+    "temperature": 0.2,
+    "num_ctx": 1024,
+    "num_predict": 90
 }
-
-def get_dynamic_system_prompt() -> str:
-    agora = datetime.datetime.now()
-    dias_semana = ["segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado", "domingo"]
-    dia_nome = dias_semana[agora.weekday()]
-    data_contexto = f"{dia_nome}, {agora.day} de {agora.strftime('%B')} de {agora.year}, {agora.strftime('%H:%M')}."
-
-    return SYSTEM_PROMPT + f"""
-VOCÊ É O GERALDO, ASSISTENTE DE VOZ PESSOAL PARA LINUX ESTILO ALEXA.
-
-CONTEXTO TEMPORAL:
-- HOJE É {data_contexto}
-- ANO ATUAL: {agora.year}.
-
-DIRETRIZES DE RESPOSTA ESTILO ALEXA:
-- SEJA EXTREMAMENTE DIRETO, NATURAL E OBJETIVO.
-- Limite suas respostas a no máximo 1 ou 2 frases curtas.
-- NUNCA use introduções nem saudações repetitivas.
-- Para resultados de futebol, política, eleições, notícias e eventos esportivos, você OBRIGATORIAMENTE deve usar a ferramenta search_web ou get_news. NUNCA tente adivinhar fatos recentes.
-- NUNCA sugira comandos de texto nem nomes de funções internas ao usuário.
-"""
-
-TOOLS_SCHEMA = [
-    {
-        "type": "function",
-        "function": {
-            "name": "create_calendar_event",
-            "description": "Cria e agenda um novo compromisso no Google Calendar.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "summary": {"type": "string", "description": "Título do compromisso."},
-                    "date_query": {"type": "string", "description": "Data: 'hoje', 'amanhã', etc."},
-                    "time_str": {"type": "string", "description": "Horário 'HH:MM'."},
-                    "duration_minutes": {"type": "integer", "description": "Duração em minutos."}
-                },
-                "required": ["summary", "date_query", "time_str"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_calendar_events",
-            "description": "Consulta compromissos no Google Calendar para uma data específica.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "date_query": {"type": "string", "description": "Data a consultar: 'hoje', 'amanhã', etc."}
-                },
-                "required": []
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_weather",
-            "description": "Consulta a previsão do tempo e clima.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query_type": {"type": "string", "enum": ["hoje", "amanhã", "semana"]}
-                },
-                "required": []
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_news",
-            "description": "Busca acontecimentos jornalísticos recentes do dia.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Tema recente."}
-                },
-                "required": ["query"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "search_web",
-            "description": "Pesquisa na internet dados atualizados sobre esportes, campeões, política, cotações, pessoas e dúvidas gerais.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Termo de busca objetivo no DuckDuckGo."}
-                },
-                "required": ["query"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "set_timer",
-            "description": "Define timer regressivo em minutos.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "minutes": {"type": "integer", "description": "Quantidade de minutos."},
-                    "seconds": {"type": "integer", "description": "Quantidade de segundos."},
-                    "label": {"type": "string", "description": "Rótulo opcional do timer."}
-                },
-                "required": ["minutes"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "set_alarm",
-            "description": "Define alarme em horário específico (hora de 0 a 23 e minuto de 0 a 59).",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "hour": {"type": "integer", "description": "Hora no formato 24h (ex: 22 para 10 da noite)."},
-                    "minute": {"type": "integer", "description": "Minuto (0 a 59)."},
-                    "label": {"type": "string", "description": "Rótulo opcional."}
-                },
-                "required": ["hour", "minute"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "control_stopwatch",
-            "description": "Controla cronômetro (start, pause, reset).",
-            "parameters": {
-                "type": "object",
-                "properties": {"action": {"type": "string", "enum": ["start", "pause", "reset"]}},
-                "required": ["action"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "cancel_timers",
-            "description": "Cancela timers e alarmes.",
-            "parameters": {"type": "object", "properties": {}, "required": []}
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "play_ytmusic",
-            "description": "Reproduz música ou álbum no YouTube Music.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Nome da música ou artista."},
-                    "item_type": {"type": "string", "enum": ["musica", "album", "auto"]}
-                },
-                "required": ["query"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_current_time",
-            "description": "Consulta data e hora atual.",
-            "parameters": {"type": "object", "properties": {}, "required": []}
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "set_volume",
-            "description": "Altera volume (+, -, mute).",
-            "parameters": {
-                "type": "object",
-                "properties": {"change": {"type": "string", "enum": ["+", "-", "mute"]}},
-                "required": ["change"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "play_pause_media",
-            "description": "Alterna play/pause.",
-            "parameters": {"type": "object", "properties": {}, "required": []}
-        }
-    }
-]
 
 def phonetize_time_patterns(text: str) -> str:
     horas_map = {
@@ -276,35 +84,53 @@ def clean_for_speech(text: str) -> str:
     text = phonetize_time_patterns(text)
     return text.strip()
 
+
 class BrainLLM:
-    def __init__(self, speaker=None, max_history_turns: int = 4):
+    def __init__(self, speaker=None, speak_fn=None, max_history_turns: int = 4):
+        print("[Geraldo] Treinando classificador NLU (Scikit-Learn)...")
+        self.nlu = IntentEngine(confidence_threshold=0.38)
         self.speaker = speaker
+        self.speak_fn = speak_fn
         self.api_url = f"{OLLAMA_HOST}/api/chat"
         self.history = collections.deque(maxlen=max_history_turns)
-        self.tools_map = {
-            "create_calendar_event": CalendarTools.create_event,
-            "get_calendar_events": CalendarTools.get_events,
-            "get_weather": SystemTools.get_weather,
-            "get_news": NewsTools.get_news,
-            "search_web": WebSearchTools.search_web,
-            "set_timer": TimerManager.add_timer,
-            "set_alarm": TimerManager.add_alarm,
-            "control_stopwatch": TimerManager.stopwatch_control,
-            "cancel_timers": TimerManager.cancel_all,
-            "play_ytmusic": YTMusicPlayer.play_song,
-            "stop_ytmusic": YTMusicPlayer.stop,
-            "play_pause_media": SystemTools.play_pause_media,
-            "set_volume": SystemTools.set_volume,
-            "get_current_time": SystemTools.get_current_time,
-        }
+        self._fallback_tts = None
+        self._fallback_player = None
 
     def reset_memory(self):
         self.history.clear()
         print("[Geraldo:Memoria] Histórico limpo.")
 
-    def _speak_filler_async(self, text: str):
-        if self.speaker and hasattr(self.speaker, "speak"):
-            threading.Thread(target=self.speaker.speak, args=(text,), daemon=True).start()
+    def _do_speak_sync(self, text: str):
+        try:
+            if self.speak_fn:
+                self.speak_fn(text)
+            elif self.speaker and hasattr(self.speaker, "speak"):
+                self.speaker.speak(text)
+            elif self.speaker and hasattr(self.speaker, "synthesize"):
+                from audio.player import AudioPlayer
+                if not self._fallback_player:
+                    self._fallback_player = AudioPlayer()
+                wav = self.speaker.synthesize(text)
+                if wav:
+                    self._fallback_player.play(wav)
+            else:
+                # Fallback autônomo caso o main.py não tenha injetado nada
+                from brain.tts import TextToSpeech
+                from audio.player import AudioPlayer
+                if not self._fallback_tts:
+                    self._fallback_tts = TextToSpeech(model_path="voz_faber.onnx")
+                if not self._fallback_player:
+                    self._fallback_player = AudioPlayer()
+                wav = self._fallback_tts.synthesize(text)
+                if wav:
+                    self._fallback_player.play(wav)
+        except Exception as e:
+            print(f"[Geraldo:Filler Audio Error]: {e}")
+
+    def _start_filler_thread(self, text: str) -> threading.Thread:
+        t = threading.Thread(target=self._do_speak_sync, args=(text,), daemon=True)
+        t.start()
+        return t
 
     def _post_json(self, payload: dict) -> dict:
         req = urllib.request.Request(
@@ -312,311 +138,187 @@ class BrainLLM:
             data=json.dumps(payload).encode("utf-8"),
             headers={"Content-Type": "application/json"}
         )
-        with urllib.request.urlopen(req, timeout=35) as resp:
+        with urllib.request.urlopen(req, timeout=30) as resp:
             return json.loads(resp.read().decode("utf-8"))
 
-    def _execute_tool_safely(self, fn_name: str, fn_args: dict):
-        func = self.tools_map[fn_name]
-        sig = inspect.signature(func)
-        filtered_args = {}
-        for param in sig.parameters.values():
-            if param.kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY):
-                if param.name in fn_args:
-                    filtered_args[param.name] = fn_args[param.name]
-                elif param.default is not inspect.Parameter.empty:
-                    filtered_args[param.name] = param.default
-            elif param.kind == inspect.Parameter.VAR_KEYWORD:
-                filtered_args = fn_args
-                break
-        
-        if fn_name == "set_alarm":
-            if "hour" not in filtered_args:
-                filtered_args["hour"] = 8
-            if "minute" not in filtered_args:
-                filtered_args["minute"] = 0
-
-        return func(**filtered_args)
-
-    def _parse_text_tool_call(self, text: str):
-        match = re.search(r'([A-Za-z_]+)\s*\{([^}]+)\}', text)
-        if match:
-            fn_candidate = match.group(1).strip().lower()
-            args_raw = match.group(2).strip()
-
-            target_fn = None
-            for tool_name in self.tools_map.keys():
-                if tool_name.lower() == fn_candidate or fn_candidate in tool_name.lower():
-                    target_fn = tool_name
-                    break
-
-            if not target_fn:
-                if "compromisso" in text.lower() or "criar" in text.lower():
-                    target_fn = "create_calendar_event"
-                elif "agenda" in text.lower() or "calendar" in text.lower():
-                    target_fn = "get_calendar_events"
-                elif "previsão" in text.lower() or "clima" in text.lower():
-                    target_fn = "get_weather"
-                elif "notícia" in text.lower():
-                    target_fn = "get_news"
-                elif "busca" in text.lower() or "search" in text.lower():
-                    target_fn = "search_web"
-                elif "timer" in text.lower():
-                    target_fn = "set_timer"
-                elif "alarm" in text.lower() or "alarme" in text.lower():
-                    target_fn = "set_alarm"
-                elif "ytmusic" in text.lower() or "music" in text.lower() or "tocar" in text.lower():
-                    target_fn = "play_ytmusic"
-
-            if target_fn:
-                args = {}
-                pairs = re.findall(r'(\w+)\s*:\s*([^,}]+)', args_raw)
-                for k, v in pairs:
-                    val = v.strip().strip("'\"")
-                    if val.isdigit():
-                        val = int(val)
-                    args[k] = val
-                return target_fn, args
-
-        return None, None
+    def _summarize_with_llm(self, instruction: str, content: str) -> str:
+        try:
+            res = self._post_json({
+                "model": LLM_MODEL,
+                "messages": [
+                    {"role": "system", "content": instruction},
+                    {"role": "user", "content": content}
+                ],
+                "stream": False,
+                "keep_alive": -1,
+                "options": LLM_OPTIONS
+            })
+            reply = res.get("message", {}).get("content", "").strip()
+            return clean_for_speech(reply) if reply else clean_for_speech(content)
+        except Exception as e:
+            print(f"[Geraldo:LLM Error]: {e}")
+            return clean_for_speech(content)
 
     def ask(self, user_prompt: str) -> str:
-        normalized = user_prompt
-        normalized = re.sub(r'\b(para\s+o\s+manhã|para\s+a\s+manhã|pra\s+a\s+manhã|pra\s+o\s+manhã|o\s+manhã|a\s+manhã|amanya)\b', 'amanhã', normalized, flags=re.IGNORECASE)
-        normalized = re.sub(r'\b(tá\s+a\s+merda|támerda|taimer|táime|taime)\b', 'timer', normalized, flags=re.IGNORECASE)
-        normalized = re.sub(r'\b(definitão|defina\s+então|defino)\b', 'defina', normalized, flags=re.IGNORECASE)
-        normalized = re.sub(r'\ba\s+larme\b', 'alarme', normalized, flags=re.IGNORECASE)
+        intent, confidence, slots = self.nlu.predict(user_prompt)
+        print(f"[Geraldo:NLU] Intenção: '{intent}' (confiança: {confidence:.2f}) | Slots: {slots}")
 
-        clean_prompt = re.sub(r'[^\w\s]', '', normalized).lower().strip()
+        if intent == "list_timers":
+            return clean_for_speech(TimerManager.get_active_summary())
 
-        # 1. Bypass direto: Horas Certa
-        if bool(re.search(r'\b(que\s+horas\s+são|hora\s+certa|qual\s+é\s+a\s+hora|horas\s+agora|que\s+horas\s+temos)\b', clean_prompt)):
-            res_hora = SystemTools.get_current_time()
-            return clean_for_speech(res_hora)
+        if intent == "cancel_timers":
+            query_item = slots.get("query", "")
+            res = TimerManager.cancel_item(query_item)
+            return clean_for_speech(str(res))
 
-        # 2. Bypass direto: Alarme
-        if "alarme" in clean_prompt and any(w in clean_prompt for w in ["defina", "coloque", "bote", "marque", "crie"]):
-            m_hora = re.search(r'(\d{1,2})(?:\s*horas?|\s*h)?(?:\s*e\s*(\d{1,2}))?', clean_prompt)
-            if m_hora:
-                h = int(m_hora.group(1))
-                m = int(m_hora.group(2)) if m_hora.group(2) else 0
-                if any(p in clean_prompt for p in ["noite", "tarde"]) and h < 12:
-                    h += 12
-                res = TimerManager.add_alarm(hour=h, minute=m, label="Alarme")
-                return clean_for_speech(str(res))
+        if intent == "hyprland_control":
+            action = slots.get("action", "launcher")
+            target = slots.get("target", "1")
+            if action == "workspace":
+                res = HyprlandTools.change_workspace(target)
+            elif action == "close_window":
+                res = HyprlandTools.close_active_window()
+            elif action == "fullscreen":
+                res = HyprlandTools.toggle_fullscreen()
+            elif action == "floating":
+                res = HyprlandTools.toggle_floating()
+            elif action == "brightness":
+                res = HyprlandTools.set_brightness(target)
+            else:
+                res = HyprlandTools.open_launcher()
+            return clean_for_speech(str(res))
 
-        # 3. Bypass direto: Timer
-        if "timer" in clean_prompt and any(w in clean_prompt for w in ["defina", "coloque", "bote", "inicie", "comece"]):
-            m_min = re.search(r'(\d+)\s*(?:minuto|minutos|min|m)', clean_prompt)
-            if m_min:
-                minutos = int(m_min.group(1))
-                m_rotulo = re.search(r'para\s+(?:o|a)?\s*(.+)', clean_prompt)
-                rotulo = m_rotulo.group(1).strip() if m_rotulo else "Timer"
-                res = TimerManager.add_timer(minutes=minutos, label=rotulo)
-                return clean_for_speech(str(res))
+        # 1. Respostas 100% Determinísticas (Zero LLM, Zero Latência)
+        if intent == "get_time":
+            return clean_for_speech(SystemTools.get_current_time())
 
-        # 4. Bom dia
-        if re.search(r'\b(bom\s+dia|boa\s+dia)\b', clean_prompt):
-            weather_info = SystemTools.get_weather("hoje")
-            agenda_info = CalendarTools.get_events("hoje")
-            return clean_for_speech(f"Bom dia! {weather_info}. {agenda_info}")
-
-        # 5. Agradecimentos
-        agradecimentos = ["obrigado", "muito obrigado", "valeu", "valeu geraldo", "agradecido", "obrigada"]
-        if any(clean_prompt.startswith(a) for a in agradecimentos):
+        if intent == "thanks":
             self.history.clear()
             return "De nada! Qualquer coisa é só chamar."
 
-        # 6. Bypass determinístico: Busca na Web / Resultados / Pesquisa Eleitoral
-        termos_busca_forcada = ["pesquise", "pesquisa eleitoral", "último campeão", "ultimo campeao", "atual campeão", "atual campeao", "quem ganhou", "quem venceu", "cotação do"]
-        if any(t in clean_prompt for t in termos_busca_forcada):
-            query_busca = re.sub(r'^(pesquise sobre|pesquise|procure sobre|procure|busque por|busque)\s*', '', normalized, flags=re.IGNORECASE).strip()
-            print(f"[Geraldo:BypassSearch] Forçando busca web para: {query_busca}")
-            
-            filler = random.choice([
-                f"Procurando na internet sobre {query_busca}...",
-                "Consultando a internet, um instante...",
-                f"Deixa eu verificar na web sobre {query_busca}..."
-            ])
-            print(f"[Geraldo:Filler]: {filler}")
-            self._speak_filler_async(clean_for_speech(filler))
-            
-            tool_result = WebSearchTools.search_web(query=query_busca)
-            sys_instruction = (
-                "Você é o Geraldo, assistente estilo Alexa. Com base nos fatos fornecidos, responda em 1 ou 2 frases curtas, "
-                "diretas e precisas para áudio. NUNCA mencione fontes, links ou introduções."
+        if intent == "greeting_morning":
+            w = SystemTools.get_weather("hoje")
+            a = CalendarTools.get_events("hoje")
+            return clean_for_speech(f"Bom dia! {w}. {a}")
+
+        if intent == "set_alarm":
+            res = TimerManager.add_alarm(
+                hour=slots.get("hour", 8),
+                minute=slots.get("minute", 0),
+                label=slots.get("label", "Alarme")
             )
-            follow_up = self._post_json({
-                "model": LLM_MODEL,
-                "messages": [
-                    {"role": "system", "content": sys_instruction},
-                    {"role": "user", "content": f"Pergunta: {normalized}\nFatos encontrados: {tool_result}"}
-                ],
-                "stream": False,
-                "keep_alive": -1,
-                "options": LLM_OPTIONS
-            })
-            final_msg = follow_up.get("message", {})
-            raw_reply = final_msg.get("content", "").strip() or str(tool_result)
-            reply_text = clean_for_speech(raw_reply)
-            self.history.append({"role": "user", "content": normalized})
-            self.history.append({"role": "assistant", "content": reply_text})
-            return reply_text
+            return clean_for_speech(str(res))
 
-        # 7. Bypass determinístico: Agenda
-        palavras_criacao = ["marque", "marca", "marcar", "agende", "agenda", "agendar", "crie", "criar", "adicione", "adicionar", "botar", "coloque", "colocar", "lembra", "lembre"]
-        is_creation = any(w in clean_prompt.split() for w in palavras_criacao)
+        if intent == "set_timer":
+            res = TimerManager.add_timer(
+                hours=slots.get("hours", 0),
+                minutes=slots.get("minutes", 5),
+                seconds=slots.get("seconds", 0),
+                label=slots.get("label", "Timer")
+            )
+            return clean_for_speech(str(res))
 
-        if not is_creation and any(w in clean_prompt for w in ["agenda", "compromisso", "compromissos"]):
-            alvo = "hoje"
-            if "amanhã" in clean_prompt or "amanha" in clean_prompt:
-                alvo = "amanhã"
-            elif "depois de amanhã" in clean_prompt or "depois de amanha" in clean_prompt:
-                alvo = "depois de amanhã"
-            else:
-                for dia in ["segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo"]:
-                    if dia in clean_prompt:
-                        alvo = dia
-                        break
+        if intent == "cancel_timers":
+            return clean_for_speech(str(TimerManager.cancel_all()))
 
-            res_agenda = CalendarTools.get_events(alvo)
-            sys_instruction = f"Você é o Geraldo. Diga os compromissos para {alvo} em 1 frase curta para voz. Sem introduções."
-            follow_up = self._post_json({
-                "model": LLM_MODEL,
-                "messages": [
-                    {"role": "system", "content": sys_instruction},
-                    {"role": "user", "content": f"Pergunta: {normalized}\nAgenda: {res_agenda}"}
-                ],
-                "stream": False,
-                "keep_alive": -1,
-                "options": LLM_OPTIONS
-            })
-            reply_text = clean_for_speech(follow_up.get("message", {}).get("content", "") or res_agenda)
-            self.history.clear()
-            self.history.append({"role": "user", "content": normalized})
-            self.history.append({"role": "assistant", "content": reply_text})
-            return reply_text
+        if intent == "control_stopwatch":
+            return clean_for_speech(str(TimerManager.stopwatch_control(slots.get("action", "start"))))
 
-        # 8. Bypass determinístico: Previsão do tempo / Clima
-        if any(w in clean_prompt for w in ["clima", "tempo", "temperatura", "chover", "chuva"]):
-            alvo_clima = "hoje"
-            if "amanhã" in clean_prompt or "amanha" in clean_prompt:
-                alvo_clima = "amanhã"
-            elif "semana" in clean_prompt:
-                alvo_clima = "semana"
+        if intent == "play_music":
+            return clean_for_speech(str(YTMusicPlayer.play_song(
+                query=slots.get("query", "música"),
+                item_type=slots.get("item_type", "auto")
+            )))
 
-            clima_info = SystemTools.get_weather(alvo_clima)
-            sys_instruction = f"Você é o Geraldo. Resuma o clima para {alvo_clima} em 1 frase curta e natural para voz. Sem saudações nem introduções."
-            follow_up = self._post_json({
-                "model": LLM_MODEL,
-                "messages": [
-                    {"role": "system", "content": sys_instruction},
-                    {"role": "user", "content": f"Dados do tempo: {clima_info}"}
-                ],
-                "stream": False,
-                "keep_alive": -1,
-                "options": LLM_OPTIONS
-            })
-            reply_text = clean_for_speech(follow_up.get("message", {}).get("content", "") or clima_info)
-            self.history.clear()
-            self.history.append({"role": "user", "content": normalized})
-            self.history.append({"role": "assistant", "content": reply_text})
-            return reply_text
+        if intent == "media_control":
+            return clean_for_speech(str(SystemTools.play_pause_media()))
 
-        system_content = get_dynamic_system_prompt()
-        messages = [{"role": "system", "content": system_content}]
+        if intent == "volume_control":
+            return clean_for_speech(str(SystemTools.set_volume(slots.get("change", "+"))))
+
+        if intent == "get_weather":
+            alvo = slots.get("query_type", "hoje")
+            clima_raw = SystemTools.get_weather(alvo)
+            return clean_for_speech(str(clima_raw))
+
+        if intent == "get_calendar":
+            alvo = slots.get("date_query", "hoje")
+            agenda_raw = CalendarTools.get_events(alvo)
+            return clean_for_speech(str(agenda_raw))
+
+        if intent == "create_calendar":
+            res = CalendarTools.create_event(
+                summary=slots.get("summary", "Compromisso"),
+                date_query=slots.get("date_query", "hoje"),
+                time_str=slots.get("time_str", "09:00"),
+                duration_minutes=slots.get("duration_minutes", 60)
+            )
+            return clean_for_speech(str(res))
+
+        # 2. Intenções de Busca Externa (Filler Simultâneo + Join antes da Resposta)
+        if intent == "get_news":
+            termo = slots.get("query", "hoje")
+            filler = clean_for_speech(f"Verificando as notícias sobre {termo}.")
+            print(f"[Geraldo:Filler]: {filler}")
+            filler_thread = self._start_filler_thread(filler)
+
+            news_data = NewsTools.get_news(termo)
+            sys_inst = "Você é o Geraldo. Resuma as principais notícias abaixo em no máximo 2 frases curtas e diretas para voz."
+            final_reply = self._summarize_with_llm(sys_inst, f"Notícias: {news_data}")
+            
+            # Garante que o áudio do filler terminou antes de entregar a fala final
+            filler_thread.join(timeout=8.0)
+            return final_reply
+
+        if intent == "search_web":
+            termo = slots.get("query", user_prompt)
+            opcoes_curtas = [
+                "Consultando a internet, só um instante.",
+                f"Pesquisando na web sobre {termo}.",
+                "Deixa eu dar uma olhada na internet."
+            ]
+            filler = clean_for_speech(random.choice(opcoes_curtas))
+            print(f"[Geraldo:Filler]: {filler}")
+            filler_thread = self._start_filler_thread(filler)
+
+            Ano = datetime.datetime.now().year
+            query_enriquecida = f"{termo} {Ano}" if str(Ano) not in termo else termo
+            web_data = WebSearchTools.search_web(query=query_enriquecida)
+
+            sys_inst = (
+                f"Você é o Geraldo. Estamos em {Ano}. Com base nos dados abaixo, responda à pergunta do usuário "
+                "em 1 frase direta e objetiva para áudio. Nunca diga que os dados não foram fornecidos; extraia a melhor resposta possível."
+            )
+            final_reply = self._summarize_with_llm(sys_inst, f"Pergunta: {user_prompt}\nResultados da Web: {web_data}")
+            
+            # Aguarda o filler terminar de tocar no alto-falante antes de retornar a resposta final
+            filler_thread.join(timeout=8.0)
+            return final_reply
+
+        # 3. Fallback: Conversação Geral Aberta
+        sys_chat = (
+            f"{SYSTEM_PROMPT}\nVocê é o Geraldo, assistente de voz local. "
+            "Responda de forma direta, natural e concisa em no máximo 2 frases curtas. "
+            "Nunca use listas markdown, asteriscos ou códigos."
+        )
+        messages = [{"role": "system", "content": sys_chat}]
         messages.extend(list(self.history))
-        messages.append({"role": "user", "content": normalized})
-
-        payload = {
-            "model": LLM_MODEL,
-            "messages": messages,
-            "tools": TOOLS_SCHEMA,
-            "stream": False,
-            "keep_alive": -1,
-            "options": LLM_OPTIONS
-        }
+        messages.append({"role": "user", "content": user_prompt})
 
         try:
-            data = self._post_json(payload)
-            message = data.get("message", {})
-
-            fn_name = None
-            fn_args = {}
-
-            if "tool_calls" in message and message["tool_calls"]:
-                tool_call = message["tool_calls"][0]
-                fn_name = tool_call.get("function", {}).get("name")
-                fn_args = tool_call.get("function", {}).get("arguments", {})
-            else:
-                raw_content = message.get("content", "")
-                parsed_fn, parsed_args = self._parse_text_tool_call(raw_content)
-                if parsed_fn:
-                    fn_name = parsed_fn
-                    fn_args = parsed_args
-
-            if fn_name and fn_name in self.tools_map:
-                print(f"[Geraldo:Tool] Executando {fn_name}({fn_args})...")
-
-                if fn_name in ["search_web", "get_news"]:
-                    termo = fn_args.get("query", "")
-                    if fn_name == "search_web":
-                        opcoes = [
-                            f"Procurando na internet sobre {termo}...",
-                            f"Deixa eu pesquisar na web sobre {termo}...",
-                            "Consultando a internet, um instante..."
-                        ]
-                    else:
-                        opcoes = [
-                            f"Buscando as últimas notícias sobre {termo}...",
-                            "Verificando os principais jornais de hoje...",
-                            "Buscando acontecimentos recentes..."
-                        ]
-                    filler = random.choice(opcoes)
-                    print(f"[Geraldo:Filler]: {filler}")
-                    self._speak_filler_async(clean_for_speech(filler))
-
-                tool_result = self._execute_tool_safely(fn_name, fn_args)
-
-                if fn_name in [
-                    "create_calendar_event", "set_timer", "set_alarm", "control_stopwatch",
-                    "cancel_timers", "play_ytmusic", "stop_ytmusic", "play_pause_media",
-                    "set_volume", "get_current_time"
-                ]:
-                    reply_text = clean_for_speech(str(tool_result))
-                    self.history.append({"role": "user", "content": normalized})
-                    self.history.append({"role": "assistant", "content": reply_text})
-                    return reply_text
-
-                sys_instruction = (
-                    "Você é o Geraldo. Responda em 1 frase curta e direta para áudio, estilo Alexa. "
-                    "NUNCA cite códigos, links ou introduções."
-                )
-
-                follow_up = self._post_json({
-                    "model": LLM_MODEL,
-                    "messages": [
-                        {"role": "system", "content": sys_instruction},
-                        {"role": "user", "content": f"Pergunta: {normalized}\nFatos encontrados: {tool_result}"}
-                    ],
-                    "stream": False,
-                    "keep_alive": -1,
-                    "options": LLM_OPTIONS
-                })
-                final_msg = follow_up.get("message", {})
-                raw_reply = final_msg.get("content", "").strip() or str(tool_result)
-                reply_text = clean_for_speech(raw_reply)
-                self.history.append({"role": "user", "content": normalized})
-                self.history.append({"role": "assistant", "content": reply_text})
-                return reply_text
-
-            reply_text = clean_for_speech(message.get("content", "").strip())
-            if reply_text:
-                self.history.append({"role": "user", "content": normalized})
-                self.history.append({"role": "assistant", "content": reply_text})
-                return reply_text
-
-            return "Entendido."
-
+            data = self._post_json({
+                "model": LLM_MODEL,
+                "messages": messages,
+                "stream": False,
+                "keep_alive": -1,
+                "options": LLM_OPTIONS
+            })
+            reply = clean_for_speech(data.get("message", {}).get("content", "").strip())
+            if reply:
+                self.history.append({"role": "user", "content": user_prompt})
+                self.history.append({"role": "assistant", "content": reply})
+                return reply
+            return "Não consegui formular uma resposta."
         except Exception as e:
             print(f"[Geraldo:LLM Error]: {e}")
-            return "Desculpe, tive uma falha ao processar a resposta."
+            return "Tive um erro ao processar sua pergunta."

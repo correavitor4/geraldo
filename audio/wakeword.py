@@ -1,62 +1,60 @@
-import sounddevice as sd
 import numpy as np
-import time
+from brain.stt import SpeechToText
 
 class WakeWordDetector:
-    def __init__(self, target_word: str = "geraldo", sample_rate: int = 16000, chunk_size: int = 1024, stt_engine=None):
-        self.target_word = target_word.lower()
-        self.sample_rate = sample_rate
-        self.chunk_size = chunk_size
-        self.stt = stt_engine
-        print("[Geraldo:Audio] Wake word escutando no microfone padrão do sistema.")
+    def __init__(self, target_word: str = "geraldo", stt: SpeechToText = None):
+        self.target_word = target_word.lower().strip()
+        # Usa o STT existente para aproveitar o modelo tiny otimizado
+        self.stt = stt if stt else SpeechToText(wake_model_size="tiny", cmd_model_size="small")
 
     def wait_for_wake_word(self) -> bool:
-        print(f"\n[Geraldo] Dormindo... Diga {self.target_word.capitalize()} para acordar.")
+        """
+        Escuta o microfone em pequenos blocos de áudio até detectar 
+        exatamente a palavra-chave, ignorando ruídos aleatórios.
+        """
+        import sounddevice as sd
         
-        buffer_duration = 1.8
-        buffer_len = int(self.sample_rate * buffer_duration)
-        audio_buffer = np.zeros(buffer_len, dtype=np.float32)
+        sample_rate = 16000
+        block_duration = 1.5  # Analisa blocos de 1.5 segundos
+        block_size = int(sample_rate * block_duration)
 
-        ambient_noise = 0.008
-        speech_triggered = False
-        speech_start = 0.0
+        print(f"[Geraldo] Aguardando wake word: '{self.target_word}'...")
 
-        # device=None utiliza o microfone padrão definido no sistema (PipeWire/PulseAudio)
-        with sd.InputStream(device=None, samplerate=self.sample_rate, channels=1, dtype='float32', blocksize=self.chunk_size) as stream:
-            for _ in range(5):
-                stream.read(self.chunk_size)
+        while True:
+            # Captura um bloco de áudio do microfone do sistema
+            audio_chunk = sd.rec(block_size, samplerate=sample_rate, channels=1, dtype='float32')
+            sd.wait()
+            audio_data = np.squeeze(audio_chunk)
 
-            while True:
-                data, _ = stream.read(self.chunk_size)
-                chunk = data.flatten()
+            # Filtro básico de energia: se o áudio for silêncio quase absoluto, pula o processamento
+            if np.max(np.abs(audio_data)) < 0.02:
+                continue
 
-                audio_buffer = np.roll(audio_buffer, -len(chunk))
-                audio_buffer[-len(chunk):] = chunk
+            # Transcreve usando o modelo leve (tiny) com parâmetros estritos
+            try:
+                segments, _ = self.stt.model_wake.transcribe(
+                    audio_data,
+                    language="pt",
+                    beam_size=1,
+                    best_of=1,
+                    temperature=0.0,
+                    initial_prompt="Geraldo.",
+                    condition_on_previous_text=False,
+                    vad_filter=True,
+                    vad_parameters=dict(min_silence_duration_ms=300, threshold=0.6)
+                )
+                
+                text = " ".join([seg.text.strip() for seg in segments]).strip().lower()
+                
+                # Remove pontuações para análise limpa
+                cleaned_text = "".join([c for c in text if c.isalnum() or c.isspace()])
+                words = cleaned_text.split()
 
-                rms = float(np.sqrt(np.mean(chunk**2)))
+                # Verifica se a palavra-chave está presente de forma clara
+                if self.target_word in words or any(self.target_word in w for w in words):
+                    print(f"[Geraldo] Wake word confirmada! Texto capturado: '{text}'")
+                    return True
 
-                if rms < ambient_noise * 1.5:
-                    ambient_noise = 0.95 * ambient_noise + 0.05 * rms
-
-                voice_threshold = max(ambient_noise * 2.8, 0.016)
-
-                if rms > voice_threshold:
-                    if not speech_triggered:
-                        speech_triggered = True
-                        speech_start = time.time()
-                else:
-                    if speech_triggered and (time.time() - speech_start > 0.4):
-                        speech_triggered = False
-                        
-                        if self.stt:
-                            peak = np.max(np.abs(audio_buffer))
-                            sample = audio_buffer * (0.85 / peak) if peak > 0.01 else audio_buffer
-                            transcription = self.stt.transcribe_quick(sample).lower()
-                            
-                            matches = ["geraldo", "eraldo", "gerald", "geral", "ei geraldo", "olá geraldo"]
-                            if any(m in transcription for m in matches):
-                                print(f"[Geraldo] Acordou! Palavra confirmada: '{transcription}'")
-                                return True
-                        else:
-                            print("[Geraldo] Acordou!")
-                            return True
+            except Exception as e:
+                # Evita que erros de áudio quebrem o loop de escuta
+                continue
