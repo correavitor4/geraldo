@@ -10,19 +10,21 @@ from googleapiclient.discovery import build
 
 load_dotenv(os.path.expanduser("~/projects/geraldo/.env"))
 
-SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"]
+# Escopo com permissão de leitura e criação de eventos
+SCOPES = [
+    "https://www.googleapis.com/auth/calendar.readonly",
+    "https://www.googleapis.com/auth/calendar.events"
+]
 CREDENTIALS_FILE = os.getenv("GOOGLE_CREDENTIALS_FILE", os.path.expanduser("~/projects/geraldo/credentials.json"))
 TOKEN_FILE = os.getenv("GOOGLE_TOKEN_FILE", os.path.expanduser("~/projects/geraldo/token.json"))
 CALENDAR_ID = os.getenv("GOOGLE_CALENDAR_ID", "primary")
 
 def format_speech_time(hh_mm: str) -> str:
-    """Converte '13:00' para 'à uma da tarde', '16:00' para 'às quatro da tarde', etc."""
     try:
         parts = hh_mm.split(":")
         h = int(parts[0])
         m = int(parts[1]) if len(parts) > 1 else 0
 
-        # Mapeamento de horas faladas
         horas_nome = {
             0: "meia-noite", 1: "uma", 2: "duas", 3: "três", 4: "quatro",
             5: "cinco", 6: "seis", 7: "sete", 8: "oito", 9: "nove",
@@ -33,28 +35,21 @@ def format_speech_time(hh_mm: str) -> str:
             22: "dez da noite", 23: "onze da noite"
         }
 
-        # Minutos
         if m == 0:
             if h in [0, 12]:
                 return f"ao {horas_nome[h]}"
             artigo = "à " if h in [1, 13] else "às "
             return f"{artigo}{horas_nome[h]}"
         elif m == 30:
-            if h in [0, 12]:
-                return f"ao {horas_nome[h]} e meia"
-            # ex: 13:30 -> à uma e meia da tarde
             h_base = h if h <= 12 else (h - 12)
             sufixo = " da tarde" if 12 < h < 18 else (" da noite" if h >= 18 else " da manhã")
-            artigo = "à " if h_base == 1 else "às "
-            nome_h = horas_nome[h_base]
-            return f"{artigo}{nome_h} e meia{sufixo}"
+            artigo = "à " if h_base in [1, 13] else "às "
+            return f"{artigo}{horas_nome[h_base]} e meia{sufixo}"
         else:
-            # ex: 14:15 -> às duas e 15 da tarde
             h_base = h if h <= 12 else (h - 12)
             sufixo = " da tarde" if 12 < h < 18 else (" da noite" if h >= 18 else " da manhã")
-            artigo = "à " if h_base == 1 else "às "
-            nome_h = horas_nome[h_base]
-            return f"{artigo}{nome_h} e {m}{sufixo}"
+            artigo = "à " if h_base in [1, 13] else "às "
+            return f"{artigo}{horas_nome[h_base]} e {m}{sufixo}"
     except Exception:
         return f"às {hh_mm}"
 
@@ -141,7 +136,6 @@ class CalendarTools:
 
     @classmethod
     def get_events(cls, date_query: str = "hoje", *args, **kwargs) -> str:
-        """Obtém os compromissos agendados no Google Calendar com horários foneticamente naturais."""
         service = cls.get_service()
         if not service:
             return "A agenda do Google ainda não está configurada ou autenticada."
@@ -186,3 +180,44 @@ class CalendarTools:
         except Exception as e:
             print(f"[Geraldo:Calendar Error]: {e}")
             return "Não foi possível carregar os compromissos da agenda no momento."
+
+    @classmethod
+    def create_event(cls, summary: str, date_query: str = "hoje", time_str: str = "09:00", duration_minutes: int = 60) -> str:
+        """Cria um novo evento no Google Calendar."""
+        service = cls.get_service()
+        if not service:
+            return "A agenda do Google não está autenticada para escrita."
+
+        target_date = cls._parse_target_date(date_query)
+        
+        # Extrai horas e minutos
+        match_time = re.search(r'(\d{1,2}):?(\d{2})?', time_str)
+        if match_time:
+            hour = int(match_time.group(1))
+            minute = int(match_time.group(2)) if match_time.group(2) else 0
+        else:
+            hour, minute = 9, 0
+
+        start_dt = datetime.datetime.combine(target_date, datetime.time(hour, minute))
+        end_dt = start_dt + datetime.timedelta(minutes=duration_minutes)
+
+        event_body = {
+            'summary': summary,
+            'start': {
+                'dateTime': start_dt.isoformat(),
+                'timeZone': 'America/Sao_Paulo',
+            },
+            'end': {
+                'dateTime': end_dt.isoformat(),
+                'timeZone': 'America/Sao_Paulo',
+            },
+        }
+
+        try:
+            created = service.events().insert(calendarId=CALENDAR_ID, body=event_body).execute()
+            dia_str = "hoje" if target_date == datetime.date.today() else ("amanhã" if target_date == datetime.date.today() + datetime.timedelta(days=1) else f"dia {target_date.strftime('%d/%m')}")
+            hora_extenso = format_speech_time(f"{hour:02d}:{minute:02d}")
+            return f"Agendado com sucesso: {summary} {dia_str} {hora_extenso}."
+        except Exception as e:
+            print(f"[Geraldo:Calendar Create Error]: {e}")
+            return "Ocorreu um erro ao tentar criar o evento na agenda."

@@ -4,7 +4,7 @@ ASSISTANT_NAME = "Geraldo"
 
 # Ollama
 OLLAMA_HOST = "http://localhost:11434"
-LLM_MODEL = "llama3.2"
+LLM_MODEL = "qwen2.5:7b-instruct-q3_k_m"
 
 # Parâmetros de Áudio
 SAMPLE_RATE = 16000

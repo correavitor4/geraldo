@@ -2,7 +2,7 @@ from ddgs import DDGS
 
 class WebSearchTools:
     @staticmethod
-    def search_web(query: str, max_results: int = 4, *args, **kwargs) -> str:
+    def search_web(query: str, max_results: int = 2, *args, **kwargs) -> str:
         """Executa buscas factuais e recentes via DDGS."""
         clean_query = query.strip()
         snippets = []
