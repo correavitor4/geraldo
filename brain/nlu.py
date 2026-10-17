@@ -36,7 +36,8 @@ TRAINING_DATA = {
         "cancele todos os timers", "cancelar alarme", "pare o timer", "cancele o timer chamado teste", "cancele o alarme", "cancele todos",
         "desative todos os alarmes", "desative o alarme", "desative todos", "desativar alarme", "desativem todos os alarmes",
         "desligue o alarme", "desligue todos os alarmes", "apague os alarmes", "cancele todos os alarmes", "parar alarme",
-        "todos os alarmes", "remover todos os alarmes", "excluir alarme", "desativar todos os timers"
+        "todos os alarmes", "remover todos os alarmes", "excluir alarme", "desativar todos os timers",
+        "silenciar alarme", "silencie o alarme", "silencie o timer", "pare o alarme", "silêncio", "silencio", "pare de tocar"
     ],
     "pause_timer": [
         "pause o timer", "pausar o timer", "congele o timer", "pause o timer descanso"
@@ -168,9 +169,9 @@ class IntentEngine:
             if any(w in norm for w in ["defina", "coloque", "bote", "marque", "crie"]):
                 return "set_alarm"
         if any(w in norm for w in ["alarme", "alarmes", "despertador", "despertadores", "timer", "timers"]):
-            if any(w in norm for w in ["cancele", "cancelar", "desative", "desativar", "desativem", "desligue", "desligar", "apague", "apagar", "remova", "remover", "exclua", "excluir", "parar", "pare"]):
+            if any(w in norm for w in ["cancele", "cancelar", "desative", "desativar", "desativem", "desligue", "desligar", "apague", "apagar", "remova", "remover", "exclua", "excluir", "parar", "pare", "silencie", "silenciar", "silêncio", "silencio"]):
                 return "cancel_timers"
-        if norm in ["cancele todos", "cancelar todos", "desative todos", "desativar todos", "todos os alarmes", "todos os timers"]:
+        if norm in ["cancele todos", "cancelar todos", "desative todos", "desativar todos", "todos os alarmes", "todos os timers", "silêncio", "silencio", "pare de tocar", "parar de tocar"]:
             return "cancel_timers"
         if any(w in norm for w in ["toque", "tocar", "ouvir", "reproduza"]):
             if not any(w in norm for w in ["pausar", "parar", "continuar"]):

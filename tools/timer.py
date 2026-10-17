@@ -15,6 +15,12 @@ class TimerManager:
     _command_dir = "/tmp/geraldo_commands"
     _status_file = "/tmp/geraldo_status.json"
     _state_file = os.path.expanduser("~/.config/geraldo_state.json")
+    _alarm_sound_path = os.path.expanduser("~/projects/geraldo/assets/alarm.wav")
+    _timer_sound_path = os.path.expanduser("~/projects/geraldo/assets/timer.wav")
+    _ringing_alarm = None
+    _ringing_timer = None
+    _alarm_stop_event = None
+    _timer_stop_event = None
 
     @classmethod
     def start_background_loop(cls):
@@ -127,7 +133,19 @@ class TimerManager:
             action = cmd.get("action", "")
             message = ""
             try:
-                if action == "timer_add":
+                if action in ("dismiss_ringing_timer", "timer_silence"):
+                    cls._stop_ringing_timer()
+                    message = "Timer silenciado."
+
+                elif action in ("dismiss_ringing_alarm", "alarm_silence"):
+                    cls._stop_ringing_alarm()
+                    message = "Alarme silenciado."
+
+                elif action in ("dismiss_all_ringing", "silence_all"):
+                    cls.stop_all_ringing()
+                    message = "Sons silenciados."
+
+                elif action == "timer_add":
                     message = cls.add_timer(
                         hours=int(cmd.get("hours", 0)),
                         minutes=int(cmd.get("minutes", 0)),
@@ -246,8 +264,14 @@ class TimerManager:
         while cls._running:
             cls._process_waybar_commands()
             now = time.time()
-            notifications = []
             changed = False
+
+            # Verifica tempo limite de reprodução de alarme (60s) e timer (20s)
+            if cls._ringing_alarm and (now - cls._ringing_alarm["start_time"]) >= cls._ringing_alarm["max_duration"]:
+                cls._stop_ringing_alarm()
+
+            if cls._ringing_timer and (now - cls._ringing_timer["start_time"]) >= cls._ringing_timer["max_duration"]:
+                cls._stop_ringing_timer()
 
             with cls._lock:
                 expired_timers = [
@@ -257,17 +281,10 @@ class TimerManager:
                 ]
 
                 if expired_timers:
-                    labels = [
-                        cls._timers[tid]["label"] for tid in expired_timers
-                    ]
                     for tid in expired_timers:
+                        label = cls._timers[tid]["label"]
                         del cls._timers[tid]
-                    preview = ", ".join(labels[:3])
-                    if len(labels) > 3:
-                        preview += f" e mais {len(labels) - 3}"
-                    notifications.append(
-                        f"{len(labels)} timer(s) encerrado(s): {preview}"
-                    )
+                        cls._start_ringing_timer(tid, label)
                     changed = True
 
                 current_time = time.strftime("%H:%M")
@@ -278,28 +295,17 @@ class TimerManager:
                 ]
 
                 if expired_alarms:
-                    labels = [
-                        cls._alarms[aid]["label"] for aid in expired_alarms
-                    ]
                     for aid in expired_alarms:
+                        label = cls._alarms[aid]["label"]
+                        time_str = cls._alarms[aid]["time_str"]
                         del cls._alarms[aid]
-                    preview = ", ".join(labels[:3])
-                    if len(labels) > 3:
-                        preview += f" e mais {len(labels) - 3}"
-                    notifications.append(
-                        f"{len(labels)} alarme(s) disparado(s): {preview}"
-                    )
+                        cls._start_ringing_alarm(aid, label, time_str)
                     changed = True
 
                 if changed:
                     cls._save_state()
 
                 cls._export_status_for_waybar()
-
-            # No máximo uma notificação sonora por ciclo, mesmo quando
-            # diversos timers e alarmes coincidem.
-            if notifications:
-                cls._notify(" | ".join(notifications))
 
             time.sleep(1)
 
@@ -407,6 +413,29 @@ class TimerManager:
             if timers or alarms or stopwatch.get("running", False):
                 classes.append("has-tasks")
 
+            ringing_timer_data = None
+            if cls._ringing_timer:
+                rem = max(0, int(cls._ringing_timer["max_duration"] - (now - cls._ringing_timer["start_time"])))
+                if rem > 0:
+                    ringing_timer_data = {
+                        "id": cls._ringing_timer["id"],
+                        "label": cls._ringing_timer["label"],
+                        "left": rem
+                    }
+                    classes.append("ringing-timer")
+
+            ringing_alarm_data = None
+            if cls._ringing_alarm:
+                rem = max(0, int(cls._ringing_alarm["max_duration"] - (now - cls._ringing_alarm["start_time"])))
+                if rem > 0:
+                    ringing_alarm_data = {
+                        "id": cls._ringing_alarm["id"],
+                        "label": cls._ringing_alarm["label"],
+                        "time": cls._ringing_alarm.get("time_str", "--:--"),
+                        "left": rem
+                    }
+                    classes.append("ringing-alarm")
+
             data = {
                 "text": " · ".join(compact),
                 "tooltip": "\n".join(details),
@@ -414,7 +443,9 @@ class TimerManager:
                 "state": state,
                 "timers": timers,
                 "alarms": alarms,
-                "stopwatch": stopwatch
+                "stopwatch": stopwatch,
+                "ringing_timer": ringing_timer_data,
+                "ringing_alarm": ringing_alarm_data
             }
 
             temp_path = cls._status_file + ".tmp"
@@ -426,13 +457,102 @@ class TimerManager:
             print(f"[Geraldo:Timer Error] Falha ao exportar status: {exc}")
 
     @classmethod
+    def _play_sound_loop(cls, sound_file: str, stop_event: threading.Event, max_duration: float):
+        start = time.time()
+        while not stop_event.is_set() and (time.time() - start) < max_duration:
+            if not os.path.exists(sound_file):
+                time.sleep(1)
+                continue
+            proc = subprocess.Popen(["paplay", sound_file], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            while proc.poll() is None:
+                if stop_event.is_set() or (time.time() - start) >= max_duration:
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=0.2)
+                    except Exception:
+                        proc.kill()
+                    return
+                time.sleep(0.05)
+
+    @classmethod
+    def _start_ringing_alarm(cls, aid: str, label: str, time_str: str):
+        cls._stop_ringing_alarm()
+        now = time.time()
+        cls._ringing_alarm = {
+            "id": aid,
+            "label": label,
+            "start_time": now,
+            "max_duration": 60.0,
+            "time_str": time_str
+        }
+        cls._alarm_stop_event = threading.Event()
+        t = threading.Thread(
+            target=cls._play_sound_loop,
+            args=(cls._alarm_sound_path, cls._alarm_stop_event, 60.0),
+            daemon=True
+        )
+        t.start()
+        cls._export_status_for_waybar()
+        try:
+            subprocess.Popen([
+                "notify-send", "-u", "critical", "-a", "Geraldo",
+                "⏰ ALARME DISPARADO!",
+                f"{label} ({time_str})\nClique na Waybar para silenciar."
+            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
+
+    @classmethod
+    def _start_ringing_timer(cls, tid: str, label: str):
+        cls._stop_ringing_timer()
+        now = time.time()
+        cls._ringing_timer = {
+            "id": tid,
+            "label": label,
+            "start_time": now,
+            "max_duration": 20.0
+        }
+        cls._timer_stop_event = threading.Event()
+        t = threading.Thread(
+            target=cls._play_sound_loop,
+            args=(cls._timer_sound_path, cls._timer_stop_event, 20.0),
+            daemon=True
+        )
+        t.start()
+        cls._export_status_for_waybar()
+        try:
+            subprocess.Popen([
+                "notify-send", "-u", "critical", "-a", "Geraldo",
+                "⏱ TIMER FINALIZADO!",
+                f"O timer '{label}' terminou!\nClique na Waybar para silenciar."
+            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
+
+    @classmethod
+    def _stop_ringing_alarm(cls):
+        if cls._alarm_stop_event:
+            cls._alarm_stop_event.set()
+        cls._ringing_alarm = None
+        cls._export_status_for_waybar()
+
+    @classmethod
+    def _stop_ringing_timer(cls):
+        if cls._timer_stop_event:
+            cls._timer_stop_event.set()
+        cls._ringing_timer = None
+        cls._export_status_for_waybar()
+
+    @classmethod
+    def stop_all_ringing(cls):
+        cls._stop_ringing_alarm()
+        cls._stop_ringing_timer()
+
+    @classmethod
     def _notify(cls, message: str):
         print(f"\n[Geraldo:Alerta] {message}")
         try:
             subprocess.Popen(["notify-send", "Geraldo", message], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            alarm_wav = os.path.expanduser("~/projects/geraldo/assets/alarm.wav")
-            sound_file = alarm_wav if os.path.exists(alarm_wav) else "/usr/share/sounds/freedesktop/stereo/complete.oga"
-            subprocess.Popen(["paplay", sound_file], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except Exception:
             pass
 
@@ -575,6 +695,15 @@ class TimerManager:
     def cancel_item(cls, query: str = "") -> str:
         with cls._lock:
             q = query.lower().strip()
+
+            # Se algo está tocando no momento, silencia imediatamente
+            if cls._ringing_alarm or cls._ringing_timer:
+                cls.stop_all_ringing()
+                if "timer" in q:
+                    return "Timer silenciado."
+                if "alarme" in q:
+                    return "Alarme silenciado."
+                return "Som silenciado."
 
             # Cancelar todos os alarmes especificamente
             if "alarme" in q and ("todo" in q or "tudo" in q):
