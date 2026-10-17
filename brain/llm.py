@@ -54,8 +54,8 @@ def phonetize_time_patterns(text: str) -> str:
     def repl_time_h(m):
         return _format_h_m(int(m.group(2)), int(m.group(3)) if m.group(3) else 0)
 
-    text = re.sub(r'\b(às|as|à|a)?\s*(\d{1,2}):(\d{2})\b', repl_time_colon, text, flags=re.IGNORECASE)
-    text = re.sub(r'\b(às|as|à|a)?\s*(\d{1,2})h(\d{2})?\b', repl_time_h, text, flags=re.IGNORECASE)
+    text = re.sub(r'(?:\b(às|as|à|a)\s+)?\b(\d{1,2}):(\d{2})\b', repl_time_colon, text, flags=re.IGNORECASE)
+    text = re.sub(r'(?:\b(às|as|à|a)\s+)?\b(\d{1,2})h(\d{2})?\b', repl_time_h, text, flags=re.IGNORECASE)
     return text
 
 def clean_for_speech(text: str) -> str:

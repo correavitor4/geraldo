@@ -750,6 +750,8 @@ class TimerManager:
             cls._alarms[aid] = {"time_str": time_str, "label": label, "enabled": True}
             cls._save_state()
             cls._export_status_for_waybar()
+        if minute == 0:
+            return f"Alarme definido para às {hour} horas."
         return f"Alarme definido para às {hour} horas e {minute} minutos."
 
     @classmethod

@@ -24,10 +24,15 @@ TRAINING_DATA = {
         "marque um evento na minha agenda", "agende uma reunião para amanhã", "crie um compromisso hoje às 15 horas"
     ],
     "set_alarm": [
-        "defina um alarme para as 10 da noite", "coloque um despertador para as 7 da manhã", "me acorde às 6 e meia"
+        "defina um alarme para as 10 da noite", "coloque um despertador para as 7 da manhã", "me acorde às 6 e meia",
+        "alarme para 7:50", "alarme para 7:59", "alarme para 8:00", "um alarme para 7:50", "um alarme para as 7:59",
+        "coloque um alarme para as 7:50", "defina um alarme para 7:50", "coloque um alarme para as 7 e 50",
+        "alarme para as 7 e 59", "alarme às 7 horas", "despertador para 7:50", "me acorde às 7 horas",
+        "novo alarme para as 8", "crie um alarme para as 9", "marque um alarme para 7 horas", "alarme para 19:50"
     ],
     "set_timer": [
-        "defina um timer de 5 minutos", "coloque um cronômetro regressivo de 10 minutos", "timer de 15 segundos para a pausa"
+        "defina um timer de 5 minutos", "coloque um cronômetro regressivo de 10 minutos", "timer de 15 segundos para a pausa",
+        "timer de 5 minutos", "timer de 10 minutos", "coloque um timer de 20 minutos", "timer de 1 hora"
     ],
     "list_timers": [
         "tem algum timer ativo agora", "quais timers estão rodando", "ver timers ativos", "tenho algum alarme ligado"
@@ -83,11 +88,21 @@ TRAINING_DATA = {
 }
 
 NUMBER_WORDS = {
-    "um": 1, "uma": 1, "dois": 2, "duas": 2, "três": 3, "tres": 3,
+    "zero": 0, "um": 1, "uma": 1, "dois": 2, "duas": 2, "três": 3, "tres": 3,
     "quatro": 4, "cinco": 5, "seis": 6, "sete": 7, "oito": 8, "nove": 9,
-    "dez": 10, "onze": 11, "doze": 12, "quinze": 15, "vinte": 20,
-    "trinta": 30, "quarenta": 40, "cinquenta": 50, "sessenta": 60
+    "dez": 10, "onze": 11, "doze": 12, "treze": 13, "quatorze": 14, "catorze": 14,
+    "quinze": 15, "dezesseis": 16, "dezeseis": 16, "dezessete": 17, "dezesete": 17,
+    "dezoito": 18, "dezenove": 19,
+    "vinte": 20, "trinta": 30, "quarenta": 40, "cinquenta": 50, "cinqüenta": 50,
+    "sessenta": 60
 }
+
+for _tens_word, _tens_val in [("vinte", 20), ("trinta", 30), ("quarenta", 40), ("cinquenta", 50)]:
+    for _u_word, _u_val in [
+        ("um", 1), ("uma", 1), ("dois", 2), ("duas", 2), ("três", 3), ("tres", 3),
+        ("quatro", 4), ("cinco", 5), ("seis", 6), ("sete", 7), ("oito", 8), ("nove", 9)
+    ]:
+        NUMBER_WORDS[f"{_tens_word} e {_u_word}"] = _tens_val + _u_val
 
 class IntentEngine:
     def __init__(self, confidence_threshold: float = 0.35):
@@ -113,12 +128,24 @@ class IntentEngine:
         text = text.lower().strip()
         text = re.sub(r'\b(para\s+o\s+manhã|para\s+a\s+manhã|amanya)\b', 'amanhã', text)
         text = re.sub(r'\b(tá\s+a\s+merda|taimer|táime|taime)\b', 'timer', text)
-        text = re.sub(r'[^\w\s%]', '', text)
+        # Normaliza padrões como "7h50", "7h 50", "7: 50" para "7:50"
+        text = re.sub(r'\b(\d{1,2})\s*h\s*(\d{1,2})\b', r'\1:\2', text)
+        text = re.sub(r'\b(\d{1,2})\s*:\s*(\d{1,2})\b', r'\1:\2', text)
+        # Mantém ':' para não quebrar horários como 7:50 ou 07:59
+        text = re.sub(r'[^\w\s%:]', ' ', text)
+        text = re.sub(r'\s+', ' ', text)
         return text.strip()
 
     def _parse_number(self, token: str) -> int:
         token = token.strip().lower()
-        return int(token) if token.isdigit() else NUMBER_WORDS.get(token, 0)
+        if token.isdigit():
+            return int(token)
+        if token in NUMBER_WORDS:
+            return NUMBER_WORDS[token]
+        if " e " in token:
+            parts = token.split(" e ")
+            return sum(NUMBER_WORDS.get(p.strip(), 0) for p in parts)
+        return NUMBER_WORDS.get(token, 0)
 
     def predict(self, text: str) -> tuple[str, float, dict]:
         norm = self._normalize(text)
@@ -169,22 +196,42 @@ class IntentEngine:
             if "timer" in norm and any(w in norm for w in ["pause", "pausar", "congele"]):
                 return "pause_timer"
 
-        if "timer" in norm and any(w in norm for w in ["ativo", "ativos", "rodando", "tem", "quais"]):
-            return "list_timers"
-        if "timer" in norm and any(w in norm for w in ["defina", "coloque", "bote", "inicie", "marque", "crie"]):
-            return "set_timer"
-        if "alarme" in norm or "despertador" in norm:
-            if any(w in norm for w in ["defina", "coloque", "bote", "marque", "crie"]):
-                return "set_alarm"
+        is_cancel = any(w in norm for w in [
+            "cancele", "cancelar", "desative", "desativar", "desativem", "desligue", "desligar",
+            "apague", "apagar", "remova", "remover", "exclua", "excluir", "parar", "pare",
+            "silencie", "silenciar", "silêncio", "silencio", "limpar", "limpe"
+        ])
         if any(w in norm for w in ["alarme", "alarmes", "despertador", "despertadores", "timer", "timers"]):
-            if any(w in norm for w in ["cancele", "cancelar", "desative", "desativar", "desativem", "desligue", "desligar", "apague", "apagar", "remova", "remover", "exclua", "excluir", "parar", "pare", "silencie", "silenciar", "silêncio", "silencio"]):
+            if is_cancel:
                 return "cancel_timers"
+
+        if norm in ["cancele todos", "cancelar todos", "desative todos", "desativar todos", "todos os alarmes", "todos os timers", "silêncio", "silencio", "pare de tocar", "parar de tocar"]:
+            return "cancel_timers"
+
+        if any(w in norm for w in ["timer", "timers", "alarme", "alarmes", "despertador"]):
+            if any(w in norm for w in ["ativo", "ativos", "rodando", "tem", "quais", "ver", "listar", "ligado", "ligados"]):
+                return "list_timers"
+
+        if any(w in norm for w in ["alarme", "despertador"]) or re.search(r'\b(me\s+acorde|acorde\s*me|me\s+acorda|acorda\s*me)\b', norm):
+            if any(w in norm for w in [
+                "defina", "definir", "coloque", "colocar", "bote", "botar", "marque", "marcar",
+                "crie", "criar", "novo", "nova", "programe", "programar", "adicione", "adicionar",
+                "agende", "agendar", "inicie", "iniciar", "para", "pras", "pra", "às", "as", "de"
+            ]) or re.search(r'\d', norm) or ":" in norm:
+                return "set_alarm"
+
+        if "timer" in norm:
+            if any(w in norm for w in [
+                "defina", "definir", "coloque", "colocar", "bote", "botar", "inicie", "iniciar",
+                "marque", "marcar", "crie", "criar", "novo", "minuto", "minutos", "segundo", "segundos",
+                "hora", "horas", "de", "para"
+            ]) or re.search(r'\d', norm):
+                return "set_timer"
+
         if "pomodoro" in norm or "modo foco" in norm:
             return "pomodoro_control"
         if norm in ["próximo ciclo", "proximo ciclo", "próxima pausa", "proxima pausa", "iniciar pausa", "ir para pausa", "próxima fase", "proxima fase"]:
             return "pomodoro_control"
-        if norm in ["cancele todos", "cancelar todos", "desative todos", "desativar todos", "todos os alarmes", "todos os timers", "silêncio", "silencio", "pare de tocar", "parar de tocar"]:
-            return "cancel_timers"
         if any(w in norm for w in ["toque", "tocar", "ouvir", "reproduza"]):
             if not any(w in norm for w in ["pausar", "parar", "continuar"]):
                 return "play_music"
@@ -196,7 +243,7 @@ class IntentEngine:
 
     def extract_slots(self, intent: str, raw_text: str, norm: str) -> dict:
         slots = {}
-        num_pattern = r'(\d+|' + '|'.join(NUMBER_WORDS.keys()) + r')'
+        num_pattern = r'(\d+|' + '|'.join(sorted(NUMBER_WORDS.keys(), key=len, reverse=True)) + r')'
 
         if intent in ["cancel_timers", "pause_timer", "resume_timer"]:
             if "todos os alarmes" in norm or "todos alarmes" in norm:
@@ -243,8 +290,13 @@ class IntentEngine:
             h, m = self._extract_time(norm)
             slots["hour"] = h
             slots["minute"] = m
-            m_label = re.search(r'(?:para\s+o|para\s+a|chamado)\s+([a-zA-ZÀ-ÿ0-9\s]+)$', norm)
-            slots["label"] = m_label.group(1).strip().title() if m_label else "Alarme"
+            label = "Alarme"
+            m_label = re.search(r'(?:chamado|com\s+o\s+nome\s+de|para\s+o|para\s+a)\s+([a-zA-ZÀ-ÿ\s]+?)(?:\s+(?:às|as|para|pras|pra|\d|:)|$)', norm)
+            if m_label:
+                lbl = m_label.group(1).strip().title()
+                if lbl and lbl.lower() not in ["manhã", "manha", "tarde", "noite", "amanhã", "amanha"]:
+                    label = lbl
+            slots["label"] = label
 
         elif intent == "set_timer":
             m_min = re.search(num_pattern + r'\s*(?:minuto|minutos|min|m\b)', norm)
@@ -350,20 +402,41 @@ class IntentEngine:
     def _extract_time(self, norm: str) -> tuple[int, int]:
         # Exclui artigos "um"/"uma" quando seguidos de substantivos como alarme/compromisso/reunião/evento
         cleaned = re.sub(r'\b(um|uma)\s+(alarme|despertador|compromisso|evento|reunião|reuniao|lembrete)\b', r'\2', norm)
-        num_pattern = r'(\d{1,2}|' + '|'.join(NUMBER_WORDS.keys()) + r')'
-        # Prioriza padrões com indicador de horário (às, para as, horas, h, :, e meia, da manhã/tarde/noite)
-        m = re.search(
-            r'(?:(?:às|as|para\s+as|para)\s+)?\b' + num_pattern +
-            r'(?:\s*(?:horas?|h|:)\s*(?:e\s*)?(\d{1,2}|meia|' + '|'.join(NUMBER_WORDS.keys()) + r')?'
-            r'|\s+e\s+(meia|\d{1,2}|' + '|'.join(NUMBER_WORDS.keys()) + r')'
-            r'|\s+da\s+(?:manhã|manha|tarde|noite))',
+        num_or_word_pattern = r'(\d{1,2}|' + '|'.join(sorted(NUMBER_WORDS.keys(), key=len, reverse=True)) + r')'
+
+        # 1. Padrão "X para as / pras Y" (ex: "dez para as oito", "15 pras 8", "vinte para as 7", "cinco para as 8")
+        m_para = re.search(
+            r'\b' + num_or_word_pattern + r'\s*(?:para\s+as|pras|para\s+a|para)\s*' + num_or_word_pattern + r'\b',
             cleaned
         )
-        if not m:
-            m = re.search(r'\b(\d{1,2})\b', cleaned)
-        if m:
-            h = self._parse_number(m.group(1))
-            min_raw = (m.group(2) if m.lastindex and m.lastindex >= 2 else None) or (m.group(3) if m.lastindex and m.lastindex >= 3 else None)
+        if m_para:
+            mins_before = self._parse_number(m_para.group(1))
+            target_hour = self._parse_number(m_para.group(2))
+            if 0 < mins_before < 60 and 0 <= target_hour <= 24:
+                h = (target_hour - 1) % 24
+                m = 60 - mins_before
+                if any(p in cleaned for p in ["noite", "tarde"]) and h < 12:
+                    h += 12
+                return h % 24, m % 60
+
+        # 2. Padrão com dois pontos "7:50", "07:59", "19:50", "8:00"
+        m_colon = re.search(r'\b(\d{1,2}):(\d{2})\b', cleaned)
+        if m_colon:
+            h = int(m_colon.group(1))
+            minute = int(m_colon.group(2))
+            if any(p in cleaned for p in ["noite", "tarde"]) and h < 12:
+                h += 12
+            return h % 24, minute % 60
+
+        # 3. Padrão "7h", "7 horas", "7 horas e 50", "7 horas e meia"
+        word_keys_with_meia = '|'.join(sorted(list(NUMBER_WORDS.keys()) + ["meia"], key=len, reverse=True))
+        m_horas = re.search(
+            r'\b' + num_or_word_pattern + r'\s*(?:horas?|h\b)(?:\s*(?:e\s*)?(' + word_keys_with_meia + r'|\d{1,2}))?(?:\s*minutos?)?\b',
+            cleaned
+        )
+        if m_horas:
+            h = self._parse_number(m_horas.group(1))
+            min_raw = m_horas.group(2)
             if min_raw == "meia":
                 minute = 30
             elif min_raw:
@@ -373,4 +446,43 @@ class IntentEngine:
             if any(p in cleaned for p in ["noite", "tarde"]) and h < 12:
                 h += 12
             return h % 24, minute % 60
+
+        # 4. Padrão "7 e 50", "7 e 59", "sete e cinquenta e nove", "sete e meia", etc.
+        m_e = re.search(
+            r'(?:(?:às|as|para\s+as|para|pras|pra)\s+)?\b' + num_or_word_pattern +
+            r'\s+e\s+(' + word_keys_with_meia + r'|\d{1,2})\b',
+            cleaned
+        )
+        if m_e:
+            h = self._parse_number(m_e.group(1))
+            min_raw = m_e.group(2)
+            if min_raw == "meia":
+                minute = 30
+            else:
+                minute = self._parse_number(min_raw)
+            if any(p in cleaned for p in ["noite", "tarde"]) and h < 12:
+                h += 12
+            return h % 24, minute % 60
+
+        # 5. Padrão 3 ou 4 dígitos juntos como "750", "759", "0750", "1950", "0800"
+        m_digits = re.search(r'\b([01]?\d|2[0-3])([0-5]\d)\b', cleaned)
+        if m_digits:
+            h = int(m_digits.group(1))
+            minute = int(m_digits.group(2))
+            if any(p in cleaned for p in ["noite", "tarde"]) and h < 12:
+                h += 12
+            return h % 24, minute % 60
+
+        # 6. Apenas a hora (ex: "para as 7", "para as 8 da noite", "às 9")
+        m_single = re.search(
+            r'(?:(?:às|as|para\s+as|para|pras|pra)\s+)?\b' + num_or_word_pattern + r'\b(?:\s+da\s+(?:manhã|manha|tarde|noite))?',
+            cleaned
+        )
+        if m_single:
+            h = self._parse_number(m_single.group(1))
+            minute = 0
+            if any(p in cleaned for p in ["noite", "tarde"]) and h < 12:
+                h += 12
+            return h % 24, minute % 60
+
         return 8, 0
