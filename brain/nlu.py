@@ -33,10 +33,19 @@ TRAINING_DATA = {
         "tem algum timer ativo agora", "quais timers estão rodando", "ver timers ativos", "tenho algum alarme ligado"
     ],
     "cancel_timers": [
-        "cancele todos os timers", "cancelar alarme", "pare o timer", "cancele o alarme", "cancele todos"
+        "cancele todos os timers", "cancelar alarme", "pare o timer", "cancele o timer chamado teste", "cancele o alarme", "cancele todos",
+        "desative todos os alarmes", "desative o alarme", "desative todos", "desativar alarme", "desativem todos os alarmes",
+        "desligue o alarme", "desligue todos os alarmes", "apague os alarmes", "cancele todos os alarmes", "parar alarme",
+        "todos os alarmes", "remover todos os alarmes", "excluir alarme", "desativar todos os timers"
+    ],
+    "pause_timer": [
+        "pause o timer", "pausar o timer", "congele o timer", "pause o timer descanso"
+    ],
+    "resume_timer": [
+        "retome o timer", "despause o timer", "continue o timer", "resumir o timer", "retomar timer"
     ],
     "control_stopwatch": [
-        "inicie o cronômetro", "pausar cronômetro", "zerar cronômetro"
+        "inicie o cronômetro", "pausar cronômetro", "zerar cronômetro", "parar cronômetro"
     ],
     "play_music": [
         "toque uma música", "reproduza coldplay", "coloque bob marley", "toca reggae",
@@ -58,7 +67,17 @@ TRAINING_DATA = {
     "hyprland_control": [
         "mude para a área de trabalho 2", "vá para o workspace 3", "fechar janela",
         "tela cheia", "modo tela cheia", "deixar janela flutuante", "abrir launcher"
+    ],
+    "restart_waybar": [
+        "reinicie a waybar", "reiniciar a barra", "reinicia waybar", "inicie a waybar", "atualizar waybar"
     ]
+}
+
+NUMBER_WORDS = {
+    "um": 1, "uma": 1, "dois": 2, "duas": 2, "três": 3, "tres": 3,
+    "quatro": 4, "cinco": 5, "seis": 6, "sete": 7, "oito": 8, "nove": 9,
+    "dez": 10, "onze": 11, "doze": 12, "quinze": 15, "vinte": 20,
+    "trinta": 30, "quarenta": 40, "cinquenta": 50, "sessenta": 60
 }
 
 class IntentEngine:
@@ -85,8 +104,12 @@ class IntentEngine:
         text = text.lower().strip()
         text = re.sub(r'\b(para\s+o\s+manhã|para\s+a\s+manhã|amanya)\b', 'amanhã', text)
         text = re.sub(r'\b(tá\s+a\s+merda|taimer|táime|taime)\b', 'timer', text)
-        text = re.sub(r'[^\w\s]', '', text)
+        text = re.sub(r'[^\w\s%]', '', text)
         return text.strip()
+
+    def _parse_number(self, token: str) -> int:
+        token = token.strip().lower()
+        return int(token) if token.isdigit() else NUMBER_WORDS.get(token, 0)
 
     def predict(self, text: str) -> tuple[str, float, dict]:
         norm = self._normalize(text)
@@ -121,13 +144,34 @@ class IntentEngine:
             return "thanks"
         if re.search(r'\b(que\s+horas\s+são|hora\s+certa|qual\s+é\s+a\s+hora)\b', norm):
             return "get_time"
-        if "timer" in norm and any(w in norm for w in ["ativo", "rodando", "tem", "quais"]):
+        if "waybar" in norm or ("barra" in norm and any(w in norm for w in ["reinic", "atualiz"])):
+            return "restart_waybar"
+        if "cronômetro" in norm or "cronometro" in norm:
+            if "regressivo" not in norm:
+                return "control_stopwatch"
+
+        # Regras de pausa e retomada de timer sem colidir com mídia ou cronômetro
+        non_timer_targets = ["música", "musica", "som", "reprodução", "reproducao", "cronômetro", "cronometro"]
+        if not any(t in norm for t in non_timer_targets):
+            if any(w in norm for w in ["despause", "despausar", "resumir"]) or (
+                "timer" in norm and any(w in norm for w in ["retomar", "continuar", "retome", "continue"])
+            ):
+                return "resume_timer"
+            if "timer" in norm and any(w in norm for w in ["pause", "pausar", "congele"]):
+                return "pause_timer"
+
+        if "timer" in norm and any(w in norm for w in ["ativo", "ativos", "rodando", "tem", "quais"]):
             return "list_timers"
-        if "timer" in norm and any(w in norm for w in ["defina", "coloque", "bote", "inicie", "marque"]):
+        if "timer" in norm and any(w in norm for w in ["defina", "coloque", "bote", "inicie", "marque", "crie"]):
             return "set_timer"
         if "alarme" in norm or "despertador" in norm:
             if any(w in norm for w in ["defina", "coloque", "bote", "marque", "crie"]):
                 return "set_alarm"
+        if any(w in norm for w in ["alarme", "alarmes", "despertador", "despertadores", "timer", "timers"]):
+            if any(w in norm for w in ["cancele", "cancelar", "desative", "desativar", "desativem", "desligue", "desligar", "apague", "apagar", "remova", "remover", "exclua", "excluir", "parar", "pare"]):
+                return "cancel_timers"
+        if norm in ["cancele todos", "cancelar todos", "desative todos", "desativar todos", "todos os alarmes", "todos os timers"]:
+            return "cancel_timers"
         if any(w in norm for w in ["toque", "tocar", "ouvir", "reproduza"]):
             if not any(w in norm for w in ["pausar", "parar", "continuar"]):
                 return "play_music"
@@ -139,16 +183,34 @@ class IntentEngine:
 
     def extract_slots(self, intent: str, raw_text: str, norm: str) -> dict:
         slots = {}
+        num_pattern = r'(\d+|' + '|'.join(NUMBER_WORDS.keys()) + r')'
 
-        if intent == "cancel_timers":
-            q = re.sub(r'^(cancele|cancelar|pare|parar|desativar|apague)\s*(todos\s+os\s+timers|o\s+timer|o\s+alarme|timer|alarme)?\s*(do|da|das)?\s*', '', norm).strip()
-            slots["query"] = q
+        if intent in ["cancel_timers", "pause_timer", "resume_timer"]:
+            if "todos os alarmes" in norm or "todos alarmes" in norm:
+                slots["query"] = "todos os alarmes"
+            elif "todos os timers" in norm or "todos timers" in norm:
+                slots["query"] = "todos os timers"
+            elif norm in ["cancele todos", "cancelar todos", "desative todos", "desativar todos", "todos"]:
+                slots["query"] = "todos"
+            else:
+                m_target = re.search(r'(?:chamado|timer|alarme|despertador)\s+([a-zA-ZÀ-ÿ0-9\s]+)$', norm)
+                if m_target:
+                    q = m_target.group(1).strip()
+                    slots["query"] = re.sub(r'\b(o|a|os|as|timer|timers|alarme|alarmes|chamado|de)\b', '', q).strip()
+                else:
+                    q = re.sub(
+                        r'^(cancele|cancelar|pare|parar|desative|desativar|desativem|desligue|desligar|apague|apagar|remova|remover|exclua|excluir|pause|pausar|congele|retome|retomar|resumir|despause|despausar|continue|continuar|reiniciar)\s*'
+                        r'(todos\s+os\s+timers|todos\s+os\s+alarmes|todos\s+os\s+despertadores|todos|todas|o\s+timer|o\s+alarme|os\s+alarmes|os\s+timers|timer|alarme|alarmes)?\s*(do|da|das)?\s*',
+                        '',
+                        norm
+                    ).strip()
+                    slots["query"] = re.sub(r'\b(chamado|de)\b', '', q).strip()
 
         elif intent == "hyprland_control":
             if "workspace" in norm or "área de trabalho" in norm:
-                m_ws = re.search(r'(\d+)', norm)
+                m_ws = re.search(num_pattern, norm)
                 slots["action"] = "workspace"
-                slots["target"] = m_ws.group(1) if m_ws else "1"
+                slots["target"] = str(self._parse_number(m_ws.group(1))) if m_ws else "1"
             elif "fechar" in norm or "matar" in norm:
                 slots["action"] = "close_window"
             elif "tela cheia" in norm or "fullscreen" in norm:
@@ -172,13 +234,13 @@ class IntentEngine:
             slots["label"] = m_label.group(1).strip().title() if m_label else "Alarme"
 
         elif intent == "set_timer":
-            m_min = re.search(r'(\d+)\s*(?:minuto|minutos|min|m\b)', norm)
-            m_sec = re.search(r'(\d+)\s*(?:segundo|segundos|seg|s\b)', norm)
-            m_hr = re.search(r'(\d+)\s*(?:hora|horas|h\b)', norm)
+            m_min = re.search(num_pattern + r'\s*(?:minuto|minutos|min|m\b)', norm)
+            m_sec = re.search(num_pattern + r'\s*(?:segundo|segundos|seg|s\b)', norm)
+            m_hr = re.search(num_pattern + r'\s*(?:hora|horas|h\b)', norm)
 
-            slots["hours"] = int(m_hr.group(1)) if m_hr else 0
-            slots["minutes"] = int(m_min.group(1)) if m_min else (0 if m_sec or m_hr else 5)
-            slots["seconds"] = int(m_sec.group(1)) if m_sec else 0
+            slots["hours"] = self._parse_number(m_hr.group(1)) if m_hr else 0
+            slots["minutes"] = self._parse_number(m_min.group(1)) if m_min else (0 if (m_sec or m_hr) else 5)
+            slots["seconds"] = self._parse_number(m_sec.group(1)) if m_sec else 0
 
             m_rotulo = re.search(r'(?:chamado|para\s+o|para\s+a|para)\s+([a-zA-ZÀ-ÿ0-9\s]+)$', norm)
             if m_rotulo:
@@ -188,27 +250,94 @@ class IntentEngine:
             else:
                 slots["label"] = "Timer"
 
+        elif intent == "control_stopwatch":
+            if any(w in norm for w in ["pausar", "pause"]):
+                slots["action"] = "pause"
+            elif any(w in norm for w in ["zerar", "parar", "resetar", "reiniciar"]):
+                slots["action"] = "reset"
+            else:
+                slots["action"] = "start"
+
         elif intent == "play_music":
             q = re.sub(r'^(toque\s+a\s+música|toque|tocar|reproduza|coloque|quero ouvir)\s*', '', raw_text, flags=re.IGNORECASE)
             q = re.sub(r'\s*(no\s+youtube\s+music|no\s+youtube)$', '', q, flags=re.IGNORECASE)
             slots["query"] = q.strip() or "música"
-            slots["item_type"] = "auto"
+            slots["item_type"] = "album" if any(w in norm for w in ["álbum", "album"]) else "auto"
 
         elif intent == "volume_control":
-            slots["change"] = "mute" if "mudo" in norm else ("-" if "abaixe" in norm or "baixar" in norm else "+")
+            m_pct = re.search(r'(\d+)\s*(?:%|por\s*cento)', norm)
+            if "mudo" in norm or "silenciar" in norm or "mute" in norm:
+                slots["change"] = "mute"
+            elif m_pct:
+                slots["change"] = m_pct.group(1)
+            elif any(w in norm for w in ["abaixe", "abaixar", "baixar", "diminuir", "diminua", "reduzir", "reduza", "menos"]):
+                slots["change"] = "-"
+            else:
+                slots["change"] = "+"
 
-        elif intent in ["search_web", "get_news"]:
-            slots["query"] = raw_text.strip(" ?.")
+        elif intent == "get_weather":
+            if "amanhã" in norm or "amanha" in norm:
+                slots["query_type"] = "amanhã"
+            elif "semana" in norm:
+                slots["query_type"] = "semana"
+            else:
+                slots["query_type"] = "hoje"
+            m_city = re.search(r'\b(?:em|para|de)\s+([a-zA-ZÀ-ÿ\s]+?)(?:\s+(?:hoje|amanhã|amanha|semana))?$', norm)
+            slots["query"] = m_city.group(1).strip() if m_city else "Anápolis"
+
+        elif intent == "get_calendar":
+            slots["date_query"] = norm
+
+        elif intent == "create_calendar":
+            h, m = self._extract_time(norm)
+            slots["time_str"] = f"{h:02d}:{m:02d}"
+            slots["date_query"] = norm
+            m_sum = re.search(r'(?:chamado|sobre|para|reunião|compromisso|evento)\s+([a-zA-ZÀ-ÿ0-9\s]+?)(?:\s+(?:hoje|amanhã|amanha|às|as|para)\b|$)', norm)
+            slots["summary"] = m_sum.group(1).strip().title() if m_sum else "Compromisso"
+            slots["duration_minutes"] = 60
+
+        elif intent == "get_news":
+            m_topic = re.search(r'\b(?:notícias|noticias|manchetes)\s+(?:sobre|de|do|da)\s+([a-zA-ZÀ-ÿ0-9\s]+)$', norm)
+            if m_topic and m_topic.group(1).strip() not in ["hoje", "dia", "agora", "últimas", "ultimas"]:
+                slots["query"] = m_topic.group(1).strip()
+            else:
+                slots["query"] = "geral"
+
+        elif intent == "search_web":
+            q = re.sub(
+                r'^(pesquise\s+na\s+internet\s+sobre|pesquise\s+na\s+web\s+sobre|pesquise\s+sobre|pesquise|busque\s+na\s+web|procure\s+na\s+internet)\s*',
+                '',
+                raw_text.strip(" ?."),
+                flags=re.IGNORECASE
+            ).strip()
+            slots["query"] = q or raw_text.strip(" ?.")
 
         return slots
 
     def _extract_time(self, norm: str) -> tuple[int, int]:
-        m = re.search(r'\b(\d{1,2})(?:\s*(?:horas?|h|:)\s*(?:e\s*)?(\d{1,2}|meia)?)?', norm)
+        # Exclui artigos "um"/"uma" quando seguidos de substantivos como alarme/compromisso/reunião/evento
+        cleaned = re.sub(r'\b(um|uma)\s+(alarme|despertador|compromisso|evento|reunião|reuniao|lembrete)\b', r'\2', norm)
+        num_pattern = r'(\d{1,2}|' + '|'.join(NUMBER_WORDS.keys()) + r')'
+        # Prioriza padrões com indicador de horário (às, para as, horas, h, :, e meia, da manhã/tarde/noite)
+        m = re.search(
+            r'(?:(?:às|as|para\s+as|para)\s+)?\b' + num_pattern +
+            r'(?:\s*(?:horas?|h|:)\s*(?:e\s*)?(\d{1,2}|meia|' + '|'.join(NUMBER_WORDS.keys()) + r')?'
+            r'|\s+e\s+(meia|\d{1,2}|' + '|'.join(NUMBER_WORDS.keys()) + r')'
+            r'|\s+da\s+(?:manhã|manha|tarde|noite))',
+            cleaned
+        )
+        if not m:
+            m = re.search(r'\b(\d{1,2})\b', cleaned)
         if m:
-            h = int(m.group(1))
-            min_raw = m.group(2)
-            minute = 30 if min_raw == "meia" else (int(min_raw) if min_raw and min_raw.isdigit() else 0)
-            if any(p in norm for p in ["noite", "tarde"]) and h < 12:
+            h = self._parse_number(m.group(1))
+            min_raw = (m.group(2) if m.lastindex and m.lastindex >= 2 else None) or (m.group(3) if m.lastindex and m.lastindex >= 3 else None)
+            if min_raw == "meia":
+                minute = 30
+            elif min_raw:
+                minute = self._parse_number(min_raw)
+            else:
+                minute = 0
+            if any(p in cleaned for p in ["noite", "tarde"]) and h < 12:
                 h += 12
             return h % 24, minute % 60
         return 8, 0

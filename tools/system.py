@@ -7,31 +7,68 @@ import urllib.parse
 class SystemTools:
     @staticmethod
     def get_current_time(*args, **kwargs) -> str:
-        now = datetime.datetime.now()
-        dias_semana = ["segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado", "domingo"]
-        dia = dias_semana[now.weekday()]
-        return f"Agora são {now.strftime('%H horas e %M minutos')} de {dia}, dia {now.day} de {now.strftime('%B')}."
+        agora = datetime.datetime.now()
+        dias_semana = [
+            "segunda-feira", "terça-feira", "quarta-feira",
+            "quinta-feira", "sexta-feira", "sábado", "domingo"
+        ]
+        meses = [
+            "", "janeiro", "fevereiro", "março", "abril", "maio", "junho",
+            "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"
+        ]
+        dia_nome = dias_semana[agora.weekday()]
+        mes_nome = meses[agora.month]
+        return f"Agora são {agora.hour} horas e {agora.minute} minutos de {dia_nome}, dia {agora.day} de {mes_nome}."
 
     @staticmethod
     def set_volume(change: str = "+", *args, **kwargs) -> str:
-        cmd = ["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@"]
-        if change == "+":
-            cmd.extend(["5%+"])
-            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            return "Volume aumentado."
-        elif change == "-":
-            cmd.extend(["5%-"])
-            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            return "Volume reduzido."
-        elif change == "mute":
-            subprocess.run(["wpctl", "set-mute", "@DEFAULT_AUDIO_SINK@", "toggle"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            return "Áudio alternado mudo."
-        return "Comando de volume não reconhecido."
+        change_str = str(change).strip().replace('%', '')
+        try:
+            # Tenta usar wpctl (Padrão PipeWire/WirePlumber no Hyprland)
+            if change_str.isdigit():
+                val = max(0, min(100, int(change_str)))
+                fraction = val / 100.0
+                subprocess.run(["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", f"{fraction:.2f}"], check=True)
+                return f"Volume definido para {val} por cento."
+
+            if change == "mute":
+                subprocess.run(["wpctl", "set-mute", "@DEFAULT_AUDIO_SINK@", "toggle"], check=True)
+                return "Áudio silenciado ou ativado."
+            elif change == "+":
+                subprocess.run(["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", "5%+"], check=True)
+                return "Volume aumentado."
+            elif change == "-":
+                subprocess.run(["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", "5%-"], check=True)
+                return "Volume abaixado."
+
+            return "Comando de volume não reconhecido."
+        except Exception:
+            # Fallback para pamixer caso o wpctl falhe
+            try:
+                if change_str.isdigit():
+                    val = max(0, min(100, int(change_str)))
+                    subprocess.run(["pamixer", "--set-volume", str(val)], check=True)
+                    return f"Volume definido para {val} por cento."
+                elif change == "mute":
+                    subprocess.run(["pamixer", "--toggle-mute"], check=True)
+                    return "Áudio silenciado ou ativado."
+                elif change == "+":
+                    subprocess.run(["pamixer", "-i", "5"], check=True)
+                    return "Volume aumentado."
+                elif change == "-":
+                    subprocess.run(["pamixer", "-d", "5"], check=True)
+                    return "Volume abaixado."
+            except Exception as inner_e:
+                return f"Não foi possível ajustar o volume: {inner_e}"
+            return "Comando de volume não reconhecido."
 
     @staticmethod
     def play_pause_media(*args, **kwargs) -> str:
-        subprocess.run(["playerctl", "play-pause"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        return "Mídia alternada entre reproduzir e pausar."
+        try:
+            subprocess.run(["playerctl", "play-pause"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return "Mídia alternada entre reproduzir e pausar."
+        except Exception:
+            return "Nenhum player de mídia ativo encontrado."
 
     @staticmethod
     def _wmo_to_description(code: int) -> str:
@@ -95,20 +132,17 @@ class SystemTools:
         cidade_nome = city.capitalize() if city else "Anápolis"
         q_norm = query_type.lower().strip()
 
-        # Previsão específica para amanhã (índice 1)
         if any(w in q_norm for w in ["amanhã", "amanha", "amãhã"]):
             max_t = round(max_temps[1]) if len(max_temps) > 1 else round(max_temps[0])
             min_t = round(min_temps[1]) if len(min_temps) > 1 else round(min_temps[0])
             cond_amanha = cls._wmo_to_description(daily_codes[1] if len(daily_codes) > 1 else 0)
             return f"Para amanhã em {cidade_nome}, a previsão indica tempo {cond_amanha}, com mínima de {min_t} e máxima de {max_t} graus."
 
-        # Previsão da semana
         if "semana" in q_norm:
             min_geral = round(min(min_temps[:5]))
             max_geral = round(max(max_temps[:5]))
             return f"Em {cidade_nome}, ao longo da semana as temperaturas devem variar entre mínimas de {min_geral} e máximas de {max_geral} graus."
 
-        # Padrão: Hoje
         max_t = round(max_temps[0])
         min_t = round(min_temps[0])
         return f"Em {cidade_nome}, o tempo está {condicao_hoje}, marcando {temp} graus, com sensação de {sensacao} graus e umidade de {umidade} por cento. Hoje a mínima é de {min_t} e a máxima de {max_t} graus."
@@ -118,7 +152,7 @@ class SystemTools:
         target_city = city if city else "Anapolis"
         safe_city = urllib.parse.quote(target_city)
         url = f"https://wttr.in/{safe_city}?format=j1&lang=pt"
-        
+
         req = urllib.request.Request(url, headers={"User-Agent": "curl/7.88.1"})
         with urllib.request.urlopen(req, timeout=4) as resp:
             data = json.loads(resp.read().decode("utf-8"))
@@ -126,8 +160,7 @@ class SystemTools:
         cc = data["current_condition"][0]
         temp = cc.get("temp_C", "25")
         sensacao = cc.get("FeelsLikeC", temp)
-        umidade = cc.get("humidity", "60")
-        
+
         desc = "tempo estável"
         if "lang_pt" in cc and cc["lang_pt"]:
             desc = cc["lang_pt"][0].get("value", desc).lower()

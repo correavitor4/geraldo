@@ -20,41 +20,41 @@ class WakeWordDetector:
 
         print(f"[Geraldo] Aguardando wake word: '{self.target_word}'...")
 
-        while True:
-            # Captura um bloco de áudio do microfone do sistema
-            audio_chunk = sd.rec(block_size, samplerate=sample_rate, channels=1, dtype='float32')
-            sd.wait()
-            audio_data = np.squeeze(audio_chunk)
+        with sd.InputStream(device=None, samplerate=sample_rate, channels=1, dtype='float32') as stream:
+            while True:
+                # Captura um bloco contínuo de áudio do microfone sem fechar o stream
+                audio_chunk, _ = stream.read(block_size)
+                audio_data = np.squeeze(audio_chunk)
 
-            # Filtro básico de energia: se o áudio for silêncio quase absoluto, pula o processamento
-            if np.max(np.abs(audio_data)) < 0.02:
-                continue
+                # Filtro básico de energia: se o áudio for silêncio quase absoluto, pula o processamento
+                if np.max(np.abs(audio_data)) < 0.02:
+                    continue
 
-            # Transcreve usando o modelo leve (tiny) com parâmetros estritos
-            try:
-                segments, _ = self.stt.model_wake.transcribe(
-                    audio_data,
-                    language="pt",
-                    beam_size=1,
-                    best_of=1,
-                    temperature=0.0,
-                    initial_prompt="Geraldo.",
-                    condition_on_previous_text=False,
-                    vad_filter=True,
-                    vad_parameters=dict(min_silence_duration_ms=300, threshold=0.6)
-                )
-                
-                text = " ".join([seg.text.strip() for seg in segments]).strip().lower()
-                
-                # Remove pontuações para análise limpa
-                cleaned_text = "".join([c for c in text if c.isalnum() or c.isspace()])
-                words = cleaned_text.split()
+                # Transcreve usando o modelo leve (tiny) com parâmetros estritos
+                try:
+                    segments, _ = self.stt.model_wake.transcribe(
+                        audio_data,
+                        language="pt",
+                        beam_size=1,
+                        best_of=1,
+                        temperature=0.0,
+                        initial_prompt="Geraldo.",
+                        condition_on_previous_text=False,
+                        vad_filter=True,
+                        vad_parameters=dict(min_silence_duration_ms=300, threshold=0.6)
+                    )
+                    
+                    text = " ".join([seg.text.strip() for seg in segments]).strip().lower()
+                    
+                    # Remove pontuações para análise limpa
+                    cleaned_text = "".join([c for c in text if c.isalnum() or c.isspace()])
+                    words = cleaned_text.split()
 
-                # Verifica se a palavra-chave está presente de forma clara
-                if self.target_word in words or any(self.target_word in w for w in words):
-                    print(f"[Geraldo] Wake word confirmada! Texto capturado: '{text}'")
-                    return True
+                    # Verifica se a palavra-chave está presente de forma clara
+                    if self.target_word in words or any(self.target_word in w for w in words):
+                        print(f"[Geraldo] Wake word confirmada! Texto capturado: '{text}'")
+                        return True
 
-            except Exception as e:
-                # Evita que erros de áudio quebrem o loop de escuta
-                continue
+                except Exception:
+                    # Evita que erros de áudio quebrem o loop de escuta
+                    continue

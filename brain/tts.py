@@ -2,6 +2,7 @@
 import sys
 import subprocess
 import os
+import threading
 
 class TextToSpeech:
     def __init__(self, model_path: str = "voz.onnx"):
@@ -17,11 +18,12 @@ class TextToSpeech:
         if not text:
             return ""
 
+        out_path = f"/tmp/geraldo_response_{threading.get_ident()}.wav"
         cmd = [
             sys.executable,
             "-m", "piper",
             "--model", self.model_path,
-            "--output_file", self.output_file
+            "--output_file", out_path
         ]
 
         subprocess.run(
@@ -32,7 +34,7 @@ class TextToSpeech:
             check=True
         )
 
-        return self.output_file
+        return out_path
     def speak(self, text: str):
         """Sintetiza e reproduz o áudio imediatamente via PipeWire."""
         wav_path = self.synthesize(text)

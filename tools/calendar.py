@@ -127,7 +127,9 @@ class CalendarTools:
             try:
                 cand = datetime.date(today.year, today.month, dia_num)
                 if cand < today:
-                    cand = datetime.date(today.year, today.month + 1, dia_num)
+                    next_year = today.year + (1 if today.month == 12 else 0)
+                    next_month = 1 if today.month == 12 else today.month + 1
+                    cand = datetime.date(next_year, next_month, dia_num)
                 return cand
             except ValueError:
                 pass

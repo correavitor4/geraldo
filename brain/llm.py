@@ -14,6 +14,8 @@ from tools.news import NewsTools
 from tools.search import WebSearchTools
 from tools.timer import TimerManager
 from tools.calendar import CalendarTools
+from tools.hyprland import HyprlandTools
+from tools.waybar import WaybarTools
 
 TimerManager.start_background_loop()
 
@@ -34,44 +36,25 @@ def phonetize_time_patterns(text: str) -> str:
         22: "dez da noite", 23: "onze da noite"
     }
 
-    def repl_time_colon(m):
-        h = int(m.group(2))
-        minute = int(m.group(3))
+    def _format_h_m(h: int, minute: int) -> str:
         nome_h = horas_map.get(h, str(h))
         artigo = "à " if h in [1, 13] else ("ao " if h in [0, 12] else "às ")
         if minute == 0:
             return f"{artigo}{nome_h}"
-        elif minute == 30:
-            h_base = h if h <= 12 else (h - 12)
-            sufixo = " da tarde" if 12 < h < 18 else (" da noite" if h >= 18 else " da manhã")
-            art = "à " if h_base in [1, 13] else "às "
+        h_base = h if h <= 12 else (h - 12)
+        sufixo = " da tarde" if 12 < h < 18 else (" da noite" if h >= 18 else " da manhã")
+        art = "à " if h_base in [1, 13] else "às "
+        if minute == 30:
             return f"{art}{horas_map.get(h_base, str(h_base))} e meia{sufixo}"
-        else:
-            h_base = h if h <= 12 else (h - 12)
-            sufixo = " da tarde" if 12 < h < 18 else (" da noite" if h >= 18 else " da manhã")
-            art = "à " if h_base in [1, 13] else "às "
-            return f"{art}{horas_map.get(h_base, str(h_base))} e {minute}{sufixo}"
+        return f"{art}{horas_map.get(h_base, str(h_base))} e {minute}{sufixo}"
 
-    text = re.sub(r'\b(às|as|à|a)?\s*(\d{1,2}):(\d{2})\b', repl_time_colon, text, flags=re.IGNORECASE)
+    def repl_time_colon(m):
+        return _format_h_m(int(m.group(2)), int(m.group(3)))
 
     def repl_time_h(m):
-        h = int(m.group(2))
-        minute = int(m.group(3)) if m.group(3) else 0
-        nome_h = horas_map.get(h, str(h))
-        artigo = "à " if h in [1, 13] else ("ao " if h in [0, 12] else "às ")
-        if minute == 0:
-            return f"{artigo}{nome_h}"
-        elif minute == 30:
-            h_base = h if h <= 12 else (h - 12)
-            sufixo = " da tarde" if 12 < h < 18 else (" da noite" if h >= 18 else " da manhã")
-            art = "à " if h_base in [1, 13] else "às "
-            return f"{art}{horas_map.get(h_base, str(h_base))} e meia{sufixo}"
-        else:
-            h_base = h if h <= 12 else (h - 12)
-            sufixo = " da tarde" if 12 < h < 18 else (" da noite" if h >= 18 else " da manhã")
-            art = "à " if h_base in [1, 13] else "às "
-            return f"{art}{horas_map.get(h_base, str(h_base))} e {minute}{sufixo}"
+        return _format_h_m(int(m.group(2)), int(m.group(3)) if m.group(3) else 0)
 
+    text = re.sub(r'\b(às|as|à|a)?\s*(\d{1,2}):(\d{2})\b', repl_time_colon, text, flags=re.IGNORECASE)
     text = re.sub(r'\b(às|as|à|a)?\s*(\d{1,2})h(\d{2})?\b', repl_time_h, text, flags=re.IGNORECASE)
     return text
 
@@ -80,7 +63,7 @@ def clean_for_speech(text: str) -> str:
     text = re.sub(r"\*([^*]+)\*", r"\1", text)
     text = re.sub(r"#+\s*", "", text)
     text = re.sub(r"^[-\*]\s*", "", text, flags=re.MULTILINE)
-    text = re.sub(r'["\']', '', text)
+    text = re.sub(r'[#*`_~\[\]()"\']', '', text)
     text = phonetize_time_patterns(text)
     return text.strip()
 
@@ -114,7 +97,6 @@ class BrainLLM:
                 if wav:
                     self._fallback_player.play(wav)
             else:
-                # Fallback autônomo caso o main.py não tenha injetado nada
                 from brain.tts import TextToSpeech
                 from audio.player import AudioPlayer
                 if not self._fallback_tts:
@@ -160,33 +142,13 @@ class BrainLLM:
             return clean_for_speech(content)
 
     def ask(self, user_prompt: str) -> str:
+        lowered = user_prompt.lower()
+        if any(cmd in lowered for cmd in ["esquece o que conversamos", "esquecer conversa", "limpar memória", "limpar memoria", "novo assunto"]):
+            self.reset_memory()
+            return "Memória recente apagada."
+
         intent, confidence, slots = self.nlu.predict(user_prompt)
         print(f"[Geraldo:NLU] Intenção: '{intent}' (confiança: {confidence:.2f}) | Slots: {slots}")
-
-        if intent == "list_timers":
-            return clean_for_speech(TimerManager.get_active_summary())
-
-        if intent == "cancel_timers":
-            query_item = slots.get("query", "")
-            res = TimerManager.cancel_item(query_item)
-            return clean_for_speech(str(res))
-
-        if intent == "hyprland_control":
-            action = slots.get("action", "launcher")
-            target = slots.get("target", "1")
-            if action == "workspace":
-                res = HyprlandTools.change_workspace(target)
-            elif action == "close_window":
-                res = HyprlandTools.close_active_window()
-            elif action == "fullscreen":
-                res = HyprlandTools.toggle_fullscreen()
-            elif action == "floating":
-                res = HyprlandTools.toggle_floating()
-            elif action == "brightness":
-                res = HyprlandTools.set_brightness(target)
-            else:
-                res = HyprlandTools.open_launcher()
-            return clean_for_speech(str(res))
 
         # 1. Respostas 100% Determinísticas (Zero LLM, Zero Latência)
         if intent == "get_time":
@@ -194,12 +156,27 @@ class BrainLLM:
 
         if intent == "thanks":
             self.history.clear()
-            return "De nada! Qualquer coisa é só chamar."
+            return "Por nada! Sempre às ordens."
 
         if intent == "greeting_morning":
             w = SystemTools.get_weather("hoje")
             a = CalendarTools.get_events("hoje")
-            return clean_for_speech(f"Bom dia! {w}. {a}")
+            return clean_for_speech(f"Bom dia! {w} {a}")
+
+        if intent == "list_timers":
+            return clean_for_speech(TimerManager.get_active_summary())
+
+        if intent == "cancel_timers":
+            query_item = slots.get("query", "")
+            return clean_for_speech(str(TimerManager.cancel_item(query_item)))
+
+        if intent == "pause_timer":
+            query_item = slots.get("query", "")
+            return clean_for_speech(str(TimerManager.pause_timer(query_item)))
+
+        if intent == "resume_timer":
+            query_item = slots.get("query", "")
+            return clean_for_speech(str(TimerManager.resume_timer(query_item)))
 
         if intent == "set_alarm":
             res = TimerManager.add_alarm(
@@ -218,11 +195,36 @@ class BrainLLM:
             )
             return clean_for_speech(str(res))
 
-        if intent == "cancel_timers":
-            return clean_for_speech(str(TimerManager.cancel_all()))
-
         if intent == "control_stopwatch":
-            return clean_for_speech(str(TimerManager.stopwatch_control(slots.get("action", "start"))))
+            action = slots.get("action")
+            if not action:
+                if "pausar" in lowered:
+                    action = "pause"
+                elif "zerar" in lowered or "parar" in lowered:
+                    action = "reset"
+                else:
+                    action = "start"
+            return clean_for_speech(str(TimerManager.stopwatch_control(action)))
+
+        if intent == "hyprland_control":
+            action = slots.get("action", "launcher")
+            target = slots.get("target", "1")
+            if action == "workspace":
+                res = HyprlandTools.change_workspace(target)
+            elif action == "close_window":
+                res = HyprlandTools.close_active_window()
+            elif action == "fullscreen":
+                res = HyprlandTools.toggle_fullscreen()
+            elif action == "floating":
+                res = HyprlandTools.toggle_floating()
+            elif action == "brightness":
+                res = HyprlandTools.set_brightness(target)
+            else:
+                res = HyprlandTools.open_launcher()
+            return clean_for_speech(str(res))
+
+        if intent == "restart_waybar":
+            return clean_for_speech(WaybarTools.restart_waybar())
 
         if intent == "play_music":
             return clean_for_speech(str(YTMusicPlayer.play_song(
@@ -237,8 +239,9 @@ class BrainLLM:
             return clean_for_speech(str(SystemTools.set_volume(slots.get("change", "+"))))
 
         if intent == "get_weather":
-            alvo = slots.get("query_type", "hoje")
-            clima_raw = SystemTools.get_weather(alvo)
+            alvo = slots.get("query_type", "amanhã" if "amanhã" in lowered else "hoje")
+            cidade = slots.get("query", "Anápolis")
+            clima_raw = SystemTools.get_weather(alvo, cidade)
             return clean_for_speech(str(clima_raw))
 
         if intent == "get_calendar":
@@ -257,7 +260,8 @@ class BrainLLM:
 
         # 2. Intenções de Busca Externa (Filler Simultâneo + Join antes da Resposta)
         if intent == "get_news":
-            termo = slots.get("query", "hoje")
+            TimerManager.set_assistant_state("searching")
+            termo = slots.get("query", "geral")
             filler = clean_for_speech(f"Verificando as notícias sobre {termo}.")
             print(f"[Geraldo:Filler]: {filler}")
             filler_thread = self._start_filler_thread(filler)
@@ -265,12 +269,12 @@ class BrainLLM:
             news_data = NewsTools.get_news(termo)
             sys_inst = "Você é o Geraldo. Resuma as principais notícias abaixo em no máximo 2 frases curtas e diretas para voz."
             final_reply = self._summarize_with_llm(sys_inst, f"Notícias: {news_data}")
-            
-            # Garante que o áudio do filler terminou antes de entregar a fala final
+
             filler_thread.join(timeout=8.0)
             return final_reply
 
         if intent == "search_web":
+            TimerManager.set_assistant_state("searching")
             termo = slots.get("query", user_prompt)
             opcoes_curtas = [
                 "Consultando a internet, só um instante.",
@@ -281,21 +285,20 @@ class BrainLLM:
             print(f"[Geraldo:Filler]: {filler}")
             filler_thread = self._start_filler_thread(filler)
 
-            Ano = datetime.datetime.now().year
-            query_enriquecida = f"{termo} {Ano}" if str(Ano) not in termo else termo
+            ano = datetime.datetime.now().year
+            query_enriquecida = f"{termo} {ano}" if str(ano) not in termo else termo
             web_data = WebSearchTools.search_web(query=query_enriquecida)
 
             sys_inst = (
-                f"Você é o Geraldo. Estamos em {Ano}. Com base nos dados abaixo, responda à pergunta do usuário "
+                f"Você é o Geraldo. Estamos em {ano}. Com base nos dados abaixo, responda à pergunta do usuário "
                 "em 1 frase direta e objetiva para áudio. Nunca diga que os dados não foram fornecidos; extraia a melhor resposta possível."
             )
             final_reply = self._summarize_with_llm(sys_inst, f"Pergunta: {user_prompt}\nResultados da Web: {web_data}")
-            
-            # Aguarda o filler terminar de tocar no alto-falante antes de retornar a resposta final
+
             filler_thread.join(timeout=8.0)
             return final_reply
 
-        # 3. Fallback: Conversação Geral Aberta
+        # 3. Fallback: Conversação Geral Aberta via Ollama
         sys_chat = (
             f"{SYSTEM_PROMPT}\nVocê é o Geraldo, assistente de voz local. "
             "Responda de forma direta, natural e concisa em no máximo 2 frases curtas. "
@@ -321,4 +324,7 @@ class BrainLLM:
             return "Não consegui formular uma resposta."
         except Exception as e:
             print(f"[Geraldo:LLM Error]: {e}")
-            return "Tive um erro ao processar sua pergunta."
+            return "Desculpe, não entendi ou o serviço de conversação está indisponível."
+
+
+LLMHandler = BrainLLM
