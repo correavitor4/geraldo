@@ -206,6 +206,12 @@ class BrainLLM:
                     action = "start"
             return clean_for_speech(str(TimerManager.stopwatch_control(action)))
 
+        if intent == "pomodoro_control":
+            action = slots.pop("action", "start")
+            res = TimerManager.pomodoro_control(action, **slots)
+            return clean_for_speech(str(res))
+
+
         if intent == "hyprland_control":
             action = slots.get("action", "launcher")
             target = slots.get("target", "1")

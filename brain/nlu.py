@@ -71,6 +71,14 @@ TRAINING_DATA = {
     ],
     "restart_waybar": [
         "reinicie a waybar", "reiniciar a barra", "reinicia waybar", "inicie a waybar", "atualizar waybar"
+    ],
+    "pomodoro_control": [
+        "iniciar pomodoro", "inicie o pomodoro", "começar pomodoro", "comece o pomodoro", "inicie pomodoro de 25 minutos", "ativar pomodoro", "iniciar modo foco",
+        "pausar pomodoro", "pause o pomodoro", "congele o pomodoro", "pausar foco", "pause o foco",
+        "retomar pomodoro", "despause o pomodoro", "continue o pomodoro", "retomar foco",
+        "próximo ciclo", "próxima pausa", "iniciar pausa", "ir para pausa", "pular fase", "avançar pomodoro", "próxima fase do pomodoro", "próximo pomodoro",
+        "parar pomodoro", "cancele o pomodoro", "desative o pomodoro", "zerar pomodoro", "encerrar pomodoro", "parar o foco",
+        "status do pomodoro", "quanto tempo falta no pomodoro", "como está o pomodoro"
     ]
 }
 
@@ -171,6 +179,10 @@ class IntentEngine:
         if any(w in norm for w in ["alarme", "alarmes", "despertador", "despertadores", "timer", "timers"]):
             if any(w in norm for w in ["cancele", "cancelar", "desative", "desativar", "desativem", "desligue", "desligar", "apague", "apagar", "remova", "remover", "exclua", "excluir", "parar", "pare", "silencie", "silenciar", "silêncio", "silencio"]):
                 return "cancel_timers"
+        if "pomodoro" in norm or "modo foco" in norm:
+            return "pomodoro_control"
+        if norm in ["próximo ciclo", "proximo ciclo", "próxima pausa", "proxima pausa", "iniciar pausa", "ir para pausa", "próxima fase", "proxima fase"]:
+            return "pomodoro_control"
         if norm in ["cancele todos", "cancelar todos", "desative todos", "desativar todos", "todos os alarmes", "todos os timers", "silêncio", "silencio", "pare de tocar", "parar de tocar"]:
             return "cancel_timers"
         if any(w in norm for w in ["toque", "tocar", "ouvir", "reproduza"]):
@@ -258,6 +270,26 @@ class IntentEngine:
                 slots["action"] = "reset"
             else:
                 slots["action"] = "start"
+
+        elif intent == "pomodoro_control":
+            if any(w in norm for w in ["proxim", "próxim", "avanc", "avanç", "pul", "fase", "proxima pausa", "próxima pausa", "iniciar pausa", "ir para pausa", "proximo ciclo", "próximo ciclo"]):
+                slots["action"] = "advance"
+            elif any(w in norm for w in ["pausar", "pause", "congel"]):
+                slots["action"] = "pause"
+            elif any(w in norm for w in ["retom", "despaus", "continu"]):
+                slots["action"] = "resume"
+            elif any(w in norm for w in ["par", "cancel", "desativ", "zer", "encerr"]):
+                slots["action"] = "stop"
+            elif any(w in norm for w in ["quant", "tempo", "status", "como"]):
+                slots["action"] = "status"
+            elif "pausa" in norm and any(w in norm for w in ["hora", "comece", "inicie", "vai", "vamos"]):
+                slots["action"] = "advance"
+            else:
+                slots["action"] = "start"
+
+            m_min = re.search(r'(\d+)\s*(?:minuto|minutos|min\b)', norm)
+            if m_min:
+                slots["work_minutes"] = int(m_min.group(1))
 
         elif intent == "play_music":
             q = re.sub(r'^(toque\s+a\s+música|toque|tocar|reproduza|coloque|quero ouvir)\s*', '', raw_text, flags=re.IGNORECASE)

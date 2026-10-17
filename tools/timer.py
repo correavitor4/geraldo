@@ -21,6 +21,16 @@ class TimerManager:
     _ringing_timer = None
     _alarm_stop_event = None
     _timer_stop_event = None
+    _pomodoro = {
+        "state": "idle",
+        "paused_from": "work",
+        "cycle": 1,
+        "work_duration": 25 * 60,
+        "break_duration": 5 * 60,
+        "target": 0.0,
+        "remaining": 25 * 60,
+        "label": "Foco"
+    }
 
     @classmethod
     def start_background_loop(cls):
@@ -54,6 +64,18 @@ class TimerManager:
 
                     cls._timers = valid_timers
                     cls._alarms = data.get("alarms", {})
+
+                    # Carrega Pomodoro
+                    p_data = data.get("pomodoro")
+                    if isinstance(p_data, dict):
+                        cls._pomodoro.update(p_data)
+                        if cls._pomodoro.get("state") in ("work", "break"):
+                            rem = cls._pomodoro.get("remaining", 0) - elapsed_offline
+                            if rem > 0:
+                                cls._pomodoro["target"] = now + rem
+                                cls._pomodoro["remaining"] = int(rem)
+                            else:
+                                cls._pomodoro["state"] = "work_finished" if cls._pomodoro.get("state") == "work" else "break_finished"
                 
                 # EXPORTA IMEDIATAMENTE PARA A WAYBAR ASSIM QUE CARREGA
                 cls._export_status_for_waybar()
@@ -81,10 +103,15 @@ class TimerManager:
                     "remaining": remaining
                 }
 
+            p_copy = cls._pomodoro.copy()
+            if p_copy.get("state") in ("work", "break"):
+                p_copy["remaining"] = max(0, int(p_copy.get("target", now) - now))
+
             data = {
                 "timestamp": now,
                 "timers": saved_timers,
-                "alarms": cls._alarms
+                "alarms": cls._alarms,
+                "pomodoro": p_copy
             }
             with open(cls._state_file, "w") as f:
                 json.dump(data, f)
@@ -144,6 +171,14 @@ class TimerManager:
                 elif action in ("dismiss_all_ringing", "silence_all"):
                     cls.stop_all_ringing()
                     message = "Sons silenciados."
+
+                elif action.startswith("pomodoro"):
+                    if action == "pomodoro":
+                        sub_act = cmd.get("sub_action") or cmd.get("value") or "toggle"
+                    else:
+                        sub_act = action.replace("pomodoro_", "")
+                    cmd_copy = {k: v for k, v in cmd.items() if k not in ("action", "sub_action")}
+                    message = cls.pomodoro_control(sub_act, **cmd_copy)
 
                 elif action == "timer_add":
                     message = cls.add_timer(
@@ -272,6 +307,19 @@ class TimerManager:
 
             if cls._ringing_timer and (now - cls._ringing_timer["start_time"]) >= cls._ringing_timer["max_duration"]:
                 cls._stop_ringing_timer()
+
+            # Ciclo de Pomodoro
+            p_state = cls._pomodoro.get("state", "idle")
+            if p_state == "work" and now >= cls._pomodoro.get("target", now):
+                cls._pomodoro["state"] = "work_finished"
+                cls._start_ringing_timer("pomodoro_work", f"Foco Ciclo {cls._pomodoro.get('cycle', 1)}")
+                cls._save_state()
+                changed = True
+            elif p_state == "break" and now >= cls._pomodoro.get("target", now):
+                cls._pomodoro["state"] = "break_finished"
+                cls._start_ringing_timer("pomodoro_break", f"Pausa Ciclo {cls._pomodoro.get('cycle', 1)}")
+                cls._save_state()
+                changed = True
 
             with cls._lock:
                 expired_timers = [
@@ -436,6 +484,18 @@ class TimerManager:
                     }
                     classes.append("ringing-alarm")
 
+            p_state = cls._pomodoro.get("state", "idle")
+            p_cycle = cls._pomodoro.get("cycle", 1)
+            p_left = max(0, int(cls._pomodoro.get("target", now) - now)) if p_state in ("work", "break") else cls._pomodoro.get("remaining", 0)
+
+            pomodoro_data = {
+                "state": p_state,
+                "cycle": p_cycle,
+                "left": p_left,
+                "work_duration": cls._pomodoro.get("work_duration", 1500),
+                "break_duration": cls._pomodoro.get("break_duration", 300)
+            }
+
             data = {
                 "text": " · ".join(compact),
                 "tooltip": "\n".join(details),
@@ -444,6 +504,7 @@ class TimerManager:
                 "timers": timers,
                 "alarms": alarms,
                 "stopwatch": stopwatch,
+                "pomodoro": pomodoro_data,
                 "ringing_timer": ringing_timer_data,
                 "ringing_alarm": ringing_alarm_data
             }
@@ -792,3 +853,130 @@ class TimerManager:
                 cls._export_status_for_waybar()
                 return "Cronômetro zerado."
         return "Ação inválida."
+
+    @classmethod
+    def pomodoro_control(cls, action: str = "status", **kwargs) -> str:
+        with cls._lock:
+            now = time.time()
+            act = action.lower().strip()
+
+            if act in ("start", "iniciar", "comecar", "começar", "ativar"):
+                if cls._pomodoro.get("state") == "work_finished":
+                    return cls.pomodoro_control("advance")
+                if cls._pomodoro.get("state") == "break_finished":
+                    return cls.pomodoro_control("advance")
+
+                if cls._pomodoro.get("state") == "paused":
+                    cls._pomodoro["target"] = now + cls._pomodoro.get("remaining", cls._pomodoro["work_duration"])
+                    cls._pomodoro["state"] = cls._pomodoro.get("paused_from", "work")
+                    cls._save_state()
+                    cls._export_status_for_waybar()
+                    fase = "foco" if cls._pomodoro["state"] == "work" else "pausa"
+                    return f"Pomodoro retomado no modo {fase}."
+
+                work_min = kwargs.get("work_minutes")
+                if work_min and int(work_min) > 0:
+                    cls._pomodoro["work_duration"] = int(work_min) * 60
+
+                break_min = kwargs.get("break_minutes")
+                if break_min and int(break_min) > 0:
+                    cls._pomodoro["break_duration"] = int(break_min) * 60
+
+                cls._pomodoro["state"] = "work"
+                cls._pomodoro["cycle"] = kwargs.get("cycle", 1)
+                cls._pomodoro["target"] = now + cls._pomodoro["work_duration"]
+                cls._pomodoro["remaining"] = cls._pomodoro["work_duration"]
+                cls._save_state()
+                cls._export_status_for_waybar()
+                dur_m = cls._pomodoro["work_duration"] // 60
+                return f"Pomodoro iniciado: {dur_m} minutos de foco para o ciclo {cls._pomodoro['cycle']}."
+
+            elif act in ("pause", "pausar"):
+                state = cls._pomodoro.get("state", "idle")
+                if state in ("work", "break"):
+                    rem = max(0, int(cls._pomodoro["target"] - now))
+                    cls._pomodoro["remaining"] = rem
+                    cls._pomodoro["paused_from"] = state
+                    cls._pomodoro["state"] = "paused"
+                    cls._save_state()
+                    cls._export_status_for_waybar()
+                    m = rem // 60
+                    s = rem % 60
+                    return f"Pomodoro pausado. Faltam {m} minutos e {s} segundos."
+                return "O pomodoro não está em execução para ser pausado."
+
+            elif act in ("resume", "retomar", "despausar", "continuar"):
+                if cls._pomodoro.get("state") == "paused":
+                    cls._pomodoro["target"] = now + cls._pomodoro.get("remaining", 60)
+                    cls._pomodoro["state"] = cls._pomodoro.get("paused_from", "work")
+                    cls._save_state()
+                    cls._export_status_for_waybar()
+                    fase = "foco" if cls._pomodoro["state"] == "work" else "pausa"
+                    return f"Pomodoro retomado no modo {fase}."
+                return "O pomodoro não está pausado."
+
+            elif act in ("toggle", "alternar"):
+                st = cls._pomodoro.get("state", "idle")
+                if st in ("work_finished", "break_finished"):
+                    return cls.pomodoro_control("advance")
+                if st in ("work", "break"):
+                    return cls.pomodoro_control("pause")
+                elif st == "paused":
+                    return cls.pomodoro_control("resume")
+                else:
+                    return cls.pomodoro_control("start")
+
+            elif act in ("advance", "next", "proximo", "proxima", "pausa", "fase", "pular"):
+                cls.stop_all_ringing()
+                st = cls._pomodoro.get("state", "idle")
+                paused_from = cls._pomodoro.get("paused_from", "work")
+
+                if st in ("work", "work_finished") or (st == "paused" and paused_from == "work"):
+                    cls._pomodoro["state"] = "break"
+                    cls._pomodoro["target"] = now + cls._pomodoro["break_duration"]
+                    cls._pomodoro["remaining"] = cls._pomodoro["break_duration"]
+                    cls._save_state()
+                    cls._export_status_for_waybar()
+                    m = cls._pomodoro["break_duration"] // 60
+                    return f"Iniciando pausa curta de {m} minutos do ciclo {cls._pomodoro['cycle']}."
+                else:
+                    cls._pomodoro["cycle"] = cls._pomodoro.get("cycle", 1) + 1
+                    cls._pomodoro["state"] = "work"
+                    cls._pomodoro["target"] = now + cls._pomodoro["work_duration"]
+                    cls._pomodoro["remaining"] = cls._pomodoro["work_duration"]
+                    cls._save_state()
+                    cls._export_status_for_waybar()
+                    m = cls._pomodoro["work_duration"] // 60
+                    return f"Iniciando ciclo {cls._pomodoro['cycle']} de foco com {m} minutos."
+
+            elif act in ("stop", "parar", "cancelar", "zerar", "reset", "encerrar"):
+                cls.stop_all_ringing()
+                cls._pomodoro["state"] = "idle"
+                cls._pomodoro["cycle"] = 1
+                cls._pomodoro["target"] = 0.0
+                cls._pomodoro["remaining"] = cls._pomodoro["work_duration"]
+                cls._save_state()
+                cls._export_status_for_waybar()
+                return "Pomodoro encerrado."
+
+            elif act in ("status", "tempo", "quanto"):
+                st = cls._pomodoro.get("state", "idle")
+                cycle = cls._pomodoro.get("cycle", 1)
+                if st == "work":
+                    rem = max(0, int(cls._pomodoro["target"] - now))
+                    return f"Você está no ciclo {cycle} de foco. Restam {rem // 60} minutos e {rem % 60} segundos."
+                elif st == "break":
+                    rem = max(0, int(cls._pomodoro["target"] - now))
+                    return f"Você está na pausa do ciclo {cycle}. Restam {rem // 60} minutos e {rem % 60} segundos."
+                elif st == "work_finished":
+                    return f"O ciclo {cycle} de foco terminou! Você pode iniciar a pausa quando quiser."
+                elif st == "break_finished":
+                    return f"A pausa do ciclo {cycle} terminou! Pronto para o próximo ciclo de foco."
+                elif st == "paused":
+                    rem = cls._pomodoro.get("remaining", 0)
+                    fase = "foco" if cls._pomodoro.get("paused_from") == "work" else "pausa"
+                    return f"O pomodoro está pausado no modo {fase}, restando {rem // 60} minutos e {rem % 60} segundos."
+                else:
+                    return "O pomodoro está inativo. Diga 'Geraldo, iniciar pomodoro' para começar."
+
+            return "Comando de pomodoro não compreendido."
