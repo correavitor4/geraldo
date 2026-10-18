@@ -65,6 +65,19 @@ class TestCalendarDateParsing:
         parsed = CalendarTools._parse_target_date("dia 28")
         assert parsed.day == 28
 
+    def test_parse_month_names(self):
+        today = datetime.date.today()
+        d_dez = CalendarTools._parse_target_date("25 de dezembro")
+        assert d_dez.day == 25
+        assert d_dez.month == 12
+
+        d_nov = CalendarTools._parse_target_date("dia 15 de novembro")
+        assert d_nov.day == 15
+        assert d_nov.month == 11
+
+        d_ano = CalendarTools._parse_target_date("10 de maio de 2028")
+        assert d_ano == datetime.date(2028, 5, 10)
+
 class TestCalendarEventsAndCreation:
     @patch.object(CalendarTools, "get_service", return_value=None)
     def test_get_events_no_service(self, mock_svc):
@@ -164,3 +177,116 @@ class TestCalendarEventsAndCreation:
             assert call_body["summary"] == "Estudar para a Prova"
             assert "date" in call_body["start"]
             assert "dateTime" not in call_body["start"]
+
+    def test_get_events_next(self):
+        mock_svc = MagicMock()
+        mock_svc.events().list().execute.return_value = {
+            "items": [
+                {
+                    "summary": "Reunião de Alinhamento",
+                    "start": {"dateTime": "2026-10-18T10:00:00Z"}
+                }
+            ]
+        }
+        with patch.object(CalendarTools, "get_service", return_value=mock_svc):
+            res = CalendarTools.get_events("qual o meu próximo compromisso?")
+            assert "Seu próximo compromisso é Reunião de Alinhamento" in res
+
+    def test_get_events_week(self):
+        mock_svc = MagicMock()
+        mock_svc.events().list().execute.return_value = {
+            "items": [
+                {
+                    "summary": "Reunião Semanal",
+                    "start": {"dateTime": "2026-10-19T09:00:00-03:00"}
+                },
+                {
+                    "summary": "Feriado Estadual",
+                    "start": {"date": "2026-10-21"}
+                }
+            ]
+        }
+        with patch.object(CalendarTools, "get_service", return_value=mock_svc):
+            res = CalendarTools.get_events("agenda para a semana")
+            assert "Compromissos nesta semana" in res
+            assert "Reunião Semanal" in res
+            assert "Feriado Estadual" in res
+
+    @patch.object(CalendarTools, "get_service", return_value=None)
+    def test_delete_event_no_service(self, mock_svc):
+        res = CalendarTools.delete_event(summary="Dentista")
+        assert "não está autenticada" in res
+
+    def test_delete_event_empty(self):
+        mock_svc = MagicMock()
+        mock_svc.events().list().execute.return_value = {"items": []}
+        with patch.object(CalendarTools, "get_service", return_value=mock_svc):
+            res = CalendarTools.delete_event(summary="Dentista", date_query="hoje")
+            assert "Você não tem compromissos agendados hoje para cancelar" in res
+
+    def test_delete_event_by_title_success(self):
+        mock_delete = MagicMock()
+        mock_delete.execute.return_value = None
+        mock_events = MagicMock()
+        mock_events.list().execute.return_value = {
+            "items": [
+                {"id": "ev_1", "summary": "Consulta com Dentista"},
+                {"id": "ev_2", "summary": "Almoço com Equipe"}
+            ]
+        }
+        mock_events.delete.return_value = mock_delete
+        mock_svc = MagicMock()
+        mock_svc.events.return_value = mock_events
+
+        with patch.object(CalendarTools, "get_service", return_value=mock_svc):
+            res = CalendarTools.delete_event(summary="Dentista", date_query="amanhã")
+            assert "Compromisso 'Consulta com Dentista' amanhã cancelado com sucesso" in res
+            mock_events.delete.assert_called_once_with(calendarId="primary", eventId="ev_1")
+
+    def test_delete_event_not_found(self):
+        mock_svc = MagicMock()
+        mock_svc.events().list().execute.return_value = {
+            "items": [
+                {"id": "ev_1", "summary": "Reunião Geral"}
+            ]
+        }
+        with patch.object(CalendarTools, "get_service", return_value=mock_svc):
+            res = CalendarTools.delete_event(summary="Dentista", date_query="hoje")
+            assert "Não encontrei o compromisso 'Dentista' hoje" in res
+
+    def test_delete_event_single_no_title(self):
+        mock_delete = MagicMock()
+        mock_delete.execute.return_value = None
+        mock_events = MagicMock()
+        mock_events.list().execute.return_value = {
+            "items": [
+                {"id": "single_ev", "summary": "Reunião Única"}
+            ]
+        }
+        mock_events.delete.return_value = mock_delete
+        mock_svc = MagicMock()
+        mock_svc.events.return_value = mock_events
+
+        with patch.object(CalendarTools, "get_service", return_value=mock_svc):
+            res = CalendarTools.delete_event(summary="", date_query="amanhã")
+            assert "Compromisso 'Reunião Única' amanhã cancelado com sucesso" in res
+            mock_events.delete.assert_called_once_with(calendarId="primary", eventId="single_ev")
+
+    def test_delete_event_multiple_no_title_disambiguation(self):
+        mock_svc = MagicMock()
+        mock_svc.events().list().execute.return_value = {
+            "items": [
+                {"id": "ev_1", "summary": "Reunião A"},
+                {"id": "ev_2", "summary": "Reunião B"}
+            ]
+        }
+        with patch.object(CalendarTools, "get_service", return_value=mock_svc):
+            res = CalendarTools.delete_event(summary="", date_query="amanhã")
+            assert "Você tem mais de um compromisso amanhã: Reunião A, Reunião B" in res
+
+    def test_delete_event_api_error(self):
+        mock_svc = MagicMock()
+        mock_svc.events().list().execute.side_effect = Exception("Delete API Error")
+        with patch.object(CalendarTools, "get_service", return_value=mock_svc):
+            res = CalendarTools.delete_event(summary="Dentista")
+            assert "Ocorreu um erro ao tentar cancelar o compromisso" in res

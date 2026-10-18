@@ -24,7 +24,10 @@ TRAINING_DATA = {
         "o que tenho para hoje", "o que tenho para amanhã", "o que tenho agendado amanhã",
         "quais os compromissos de hoje", "quais meus compromissos para amanhã", "tenho algum compromisso hoje",
         "tem algum evento marcado para amanhã", "quais reuniões eu tenho hoje", "eventos de hoje",
-        "agenda para amanhã", "minha agenda amanhã", "minha agenda hoje", "compromissos de amanhã"
+        "agenda para amanhã", "minha agenda amanhã", "minha agenda hoje", "compromissos de amanhã",
+        "qual o meu próximo compromisso", "qual meu próximo compromisso", "qual é o meu próximo evento",
+        "o que eu tenho agora", "próximo compromisso na agenda", "como está a agenda desta semana",
+        "compromissos da semana", "agenda para a semana", "quais os eventos da semana"
     ],
     "create_calendar": [
         "marque um evento na minha agenda", "agende uma reunião para amanhã", "crie um compromisso hoje às 15 horas",
@@ -34,7 +37,15 @@ TRAINING_DATA = {
         "marque compromisso amanhã às 16 horas", "crie uma reunião com a equipe amanhã às 9 horas",
         "agende uma consulta médica para depois de amanhã às 11 horas", "coloque na agenda almoço com cliente hoje ao meio-dia",
         "marque um evento amanhã o dia todo chamado conferência", "adicione compromisso na minha agenda para sexta-feira às 14 horas",
-        "crie um evento para hoje às 18 horas chamado aula de inglês", "agende reunião de planejamento amanhã às 14 horas"
+        "crie um evento para hoje às 18 horas chamado aula de inglês", "agende reunião de planejamento amanhã às 14 horas",
+        "marque reunião das 14 às 16 horas", "agende estudo das 8 da manhã às 18 da noite"
+    ],
+    "delete_calendar": [
+        "cancele meu compromisso de amanhã", "desmarque a reunião de amanhã", "apague o evento da agenda",
+        "remova o compromisso de hoje", "excluir evento da agenda", "desmarcar consulta médica",
+        "cancele a reunião chamada alinhamento", "apague o compromisso chamado dentista",
+        "remova o evento estudar para a prova", "cancele o evento de amanhã", "desmarque o dentista",
+        "desmarque meu compromisso de hoje", "apagar reunião de hoje"
     ],
     "set_alarm": [
         "defina um alarme para as 10 da noite", "coloque um despertador para as 7 da manhã", "me acorde às 6 e meia",
@@ -241,18 +252,30 @@ class IntentEngine:
             ]) or re.search(r'\d', norm):
                 return "set_timer"
 
-        # Regras de Agendamento e Consulta do Google Calendar
-        if not any(w in norm for w in ["alarme", "despertador", "timer"]):
+        # Regras de Agendamento, Consulta e Cancelamento do Google Calendar
+        if not any(w in norm for w in ["alarme", "alarmes", "despertador", "despertadores", "timer", "timers"]):
+            # Cancelamento de compromisso
+            if any(w in norm for w in ["cancele", "cancelar", "desmarque", "desmarcar", "apague", "apagar", "remova", "remover", "exclua", "excluir"]):
+                if any(w in norm for w in ["evento", "eventos", "compromisso", "compromissos", "reunião", "reuniao", "reuniões", "reunioes", "consulta", "médico", "medico", "dentista"]) or (
+                    any(w in norm for w in ["agenda", "calendário", "calendario"])
+                ):
+                    return "delete_calendar"
+
+            # Criação de compromisso
             if any(w in norm for w in ["marque", "marcar", "agende", "agendar", "crie", "criar", "adicione", "adicionar", "anote", "anotar", "coloque", "colocar", "bote", "botar"]):
                 if any(w in norm for w in ["evento", "eventos", "compromisso", "compromissos", "reunião", "reuniao", "reuniões", "reunioes", "consulta", "médico", "medico", "dentista", "almoço", "almoco", "jantar"]) or (
                     any(w in norm for w in ["agenda", "calendário", "calendario"]) and not any(w in norm for w in ["como", "quais", "ver", "olhar", "consultar"])
                 ):
                     return "create_calendar"
 
+            # Consulta da agenda
+            if re.search(r'\b(próximo\s+compromisso|proximo\s+compromisso|próximo\s+evento|proximo\s+evento|o\s+que\s+(?:eu\s+)?tenho\s+agora)\b', norm):
+                return "get_calendar"
+
             if any(w in norm for w in ["agenda", "compromisso", "compromissos", "agendado", "agendados"]):
-                if any(w in norm for w in ["como está", "como esta", "o que eu tenho", "o que tenho", "o que tem", "quais", "ver", "olhar", "consultar", "tem algum", "tenho algum", "mostrar", "me diga", "minha agenda", "agenda de", "agenda para", "agenda hoje", "agenda amanhã", "agenda amanha"]):
+                if any(w in norm for w in ["como está", "como esta", "o que eu tenho", "o que tenho", "o que tem", "quais", "ver", "olhar", "consultar", "tem algum", "tenho algum", "mostrar", "me diga", "minha agenda", "agenda de", "agenda para", "agenda hoje", "agenda amanhã", "agenda amanha", "semana"]):
                     return "get_calendar"
-            if re.search(r'\b(o\s+que\s+(?:eu\s+)?tenho\s+(?:agendado|marcado|para\s+hoje|para\s+amanhã|para\s+amanha))\b', norm):
+            if re.search(r'\b(o\s+que\s+(?:eu\s+)?tenho\s+(?:agendado|marcado|para\s+hoje|para\s+amanhã|para\s+amanha|para\s+esta\s+semana|na\s+semana))\b', norm):
                 return "get_calendar"
 
         if "pomodoro" in norm or "modo foco" in norm:
@@ -400,6 +423,20 @@ class IntentEngine:
             slots["query"] = m_city.group(1).strip() if m_city else "Anápolis"
 
         elif intent == "get_calendar":
+            if any(w in norm for w in ["próximo", "proximo", "em breve"]):
+                slots["date_query"] = "próximo"
+            elif "semana" in norm:
+                slots["date_query"] = "semana"
+            elif "depois de amanhã" in norm or "depois de amanha" in norm:
+                slots["date_query"] = "depois de amanhã"
+            elif "amanhã" in norm or "amanha" in norm:
+                slots["date_query"] = "amanhã"
+            elif "hoje" in norm:
+                slots["date_query"] = "hoje"
+            else:
+                slots["date_query"] = norm
+
+        elif intent == "delete_calendar":
             if "depois de amanhã" in norm or "depois de amanha" in norm:
                 slots["date_query"] = "depois de amanhã"
             elif "amanhã" in norm or "amanha" in norm:
@@ -408,6 +445,30 @@ class IntentEngine:
                 slots["date_query"] = "hoje"
             else:
                 slots["date_query"] = norm
+
+            m_chamado = re.search(
+                r'\b(?:chamado|chamada|com o nome de|com o nome|com o título de|com o título|com o titulo de|com o titulo|de nome|título|titulo)\s+([^,.;]+)',
+                raw_text,
+                flags=re.IGNORECASE
+            )
+            summary = None
+            if m_chamado:
+                cand = m_chamado.group(1).strip()
+                cand = re.sub(r'\s+(?:de|para)\s+(?:hoje|amanhã|amanha|depois de amanhã|segunda|terça|quarta|quinta|sexta|sábado|domingo).*$', '', cand, flags=re.IGNORECASE).strip()
+                if cand:
+                    summary = cand.strip(" .")
+
+            if not summary:
+                cleaned = raw_text
+                cleaned = re.sub(r'^(?:cancele|cancelar|desmarque|desmarcar|apague|apagar|remova|remover|exclua|excluir)\s+(?:um|uma|o|a|os|as)?\s*(?:evento|compromisso|reunião|reuniao|lembrete)?\s*(?:na agenda|da agenda|no calendário|do calendário)?\s*', '', cleaned, flags=re.IGNORECASE)
+                cleaned = re.sub(r'\b(?:de|para\s+)?(?:hoje|amanhã|amanha|depois\s+de\s+amanhã|segunda|terça|quarta|quinta|sexta|sábado|domingo)\b', '', cleaned, flags=re.IGNORECASE)
+                cleaned = re.sub(r'[^\w\s]', ' ', cleaned).strip()
+                cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+                cleaned = re.sub(r'^(?:de|para|com|sobre|em|um|uma|o|a)\s+', '', cleaned, flags=re.IGNORECASE).strip()
+                cleaned = re.sub(r'^(?:reunião|compromisso|evento)\s+(?:de|com|sobre)?\s*', '', cleaned, flags=re.IGNORECASE).strip()
+                summary = cleaned
+
+            slots["summary"] = summary.strip().title() if summary else ""
 
         elif intent == "create_calendar":
             dur_mins, all_day = self._extract_duration(norm)
@@ -497,6 +558,21 @@ class IntentEngine:
         if any(w in norm for w in ["dia inteiro", "o dia todo", "dia todo", "dia completo"]):
             return 1440, True
 
+        # Intervalo "das X às/as Y"
+        m_range = re.search(r'\bdas\s+(\d{1,2})(?::(\d{2}))?(?:\s*horas?)?(?:\s*da\s*(?:manhã|manha|tarde))?\s*(?:às|as|até|ate)\s*(\d{1,2})(?::(\d{2}))?(?:\s*horas?)?(?:\s*da\s*(?:tarde|noite))?\b', norm)
+        if m_range:
+            h1 = int(m_range.group(1))
+            m1 = int(m_range.group(2)) if m_range.group(2) else 0
+            h2 = int(m_range.group(3))
+            m2 = int(m_range.group(4)) if m_range.group(4) else 0
+            if "tarde" in norm and h2 < 12:
+                h2 += 12
+            if "noite" in norm and h2 < 12:
+                h2 += 12
+            diff_mins = (h2 * 60 + m2) - (h1 * 60 + m1)
+            if 0 < diff_mins <= 1440:
+                return diff_mins, False
+
         m_h_m = re.search(r'(?:durar|duração de|duracao de|por)\s+(\d+|uma?|duas?|três|tres)\s*(?:horas?|h)(?:\s*e\s*(\d+|meia|trinta))?', norm)
         if m_h_m:
             h_str = m_h_m.group(1).lower()
@@ -518,6 +594,24 @@ class IntentEngine:
     def _extract_time(self, norm: str) -> tuple[int, int]:
         # Exclui artigos "um"/"uma" quando seguidos de substantivos como alarme/compromisso/reunião/evento
         cleaned = re.sub(r'\b(um|uma)\s+(alarme|despertador|compromisso|evento|reunião|reuniao|lembrete)\b', r'\2', norm)
+
+        # 0. Meio-dia e Meia-noite
+        if re.search(r'\b(?:ao\s+)?meio[- ]?dia\b', cleaned):
+            if re.search(r'\b(?:ao\s+)?meio[- ]?dia\s+e\s+meia\b', cleaned):
+                return 12, 30
+            m_min = re.search(r'\b(?:ao\s+)?meio[- ]?dia\s+e\s+(\d{1,2})\b', cleaned)
+            if m_min:
+                return 12, int(m_min.group(1))
+            return 12, 0
+
+        if re.search(r'\b(?:à\s+|a\s+)?meia[- ]?noite\b', cleaned):
+            if re.search(r'\b(?:à\s+|a\s+)?meia[- ]?noite\s+e\s+meia\b', cleaned):
+                return 0, 30
+            m_min = re.search(r'\b(?:à\s+|a\s+)?meia[- ]?noite\s+e\s+(\d{1,2})\b', cleaned)
+            if m_min:
+                return 0, int(m_min.group(1))
+            return 0, 0
+
         num_or_word_pattern = r'(\d{1,2}|' + '|'.join(sorted(NUMBER_WORDS.keys(), key=len, reverse=True)) + r')'
 
         # 1. Padrão "X para as / pras Y" (ex: "dez para as oito", "15 pras 8", "vinte para as 7", "cinco para as 8")

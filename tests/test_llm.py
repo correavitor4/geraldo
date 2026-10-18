@@ -216,6 +216,27 @@ class TestBrainLLM:
         assert call_kwargs["date_query"] == "amanhã"
         assert "Estudar" in call_kwargs["summary"]
 
+    @patch("tools.calendar.CalendarTools.get_events", return_value="Seu próximo compromisso é Dentista hoje às 14:00.")
+    def test_ask_get_calendar_next(self, mock_cal, llm):
+        resp = llm.ask("qual o meu próximo compromisso?")
+        assert "Seu próximo compromisso é" in resp
+        mock_cal.assert_called_once_with("próximo")
+
+    @patch("tools.calendar.CalendarTools.get_events", return_value="Compromissos nesta semana: segunda 19/10: Reunião.")
+    def test_ask_get_calendar_week(self, mock_cal, llm):
+        resp = llm.ask("como está a agenda desta semana?")
+        assert "Compromissos nesta semana" in resp
+        mock_cal.assert_called_once_with("semana")
+
+    @patch("tools.calendar.CalendarTools.delete_event", return_value="Compromisso 'Dentista' amanhã cancelado com sucesso.")
+    def test_ask_delete_calendar(self, mock_del, llm):
+        resp = llm.ask("cancele o compromisso chamado Dentista de amanhã")
+        assert "cancelado com sucesso" in resp
+        mock_del.assert_called_once()
+        call_kwargs = mock_del.call_args.kwargs
+        assert "Dentista" in call_kwargs["summary"]
+        assert call_kwargs["date_query"] == "amanhã"
+
     @patch.object(BrainLLM, "_summarize_with_llm", return_value="As notícias tratam de avanços na IA.")
     @patch("tools.news.NewsTools.get_news", return_value="Avanços em IA anunciados hoje.")
     def test_ask_news_search(self, mock_news, mock_sum, llm):

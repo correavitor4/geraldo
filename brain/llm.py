@@ -273,6 +273,13 @@ class BrainLLM:
             )
             return clean_for_speech(str(res))
 
+        if intent == "delete_calendar":
+            res = CalendarTools.delete_event(
+                summary=slots.get("summary", ""),
+                date_query=slots.get("date_query", "hoje")
+            )
+            return clean_for_speech(str(res))
+
         # 2. Intenções de Busca Externa (Filler Simultâneo + Join antes da Resposta)
         if intent == "get_news":
             TimerManager.set_assistant_state("searching")

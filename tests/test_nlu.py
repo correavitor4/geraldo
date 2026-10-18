@@ -77,6 +77,19 @@ class TestNLUTimeExtraction:
         engine = shared_nlu_engine
         assert engine._extract_time("sem horário algum") == (8, 0)
 
+    def test_extract_time_midday_midnight(self, shared_nlu_engine):
+        engine = shared_nlu_engine
+        assert engine._extract_time(engine._normalize("ao meio-dia")) == (12, 0)
+        assert engine._extract_time(engine._normalize("ao meio dia e meia")) == (12, 30)
+        assert engine._extract_time(engine._normalize("à meia-noite")) == (0, 0)
+        assert engine._extract_time(engine._normalize("à meia-noite e meia")) == (0, 30)
+
+    def test_extract_duration_range(self, shared_nlu_engine):
+        engine = shared_nlu_engine
+        assert engine._extract_duration(engine._normalize("evento das 14 às 16 horas")) == (120, False)
+        assert engine._extract_duration(engine._normalize("das 9:00 até 11:30")) == (150, False)
+        assert engine._extract_duration(engine._normalize("das 8 da manhã às 18 da noite")) == (600, False)
+
 class TestNLUHardRules:
     @pytest.mark.parametrize("phrase, expected_intent", [
         ("bom dia geraldo", "greeting_morning"),
@@ -109,6 +122,11 @@ class TestNLUHardRules:
         ("como está a agenda para amanhã", "get_calendar"),
         ("o que eu tenho agendado para hoje", "get_calendar"),
         ("quais são meus compromissos de amanhã", "get_calendar"),
+        ("qual o meu próximo compromisso", "get_calendar"),
+        ("agenda da semana", "get_calendar"),
+        ("cancele o evento da agenda chamado dentista", "delete_calendar"),
+        ("desmarque a reunião de amanhã", "delete_calendar"),
+        ("apague o compromisso de hoje", "delete_calendar"),
     ])
     def test_hard_rules_detection(self, shared_nlu_engine, phrase, expected_intent):
         norm = shared_nlu_engine._normalize(phrase)
@@ -333,6 +351,33 @@ class TestNLUIntentsAndSlots:
     def test_get_calendar_slots(self, shared_nlu_engine):
         intent, conf, slots = shared_nlu_engine.predict("como está a agenda para amanhã?")
         assert intent == "get_calendar"
+        assert slots["date_query"] == "amanhã"
+
+    def test_get_calendar_slots_next(self, shared_nlu_engine):
+        intent, conf, slots = shared_nlu_engine.predict("qual é o meu próximo compromisso?")
+        assert intent == "get_calendar"
+        assert slots["date_query"] == "próximo"
+
+    def test_get_calendar_slots_week(self, shared_nlu_engine):
+        intent, conf, slots = shared_nlu_engine.predict("como está a agenda desta semana?")
+        assert intent == "get_calendar"
+        assert slots["date_query"] == "semana"
+
+    def test_create_calendar_slots_midday(self, shared_nlu_engine):
+        intent, conf, slots = shared_nlu_engine.predict("marque um almoço amanhã ao meio-dia e meia")
+        assert intent == "create_calendar"
+        assert slots["time_str"] == "12:30"
+        assert slots["date_query"] == "amanhã"
+
+    def test_delete_calendar_slots_explicit(self, shared_nlu_engine):
+        intent, conf, slots = shared_nlu_engine.predict("cancele o evento da agenda chamado Dentista de amanhã")
+        assert intent == "delete_calendar"
+        assert "Dentista" in slots["summary"]
+        assert slots["date_query"] == "amanhã"
+
+    def test_delete_calendar_slots_heuristic(self, shared_nlu_engine):
+        intent, conf, slots = shared_nlu_engine.predict("desmarque a reunião de amanhã")
+        assert intent == "delete_calendar"
         assert slots["date_query"] == "amanhã"
 
     def test_question_fallback_to_conversa_llm(self, shared_nlu_engine):
