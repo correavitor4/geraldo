@@ -37,9 +37,14 @@ def phonetize_time_patterns(text: str) -> str:
     }
 
     def _format_h_m(h: int, minute: int) -> str:
+        if h == 0:
+            return "à meia-noite" if minute == 0 else f"à meia-noite e {'meia' if minute == 30 else minute}"
+        if h == 12:
+            return "ao meio-dia" if minute == 0 else f"ao meio-dia e {'meia' if minute == 30 else minute}"
+
         nome_h = horas_map.get(h, str(h))
-        artigo = "à " if h in [1, 13] else ("ao " if h in [0, 12] else "às ")
         if minute == 0:
+            artigo = "à " if h in [1, 13] else "às "
             return f"{artigo}{nome_h}"
         h_base = h if h <= 12 else (h - 12)
         sufixo = " da tarde" if 12 < h < 18 else (" da noite" if h >= 18 else " da manhã")
@@ -54,11 +59,14 @@ def phonetize_time_patterns(text: str) -> str:
     def repl_time_h(m):
         return _format_h_m(int(m.group(2)), int(m.group(3)) if m.group(3) else 0)
 
-    text = re.sub(r'(?:\b(às|as|à|a)\s+)?\b(\d{1,2}):(\d{2})\b', repl_time_colon, text, flags=re.IGNORECASE)
-    text = re.sub(r'(?:\b(às|as|à|a)\s+)?\b(\d{1,2})h(\d{2})?\b', repl_time_h, text, flags=re.IGNORECASE)
+    text = re.sub(r'(?:\b(às|as|à|a|ao|aos)\s+)?\b(\d{1,2}):(\d{2})\b', repl_time_colon, text, flags=re.IGNORECASE)
+    text = re.sub(r'(?:\b(às|as|à|a|ao|aos)\s+)?\b(\d{1,2})h(\d{2})?\b', repl_time_h, text, flags=re.IGNORECASE)
     return text
 
 def clean_for_speech(text: str) -> str:
+    if not text:
+        return ""
+    text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)
     text = re.sub(r"\*\*([^*]+)\*\*", r"\1", text)
     text = re.sub(r"\*([^*]+)\*", r"\1", text)
     text = re.sub(r"#+\s*", "", text)
@@ -260,7 +268,8 @@ class BrainLLM:
                 summary=slots.get("summary", "Compromisso"),
                 date_query=slots.get("date_query", "hoje"),
                 time_str=slots.get("time_str", "09:00"),
-                duration_minutes=slots.get("duration_minutes", 60)
+                duration_minutes=slots.get("duration_minutes", 60),
+                all_day=slots.get("all_day", False)
             )
             return clean_for_speech(str(res))
 

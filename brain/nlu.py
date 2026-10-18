@@ -18,10 +18,23 @@ TRAINING_DATA = {
         "como está o clima", "qual a previsão do tempo", "vai chover hoje", "vai chover amanhã"
     ],
     "get_calendar": [
-        "o que eu tenho agendado para hoje", "como está minha agenda hoje", "quais são meus compromissos de amanhã"
+        "o que eu tenho agendado para hoje", "como está minha agenda hoje", "quais são meus compromissos de amanhã",
+        "como está a agenda para amanhã", "como está a agenda de hoje", "como está minha agenda",
+        "ver minha agenda", "olhar minha agenda", "abrir agenda", "consultar agenda",
+        "o que tenho para hoje", "o que tenho para amanhã", "o que tenho agendado amanhã",
+        "quais os compromissos de hoje", "quais meus compromissos para amanhã", "tenho algum compromisso hoje",
+        "tem algum evento marcado para amanhã", "quais reuniões eu tenho hoje", "eventos de hoje",
+        "agenda para amanhã", "minha agenda amanhã", "minha agenda hoje", "compromissos de amanhã"
     ],
     "create_calendar": [
-        "marque um evento na minha agenda", "agende uma reunião para amanhã", "crie um compromisso hoje às 15 horas"
+        "marque um evento na minha agenda", "agende uma reunião para amanhã", "crie um compromisso hoje às 15 horas",
+        "marque um evento para amanhã chamado estudar para a prova", "marque um evento para amanhã que vai durar o dia inteiro",
+        "marque um evento que vai durar o dia inteiro chamado teste", "coloque na minha agenda médico amanhã às 14 horas",
+        "agende dentista para amanhã às 15 horas", "anote na minha agenda reunião amanhã às 10 horas",
+        "marque compromisso amanhã às 16 horas", "crie uma reunião com a equipe amanhã às 9 horas",
+        "agende uma consulta médica para depois de amanhã às 11 horas", "coloque na agenda almoço com cliente hoje ao meio-dia",
+        "marque um evento amanhã o dia todo chamado conferência", "adicione compromisso na minha agenda para sexta-feira às 14 horas",
+        "crie um evento para hoje às 18 horas chamado aula de inglês", "agende reunião de planejamento amanhã às 14 horas"
     ],
     "set_alarm": [
         "defina um alarme para as 10 da noite", "coloque um despertador para as 7 da manhã", "me acorde às 6 e meia",
@@ -228,6 +241,20 @@ class IntentEngine:
             ]) or re.search(r'\d', norm):
                 return "set_timer"
 
+        # Regras de Agendamento e Consulta do Google Calendar
+        if not any(w in norm for w in ["alarme", "despertador", "timer"]):
+            if any(w in norm for w in ["marque", "marcar", "agende", "agendar", "crie", "criar", "adicione", "adicionar", "anote", "anotar", "coloque", "colocar", "bote", "botar"]):
+                if any(w in norm for w in ["evento", "eventos", "compromisso", "compromissos", "reunião", "reuniao", "reuniões", "reunioes", "consulta", "médico", "medico", "dentista", "almoço", "almoco", "jantar"]) or (
+                    any(w in norm for w in ["agenda", "calendário", "calendario"]) and not any(w in norm for w in ["como", "quais", "ver", "olhar", "consultar"])
+                ):
+                    return "create_calendar"
+
+            if any(w in norm for w in ["agenda", "compromisso", "compromissos", "agendado", "agendados"]):
+                if any(w in norm for w in ["como está", "como esta", "o que eu tenho", "o que tenho", "o que tem", "quais", "ver", "olhar", "consultar", "tem algum", "tenho algum", "mostrar", "me diga", "minha agenda", "agenda de", "agenda para", "agenda hoje", "agenda amanhã", "agenda amanha"]):
+                    return "get_calendar"
+            if re.search(r'\b(o\s+que\s+(?:eu\s+)?tenho\s+(?:agendado|marcado|para\s+hoje|para\s+amanhã|para\s+amanha))\b', norm):
+                return "get_calendar"
+
         if "pomodoro" in norm or "modo foco" in norm:
             return "pomodoro_control"
         if norm in ["próximo ciclo", "proximo ciclo", "próxima pausa", "proxima pausa", "iniciar pausa", "ir para pausa", "próxima fase", "proxima fase"]:
@@ -256,7 +283,7 @@ class IntentEngine:
                 m_target = re.search(r'(?:chamado|timer|alarme|despertador)\s+([a-zA-ZÀ-ÿ0-9\s]+)$', norm)
                 if m_target:
                     q = m_target.group(1).strip()
-                    slots["query"] = re.sub(r'\b(o|a|os|as|timer|timers|alarme|alarmes|chamado|de)\b', '', q).strip()
+                    slots["query"] = re.sub(r'\b(o|a|os|as|timer|timers|alarme|alarmes|chamado|de|do|da|dos|das)\b', '', q).strip()
                 else:
                     q = re.sub(
                         r'^(cancele|cancelar|pare|parar|desative|desativar|desativem|desligue|desligar|apague|apagar|remova|remover|exclua|excluir|pause|pausar|congele|retome|retomar|resumir|despause|despausar|continue|continuar|reiniciar)\s*'
@@ -264,7 +291,7 @@ class IntentEngine:
                         '',
                         norm
                     ).strip()
-                    slots["query"] = re.sub(r'\b(chamado|de)\b', '', q).strip()
+                    slots["query"] = re.sub(r'\b(chamado|de|do|da|dos|das)\b', '', q).strip()
 
         elif intent == "hyprland_control":
             if "workspace" in norm or "área de trabalho" in norm:
@@ -311,7 +338,9 @@ class IntentEngine:
             if m_rotulo:
                 rotulo_raw = m_rotulo.group(1).strip()
                 rotulo_limpo = re.sub(r'\b(o|a|um|uma)\b', '', rotulo_raw).strip()
-                slots["label"] = rotulo_limpo.title() if rotulo_limpo else "Timer"
+                # Se for apenas expressão de tempo (ex: "10 minutos", "5 segundos"), não é rótulo
+                is_duration_only = bool(re.match(r'^(?:' + num_pattern + r'|\s|minutos?|min|segundos?|seg|horas?|h)+$', rotulo_limpo))
+                slots["label"] = "Timer" if is_duration_only or not rotulo_limpo else rotulo_limpo.title()
             else:
                 slots["label"] = "Timer"
 
@@ -339,9 +368,9 @@ class IntentEngine:
             else:
                 slots["action"] = "start"
 
-            m_min = re.search(r'(\d+)\s*(?:minuto|minutos|min\b)', norm)
+            m_min = re.search(num_pattern + r'\s*(?:minuto|minutos|min\b)', norm)
             if m_min:
-                slots["work_minutes"] = int(m_min.group(1))
+                slots["work_minutes"] = self._parse_number(m_min.group(1))
 
         elif intent == "play_music":
             q = re.sub(r'^(toque\s+a\s+música|toque|tocar|reproduza|coloque|quero ouvir)\s*', '', raw_text, flags=re.IGNORECASE)
@@ -371,15 +400,80 @@ class IntentEngine:
             slots["query"] = m_city.group(1).strip() if m_city else "Anápolis"
 
         elif intent == "get_calendar":
-            slots["date_query"] = norm
+            if "depois de amanhã" in norm or "depois de amanha" in norm:
+                slots["date_query"] = "depois de amanhã"
+            elif "amanhã" in norm or "amanha" in norm:
+                slots["date_query"] = "amanhã"
+            elif "hoje" in norm:
+                slots["date_query"] = "hoje"
+            else:
+                slots["date_query"] = norm
 
         elif intent == "create_calendar":
+            dur_mins, all_day = self._extract_duration(norm)
+            slots["duration_minutes"] = dur_mins
+            slots["all_day"] = all_day
+
             h, m = self._extract_time(norm)
             slots["time_str"] = f"{h:02d}:{m:02d}"
-            slots["date_query"] = norm
-            m_sum = re.search(r'(?:chamado|sobre|para|reunião|compromisso|evento)\s+([a-zA-ZÀ-ÿ0-9\s]+?)(?:\s+(?:hoje|amanhã|amanha|às|as|para)\b|$)', norm)
-            slots["summary"] = m_sum.group(1).strip().title() if m_sum else "Compromisso"
-            slots["duration_minutes"] = 60
+
+            if "depois de amanhã" in norm or "depois de amanha" in norm:
+                slots["date_query"] = "depois de amanhã"
+            elif "amanhã" in norm or "amanha" in norm:
+                slots["date_query"] = "amanhã"
+            elif "hoje" in norm:
+                slots["date_query"] = "hoje"
+            else:
+                slots["date_query"] = norm
+
+            m_chamado = re.search(
+                r'\b(?:chamado|chamada|com o nome de|com o nome|com o título de|com o título|com o titulo de|com o titulo|de nome|título|titulo)\s+([^,.;]+)',
+                raw_text,
+                flags=re.IGNORECASE
+            )
+            summary = None
+            if m_chamado:
+                cand = m_chamado.group(1).strip()
+                cand = re.sub(
+                    r'\s+(?:para\s+(?:hoje|amanhã|amanha|depois de amanhã|segunda|terça|quarta|quinta|sexta|sábado|domingo)|hoje|amanhã|amanha|às\s+\d|as\s+\d|à\s+\d|ao\s+meio|à\s+meia).*$',
+                    '',
+                    cand,
+                    flags=re.IGNORECASE
+                ).strip()
+                if cand:
+                    summary = cand.strip(" .")
+
+            if not summary:
+                m_sobre = re.search(r'\b(?:sobre)\s+([^,.;]+)', raw_text, flags=re.IGNORECASE)
+                if m_sobre:
+                    cand = m_sobre.group(1).strip()
+                    cand = re.sub(
+                        r'\s+(?:para\s+(?:hoje|amanhã|amanha|depois de amanhã|segunda|terça|quarta|quinta|sexta|sábado|domingo)|hoje|amanhã|amanha|às\s+\d|as\s+\d|à\s+\d).*$',
+                        '',
+                        cand,
+                        flags=re.IGNORECASE
+                    ).strip()
+                    if cand:
+                        summary = cand.strip(" .")
+
+            if not summary:
+                cleaned = raw_text
+                cleaned = re.sub(r'^(?:marque|marcar|agende|agendar|crie|criar|coloque|colocar|bote|botar|adicione|adicionar|anote|anotar)\s+(?:um|uma)?\s*(?:novo|nova)?\s*(?:evento|compromisso|reunião|reuniao|lembrete)?\s*(?:na agenda|no calendário|no calendario|na minha agenda|no meu calendário|no meu calendario)?\s*', '', cleaned, flags=re.IGNORECASE)
+                cleaned = re.sub(r'\b(?:que vai durar\s+)?(?:o\s+)?dia\s+(?:inteiro|todo|completo)\b', '', cleaned, flags=re.IGNORECASE)
+                cleaned = re.sub(r'\b(?:que\s+vai\s+durar|durando|com\s+duração\s+de|por|durar)\s+.*?(?:horas?|minutos?|h|min)\b', '', cleaned, flags=re.IGNORECASE)
+                cleaned = re.sub(r'\b(?:para\s+)?(?:hoje|amanhã|amanha|depois\s+de\s+amanhã|segunda(?:-feira)?|terça(?:-feira)?|quarta(?:-feira)?|quinta(?:-feira)?|sexta(?:-feira)?|sábado|domingo)\b', '', cleaned, flags=re.IGNORECASE)
+                cleaned = re.sub(r'\b(?:às|as|à|a|ao|das|de)\s+\d{1,2}(?::\d{2})?(?:\s*horas?)?(?:\s*(?:da\s+manhã|da\s+tarde|da\s+noite|e\s+meia))?\b', '', cleaned, flags=re.IGNORECASE)
+                cleaned = re.sub(r'\b(?:às|as|até|ate)\s+\d{1,2}(?::\d{2})?(?:\s*horas?)?(?:\s*(?:da\s+manhã|da\s+tarde|da\s+noite))?\b', '', cleaned, flags=re.IGNORECASE)
+                cleaned = re.sub(r'[^\w\s]', ' ', cleaned).strip()
+                cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+                cleaned = re.sub(r'^(?:de|para|com|sobre|em|um|uma|o|a)\s+', '', cleaned, flags=re.IGNORECASE).strip()
+                cleaned = re.sub(r'^(?:reunião|compromisso|evento)\s+(?:de|com|sobre)?\s*', '', cleaned, flags=re.IGNORECASE).strip()
+                if cleaned:
+                    summary = cleaned
+                else:
+                    summary = "Compromisso"
+
+            slots["summary"] = summary.strip().title()
 
         elif intent == "get_news":
             m_topic = re.search(r'\b(?:notícias|noticias|manchetes)\s+(?:sobre|de|do|da)\s+([a-zA-ZÀ-ÿ0-9\s]+)$', norm)
@@ -398,6 +492,28 @@ class IntentEngine:
             slots["query"] = q or raw_text.strip(" ?.")
 
         return slots
+
+    def _extract_duration(self, norm: str) -> tuple[int, bool]:
+        if any(w in norm for w in ["dia inteiro", "o dia todo", "dia todo", "dia completo"]):
+            return 1440, True
+
+        m_h_m = re.search(r'(?:durar|duração de|duracao de|por)\s+(\d+|uma?|duas?|três|tres)\s*(?:horas?|h)(?:\s*e\s*(\d+|meia|trinta))?', norm)
+        if m_h_m:
+            h_str = m_h_m.group(1).lower()
+            h_map = {"um": 1, "uma": 1, "dois": 2, "duas": 2, "três": 3, "tres": 3}
+            h = int(h_str) if h_str.isdigit() else h_map.get(h_str, 1)
+            m_str = m_h_m.group(2)
+            mins = 30 if m_str in ["meia", "trinta"] else (int(m_str) if (m_str and m_str.isdigit()) else 0)
+            return h * 60 + mins, False
+
+        m_min = re.search(r'(?:durar|duração de|duracao de|por)\s+(\d+|quinze|vinte|trinta|quarenta|quarenta e cinco|cinquenta)\s*(?:minutos?|min)\b', norm)
+        if m_min:
+            min_str = m_min.group(1).lower()
+            min_map = {"quinze": 15, "vinte": 20, "trinta": 30, "quarenta": 40, "quarenta e cinco": 45, "cinquenta": 50}
+            mins = int(min_str) if min_str.isdigit() else min_map.get(min_str, 60)
+            return mins, False
+
+        return 60, False
 
     def _extract_time(self, norm: str) -> tuple[int, int]:
         # Exclui artigos "um"/"uma" quando seguidos de substantivos como alarme/compromisso/reunião/evento

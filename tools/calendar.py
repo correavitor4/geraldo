@@ -35,9 +35,12 @@ def format_speech_time(hh_mm: str) -> str:
             22: "dez da noite", 23: "onze da noite"
         }
 
+        if h == 0:
+            return "à meia-noite" if m == 0 else f"à meia-noite e {'meia' if m == 30 else m}"
+        if h == 12:
+            return "ao meio-dia" if m == 0 else f"ao meio-dia e {'meia' if m == 30 else m}"
+
         if m == 0:
-            if h in [0, 12]:
-                return f"ao {horas_nome[h]}"
             artigo = "à " if h in [1, 13] else "às "
             return f"{artigo}{horas_nome[h]}"
         elif m == 30:
@@ -95,11 +98,11 @@ class CalendarTools:
         today = datetime.date.today()
         d_lower = (date_str or "hoje").lower().strip()
 
-        if any(w in d_lower for w in ["amanhã", "amanha", "pra manhã", "para manhã", "pra manha", "para manha"]):
-            return today + datetime.timedelta(days=1)
-
         if "depois de amanhã" in d_lower or "depois de amanha" in d_lower:
             return today + datetime.timedelta(days=2)
+
+        if any(w in d_lower for w in ["amanhã", "amanha", "pra manhã", "para manhã", "pra manha", "para manha"]):
+            return today + datetime.timedelta(days=1)
 
         if "hoje" in d_lower:
             return today
@@ -119,7 +122,10 @@ class CalendarTools:
         match_data = re.search(r'(\d{4})-(\d{1,2})-(\d{1,2})', d_lower)
         if match_data:
             y, m, d = map(int, match_data.groups())
-            return datetime.date(y, m, d)
+            try:
+                return datetime.date(y, m, d)
+            except ValueError:
+                pass
 
         match_dia = re.search(r'dia\s+(\d{1,2})', d_lower)
         if match_dia:
@@ -184,40 +190,54 @@ class CalendarTools:
             return "Não foi possível carregar os compromissos da agenda no momento."
 
     @classmethod
-    def create_event(cls, summary: str, date_query: str = "hoje", time_str: str = "09:00", duration_minutes: int = 60) -> str:
+    def create_event(cls, summary: str, date_query: str = "hoje", time_str: str = "09:00", duration_minutes: int = 60, all_day: bool = False, *args, **kwargs) -> str:
         """Cria um novo evento no Google Calendar."""
         service = cls.get_service()
         if not service:
             return "A agenda do Google não está autenticada para escrita."
 
         target_date = cls._parse_target_date(date_query)
-        
-        # Extrai horas e minutos
-        match_time = re.search(r'(\d{1,2}):?(\d{2})?', time_str)
-        if match_time:
-            hour = int(match_time.group(1))
-            minute = int(match_time.group(2)) if match_time.group(2) else 0
+
+        dia_str = "hoje" if target_date == datetime.date.today() else ("amanhã" if target_date == datetime.date.today() + datetime.timedelta(days=1) else f"dia {target_date.strftime('%d/%m')}")
+
+        if all_day:
+            event_body = {
+                'summary': summary,
+                'start': {
+                    'date': target_date.isoformat(),
+                },
+                'end': {
+                    'date': (target_date + datetime.timedelta(days=1)).isoformat(),
+                },
+            }
         else:
-            hour, minute = 9, 0
+            # Extrai horas e minutos
+            match_time = re.search(r'(\d{1,2}):?(\d{2})?', time_str)
+            if match_time:
+                hour = int(match_time.group(1))
+                minute = int(match_time.group(2)) if match_time.group(2) else 0
+            else:
+                hour, minute = 9, 0
 
-        start_dt = datetime.datetime.combine(target_date, datetime.time(hour, minute))
-        end_dt = start_dt + datetime.timedelta(minutes=duration_minutes)
+            start_dt = datetime.datetime.combine(target_date, datetime.time(hour, minute))
+            end_dt = start_dt + datetime.timedelta(minutes=duration_minutes)
 
-        event_body = {
-            'summary': summary,
-            'start': {
-                'dateTime': start_dt.isoformat(),
-                'timeZone': 'America/Sao_Paulo',
-            },
-            'end': {
-                'dateTime': end_dt.isoformat(),
-                'timeZone': 'America/Sao_Paulo',
-            },
-        }
+            event_body = {
+                'summary': summary,
+                'start': {
+                    'dateTime': start_dt.isoformat(),
+                    'timeZone': 'America/Sao_Paulo',
+                },
+                'end': {
+                    'dateTime': end_dt.isoformat(),
+                    'timeZone': 'America/Sao_Paulo',
+                },
+            }
 
         try:
             created = service.events().insert(calendarId=CALENDAR_ID, body=event_body).execute()
-            dia_str = "hoje" if target_date == datetime.date.today() else ("amanhã" if target_date == datetime.date.today() + datetime.timedelta(days=1) else f"dia {target_date.strftime('%d/%m')}")
+            if all_day:
+                return f"Agendado com sucesso: {summary} {dia_str} o dia inteiro."
             hora_extenso = format_speech_time(f"{hour:02d}:{minute:02d}")
             return f"Agendado com sucesso: {summary} {dia_str} {hora_extenso}."
         except Exception as e:

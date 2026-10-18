@@ -125,9 +125,9 @@ class SystemTools:
         condicao_hoje = cls._wmo_to_description(curr.get("weather_code", 0))
 
         daily = data.get("daily", {})
-        max_temps = daily.get("temperature_2m_max", [temp, temp])
-        min_temps = daily.get("temperature_2m_min", [temp, temp])
-        daily_codes = daily.get("weather_code", [0, 0])
+        max_temps = daily.get("temperature_2m_max") or [temp, temp]
+        min_temps = daily.get("temperature_2m_min") or [temp, temp]
+        daily_codes = daily.get("weather_code") or [0, 0]
 
         cidade_nome = city.capitalize() if city else "Anápolis"
         q_norm = query_type.lower().strip()

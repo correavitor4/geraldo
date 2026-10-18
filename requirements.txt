@@ -21,6 +21,9 @@ google-api-python-client==2.201.0
 google-auth-httplib2==0.4.4
 google-auth-oauthlib==1.5.0
 
+# Testes
+pytest==9.1.1
+
 # ==========================================
 # Sub-dependências e Bibliotecas de Suporte
 # ==========================================

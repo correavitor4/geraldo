@@ -9,7 +9,7 @@ class TimerManager:
     _timers = {}
     _alarms = {}
     _stopwatch = {"running": False, "start_time": 0.0, "elapsed": 0.0}
-    _lock = threading.Lock()
+    _lock = threading.RLock()
     _running = False
     _assistant_state = "idle"
     _command_dir = "/tmp/geraldo_commands"
@@ -40,6 +40,41 @@ class TimerManager:
         cls._running = True
         t = threading.Thread(target=cls._loop, daemon=True)
         t.start()
+
+    @classmethod
+    def stop_background_loop(cls):
+        cls._running = False
+
+    @classmethod
+    def reset_for_tests(cls, command_dir=None, status_file=None, state_file=None):
+        with cls._lock:
+            cls._timers.clear()
+            cls._alarms.clear()
+            cls._stopwatch = {"running": False, "start_time": 0.0, "elapsed": 0.0}
+            cls._running = False
+            cls._assistant_state = "idle"
+            cls._ringing_alarm = None
+            cls._ringing_timer = None
+            if cls._alarm_stop_event:
+                cls._alarm_stop_event.set()
+            if cls._timer_stop_event:
+                cls._timer_stop_event.set()
+            cls._pomodoro = {
+                "state": "idle",
+                "paused_from": "work",
+                "cycle": 1,
+                "work_duration": 25 * 60,
+                "break_duration": 5 * 60,
+                "target": 0.0,
+                "remaining": 25 * 60,
+                "label": "Foco"
+            }
+            if command_dir:
+                cls._command_dir = command_dir
+            if status_file:
+                cls._status_file = status_file
+            if state_file:
+                cls._state_file = state_file
 
     @classmethod
     def _load_state(cls):
