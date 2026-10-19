@@ -23,6 +23,7 @@ google-auth-httplib2>=0.2.0
 google-auth-oauthlib>=1.0.0
 websockets>=13.0
 textual>=0.80.0
+docker>=7.0.0
 
 # Empacotamento & Suporte
 platformdirs>=4.0.0

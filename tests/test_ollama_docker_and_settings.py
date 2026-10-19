@@ -76,7 +76,10 @@ class TestDockerContainerDetection:
         mock_client = MagicMock()
         mock_client.containers.list.return_value = [mock_container]
 
-        with patch("docker.from_env", return_value=mock_client):
+        mock_docker = MagicMock()
+        mock_docker.from_env.return_value = mock_client
+
+        with patch.dict("sys.modules", {"docker": mock_docker}):
             info = OnboardingManager.detect_docker_ollama()
             assert info is not None
             assert info["container_name"] == "ollama"
@@ -98,7 +101,10 @@ class TestDockerContainerDetection:
         mock_client = MagicMock()
         mock_client.containers.list.return_value = [mock_container]
 
-        with patch("docker.from_env", return_value=mock_client):
+        mock_docker = MagicMock()
+        mock_docker.from_env.return_value = mock_client
+
+        with patch.dict("sys.modules", {"docker": mock_docker}):
             info = OnboardingManager.detect_docker_ollama()
             assert info is not None
             assert info["mapped_port"] == 21434
@@ -108,7 +114,10 @@ class TestDockerContainerDetection:
         """Se o SDK do Docker falhar, deve usar subprocess chamando 'docker ps'."""
         cli_output = "9b145877d541|ollama|ollama/ollama:latest|0.0.0.0:11434->11434/tcp\n"
 
-        with patch("docker.from_env", side_effect=Exception("Socket not available")):
+        mock_docker = MagicMock()
+        mock_docker.from_env.side_effect = Exception("Socket not available")
+
+        with patch.dict("sys.modules", {"docker": mock_docker}):
             with patch("subprocess.check_output", return_value=cli_output):
                 info = OnboardingManager.detect_docker_ollama()
                 assert info is not None
@@ -121,10 +130,23 @@ class TestDockerContainerDetection:
         mock_client = MagicMock()
         mock_client.containers.list.return_value = []
 
-        with patch("docker.from_env", return_value=mock_client):
+        mock_docker = MagicMock()
+        mock_docker.from_env.return_value = mock_client
+
+        with patch.dict("sys.modules", {"docker": mock_docker}):
             with patch("subprocess.check_output", side_effect=Exception("No docker command")):
                 info = OnboardingManager.detect_docker_ollama()
                 assert info is None
+
+    def test_detect_docker_module_not_installed(self):
+        """Se o módulo docker não estiver instalado, faz fallback limpo para o CLI."""
+        cli_output = "9b145877d541|ollama|ollama/ollama:latest|0.0.0.0:11434->11434/tcp\n"
+        with patch.dict("sys.modules", {"docker": None}):
+            with patch("subprocess.check_output", return_value=cli_output):
+                info = OnboardingManager.detect_docker_ollama()
+                assert info is not None
+                assert info["container_name"] == "ollama"
+                assert info["mapped_port"] == 11434
 
 
 # ============================================================================
