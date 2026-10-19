@@ -12,3 +12,4 @@ build/
 dist/
 _bundled_defaults.json
 settings.json
+.actrc

@@ -24,6 +24,12 @@ jobs:
           python-version: '3.12'
           cache: 'pip'
 
+      - name: Instalar Dependências do Sistema (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev portaudio19-dev
+
       - name: Instalar dependências Python
         run: |
           python -m pip install --upgrade pip
