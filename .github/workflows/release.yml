@@ -29,6 +29,28 @@ jobs:
       - name: Checkout repositório
         uses: actions/checkout@v4
 
+      - name: Sincronizar Versão da Tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          echo "Sincronizando versão para $TAG_VERSION..."
+          python -c "
+          import json, re
+          p = 'src-tauri/tauri.conf.json'
+          with open(p, 'r', encoding='utf-8') as f:
+              data = json.load(f)
+          data['version'] = '$TAG_VERSION'
+          with open(p, 'w', encoding='utf-8') as f:
+              json.dump(data, f, indent=2)
+          cp = 'src-tauri/Cargo.toml'
+          with open(cp, 'r', encoding='utf-8') as f:
+              content = f.read()
+          content = re.sub(r'version\s*=\s*\"[^\"]+\"', f'version = \"$TAG_VERSION\"', content, count=1)
+          with open(cp, 'w', encoding='utf-8') as f:
+              f.write(content)
+          "
+
       - name: Instalar Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -61,9 +83,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: v__VERSION__
-          releaseName: 'Geraldo Desktop v__VERSION__'
+          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v__VERSION__' }}
+          releaseName: 'Geraldo Desktop ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || ''v__VERSION__'' }}'
           releaseBody: 'Instaladores comerciais oficiais do Geraldo para Windows (.exe / .msi), macOS (.dmg) e Linux (.deb / .AppImage).'
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
+

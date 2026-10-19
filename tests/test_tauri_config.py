@@ -25,8 +25,10 @@ def test_tauri_conf_schema_and_product_metadata():
 
     assert conf.get("$schema") == "https://schema.tauri.app/config/2"
     assert conf.get("productName") == "Geraldo"
-    assert conf.get("version") == "0.1.0"
     assert conf.get("identifier") == "com.geraldo.desktop"
+    assert conf.get("version"), "Versão não especificada"
+    import re
+    assert re.match(r"^\d+\.\d+\.\d+", conf.get("version"))
 
 
 def test_tauri_build_frontend_dist():
