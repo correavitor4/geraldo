@@ -12,6 +12,12 @@ CHUNK_SIZE = 512
 VAD_THRESHOLD = 0.5
 SILENCE_LIMIT_SEC = 0.8
 
+# Barramento IPC Local (WebSocket)
+IPC_HOST = "127.0.0.1"
+IPC_PORT = 8765
+IPC_REQUIRE_AUTH = False
+IPC_AUTH_TOKEN = None
+
 # System Prompt Neutro/Padrão
 SYSTEM_PROMPT = f"""Seu nome é {ASSISTANT_NAME}. Você é um assistente de voz desktop inteligente, rápido e direto.
 Você roda localmente em Anápolis, Goiás, Brasil. Responda sempre em português.

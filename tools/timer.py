@@ -166,6 +166,12 @@ class TimerManager:
             cls._assistant_state = state
             cls._export_status_for_waybar()
 
+        try:
+            from core.ipc import IPCManager
+            IPCManager.set_state(state)
+        except Exception:
+            pass
+
     @classmethod
     def _process_waybar_commands(cls):
         try:
