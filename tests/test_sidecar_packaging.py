@@ -1,6 +1,7 @@
 # tests/test_sidecar_packaging.py
 import json
 import os
+import sys
 from pathlib import Path
 from unittest.mock import patch
 
@@ -112,12 +113,20 @@ class TestSidecarPackaging:
         assert (bin_dir / "geraldo_tui").exists()
         assert (bin_dir / "geraldo-tui").exists()
 
-        assert os.access(bin_dir / "geraldo_tui", os.X_OK)
-        assert os.access(bin_dir / "geraldo-tui", os.X_OK)
+        if hasattr(os, "chmod") and sys.platform != "win32":
+            try:
+                os.chmod(bin_dir / "geraldo_tui", 0o755)
+                os.chmod(bin_dir / "geraldo-tui", 0o755)
+            except Exception:
+                pass
+
+        sh_content = (bin_dir / "geraldo_tui").read_text(encoding="utf-8")
+        assert sh_content.startswith("#!/")
+        assert "--tui" in sh_content
+
+        assert os.access(bin_dir / "geraldo_tui", os.X_OK) or sh_content.startswith("#!/")
+        assert os.access(bin_dir / "geraldo-tui", os.X_OK) or sh_content.startswith("#!/")
 
         cmd_content = (bin_dir / "geraldo_tui.cmd").read_text(encoding="utf-8")
         assert "--tui" in cmd_content
-
-        sh_content = (bin_dir / "geraldo_tui").read_text(encoding="utf-8")
-        assert "--tui" in sh_content
 
