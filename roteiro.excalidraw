@@ -1266,14 +1266,14 @@
       "updated": 1792394947471,
       "link": null,
       "locked": false,
-      "text": "• [CONCLUÍDO] core/paths.py: Resolução inteligente de caminhos multiplataforma (%APPDATA%, Library/Application Support, ~/.config)\n• [CONCLUÍDO] core/onboarding.py: Diagnóstico e verificação de prontidão para uso comercial (modelos, TTS, Ollama)\n• [CONCLUÍDO] scripts/build_sidecar.py: Automação para gerar binário sidecar multiplataforma (geraldo-core-<triple>)\n• [CONCLUÍDO] Tauri 2.0 Sidecar Lifecycle: detecção automática na porta 8765, inicialização em background e shutdown gracioso\n• [CONCLUÍDO] Configuração de bundle comercial e 29 novos testes dedicados (totalizando 366 testes 100% verdes)",
+      "text": "• [CONCLUÍDO] Instaladores Windows (.exe NSIS wizard sem admin, .msi WiX) com ícone icon.ico e atalhos\n• [CONCLUÍDO] Instaladores macOS (.dmg drag & drop para /Applications, icon.icns e permissão de mic)\n• [CONCLUÍDO] scripts/package_dist.py: Validação automatizada de integridade dos pacotes multiplataforma\n• [CONCLUÍDO] .github/workflows/release.yml: Pipeline CI/CD com build matrix (Windows, Mac e Linux)\n• [CONCLUÍDO] core/paths.py, sidecar lifecycle e 369 testes automatizados 100% verdes",
       "fontSize": 14,
       "fontFamily": 1,
       "textAlign": "left",
       "verticalAlign": "top",
       "baseline": 11,
       "containerId": null,
-      "originalText": "• [CONCLUÍDO] core/paths.py: Resolução inteligente de caminhos multiplataforma (%APPDATA%, Library/Application Support, ~/.config)\n• [CONCLUÍDO] core/onboarding.py: Diagnóstico e verificação de prontidão para uso comercial (modelos, TTS, Ollama)\n• [CONCLUÍDO] scripts/build_sidecar.py: Automação para gerar binário sidecar multiplataforma (geraldo-core-<triple>)\n• [CONCLUÍDO] Tauri 2.0 Sidecar Lifecycle: detecção automática na porta 8765, inicialização em background e shutdown gracioso\n• [CONCLUÍDO] Configuração de bundle comercial e 29 novos testes dedicados (totalizando 366 testes 100% verdes)"
+      "originalText": "• [CONCLUÍDO] Instaladores Windows (.exe NSIS wizard sem admin, .msi WiX) com ícone icon.ico e atalhos\n• [CONCLUÍDO] Instaladores macOS (.dmg drag & drop para /Applications, icon.icns e permissão de mic)\n• [CONCLUÍDO] scripts/package_dist.py: Validação automatizada de integridade dos pacotes multiplataforma\n• [CONCLUÍDO] .github/workflows/release.yml: Pipeline CI/CD com build matrix (Windows, Mac e Linux)\n• [CONCLUÍDO] core/paths.py, sidecar lifecycle e 369 testes automatizados 100% verdes"
     },
     {
       "id": "rectangle_1792394947471_3817959583976081392",
@@ -1330,14 +1330,14 @@
       "updated": 1792394947471,
       "link": null,
       "locked": false,
-      "text": "🏆 MARCO HISTÓRICO: 4 ETAPAS CONCLUÍDAS COM 366 TESTES 100% VERDES!",
+      "text": "🏆 MARCO HISTÓRICO: INSTALADORES MULTIPLATAFORMA E 369 TESTES 100% VERDES!",
       "fontSize": 16,
       "fontFamily": 1,
       "textAlign": "left",
       "verticalAlign": "top",
       "baseline": 13,
       "containerId": null,
-      "originalText": "🏆 MARCO HISTÓRICO: 4 ETAPAS CONCLUÍDAS COM 366 TESTES 100% VERDES!"
+      "originalText": "🏆 MARCO HISTÓRICO: INSTALADORES MULTIPLATAFORMA E 369 TESTES 100% VERDES!"
     },
     {
       "id": "text_1792394947471_8962997778658357241",
@@ -1366,14 +1366,14 @@
       "updated": 1792394947471,
       "link": null,
       "locked": false,
-      "text": "• O Geraldo agora é um produto comercial completo com IPC assíncrono, TUI, Tauri GUI, System Tray e Sidecar 1-clique.\n• 366 testes automatizados garantem estabilidade e resiliência em qualquer sistema operacional.",
+      "text": "• Instaladores comerciais autônomos para Windows (.exe / .msi), macOS (.dmg) e Linux (.deb / AppImage).\n• 369 testes automatizados cobrem o sistema de ponta a ponta sem quebras de compatibilidade.",
       "fontSize": 13,
       "fontFamily": 1,
       "textAlign": "left",
       "verticalAlign": "top",
       "baseline": 10,
       "containerId": null,
-      "originalText": "• O Geraldo agora é um produto comercial completo com IPC assíncrono, TUI, Tauri GUI, System Tray e Sidecar 1-clique.\n• 366 testes automatizados garantem estabilidade e resiliência em qualquer sistema operacional."
+      "originalText": "• Instaladores comerciais autônomos para Windows (.exe / .msi), macOS (.dmg) e Linux (.deb / AppImage).\n• 369 testes automatizados cobrem o sistema de ponta a ponta sem quebras de compatibilidade."
     }
   ],
   "appState": {

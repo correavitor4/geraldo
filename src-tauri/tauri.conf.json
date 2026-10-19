@@ -37,7 +37,9 @@
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
-      "icons/icon.png"
+      "icons/icon.png",
+      "icons/icon.ico",
+      "icons/icon.icns"
     ],
     "externalBin": [
       "binaries/geraldo-core"
@@ -45,6 +47,45 @@
     "copyright": "Copyright © 2026 Geraldo AI",
     "category": "Productivity",
     "shortDescription": "Assistente de voz desktop inteligente e local",
-    "longDescription": "Geraldo é um assistente de voz desktop inteligente, rápido e direto com processamento neural local e barramento IPC."
+    "longDescription": "Geraldo é um assistente de voz desktop inteligente, rápido e direto com processamento neural local e barramento IPC.",
+    "windows": {
+      "certificateThumbprint": null,
+      "digestAlgorithm": "sha256",
+      "timestampUrl": "",
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": [
+          "Portuguese",
+          "English"
+        ],
+        "displayLanguageSelector": false
+      },
+      "wix": {
+        "language": "pt-BR"
+      }
+    },
+    "macos": {
+      "frameworks": [],
+      "minimumSystemVersion": "10.15",
+      "dmg": {
+        "background": null,
+        "windowPosition": {
+          "x": 400,
+          "y": 200
+        },
+        "windowSize": {
+          "width": 660,
+          "height": 400
+        },
+        "appPosition": {
+          "x": 180,
+          "y": 170
+        },
+        "applicationFolderPosition": {
+          "x": 480,
+          "y": 170
+        }
+      }
+    }
   }
 }

@@ -75,8 +75,8 @@ def test_tauri_tray_icon_configuration():
     assert os.path.isfile(abs_icon), f"Ícone da bandeja '{abs_icon}' não existe"
 
 
-def test_tauri_bundle_icons_exist_and_are_valid_png():
-    """Valida se todos os ícones declarados existem e contêm cabeçalho PNG válido."""
+def test_tauri_bundle_icons_exist_and_are_valid():
+    """Valida se todos os ícones declarados existem e contêm cabeçalhos válidos (PNG, ICO, ICNS)."""
     with open(TAURI_CONF_PATH, "r", encoding="utf-8") as f:
         conf = json.load(f)
 
@@ -84,20 +84,27 @@ def test_tauri_bundle_icons_exist_and_are_valid_png():
     assert len(icons) >= 2, "Poucos ícones configurados no bundle"
 
     png_header = b"\x89PNG\r\n\x1a\n"
+    ico_header = b"\x00\x00\x01\x00"
+    icns_header = b"icns"
 
     for rel_path in icons:
         abs_path = os.path.join(TAURI_DIR, rel_path)
         assert os.path.isfile(abs_path), f"Ícone '{abs_path}' não encontrado"
 
         with open(abs_path, "rb") as f:
-            header = f.read(8)
-            assert header == png_header, f"Arquivo '{abs_path}' não é um PNG válido"
-
-            # Lê dimensões do chunk IHDR
-            chunk_len, chunk_type = struct.unpack(">I4s", f.read(8))
-            if chunk_type == b"IHDR":
-                w, h = struct.unpack(">II", f.read(8))
-                assert w > 0 and h > 0, "Dimensões inválidas no PNG"
+            if rel_path.endswith(".png"):
+                header = f.read(8)
+                assert header == png_header, f"Arquivo '{abs_path}' não é um PNG válido"
+                chunk_len, chunk_type = struct.unpack(">I4s", f.read(8))
+                if chunk_type == b"IHDR":
+                    w, h = struct.unpack(">II", f.read(8))
+                    assert w > 0 and h > 0, "Dimensões inválidas no PNG"
+            elif rel_path.endswith(".ico"):
+                header = f.read(4)
+                assert header == ico_header, f"Arquivo '{abs_path}' não é um ICO válido"
+            elif rel_path.endswith(".icns"):
+                header = f.read(4)
+                assert header == icns_header, f"Arquivo '{abs_path}' não é um ICNS válido"
 
 
 def test_tauri_cargo_toml_validity():

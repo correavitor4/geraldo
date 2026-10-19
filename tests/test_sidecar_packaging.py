@@ -65,3 +65,31 @@ class TestSidecarPackaging:
         assert "checks" in res
         assert "voice_models" in res["checks"]
         assert "ollama" in res["checks"]
+
+    def test_package_dist_verify_installers(self):
+        from scripts.package_dist import verify_installer_configs
+        report = verify_installer_configs()
+        assert report["valid"] is True
+        assert report["platforms"]["windows"]["status"] == "ready"
+        assert report["platforms"]["windows"]["nsis_configured"] is True
+        assert report["platforms"]["windows"]["icon_ico"] is True
+        assert report["platforms"]["macos"]["status"] == "ready"
+        assert report["platforms"]["macos"]["dmg_configured"] is True
+        assert report["platforms"]["macos"]["icon_icns"] is True
+        assert report["platforms"]["linux"]["status"] == "ready"
+
+    def test_installer_icons_exist(self):
+        icons_dir = SRC_TAURI / "icons"
+        assert (icons_dir / "icon.ico").exists()
+        assert (icons_dir / "icon.icns").exists()
+        assert (icons_dir / "32x32.png").exists()
+        assert (icons_dir / "128x128.png").exists()
+
+    def test_github_actions_release_workflow(self):
+        workflow = REPO_ROOT / ".github" / "workflows" / "release.yml"
+        assert workflow.exists()
+        content = workflow.read_text(encoding="utf-8")
+        assert "windows-latest" in content
+        assert "macos-latest" in content
+        assert "ubuntu-22.04" in content
+        assert "tauri-action" in content
