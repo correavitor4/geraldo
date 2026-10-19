@@ -6,7 +6,8 @@ import re
 import datetime
 import random
 import threading
-from config import OLLAMA_HOST, LLM_MODEL, SYSTEM_PROMPT
+import config
+from config import SYSTEM_PROMPT
 from brain.nlu import IntentEngine
 from tools.system import SystemTools
 from tools.ytmusic import YTMusicPlayer
@@ -77,15 +78,109 @@ def clean_for_speech(text: str) -> str:
 
 
 class BrainLLM:
-    def __init__(self, speaker=None, speak_fn=None, max_history_turns: int = 4):
+    def __init__(
+        self,
+        speaker=None,
+        speak_fn=None,
+        max_history_turns: int = 4,
+        host: str = None,
+        model: str = None,
+        provider: str = None,
+        api_key: str = None,
+        api_base: str = None,
+    ):
         print("[Geraldo] Treinando classificador NLU (Scikit-Learn)...")
         self.nlu = IntentEngine(confidence_threshold=0.38)
         self.speaker = speaker
         self.speak_fn = speak_fn
-        self.api_url = f"{OLLAMA_HOST}/api/chat"
+        self._provider = provider
+        self._host = host
+        self._model = model
+        self._api_key = api_key
+        self._api_base = api_base
+        self._api_url_override = None
         self.history = collections.deque(maxlen=max_history_turns)
         self._fallback_tts = None
         self._fallback_player = None
+
+    @property
+    def provider(self) -> str:
+        return (self._provider or getattr(config, "LLM_PROVIDER", "ollama")).lower()
+
+    @provider.setter
+    def provider(self, val: str) -> None:
+        self._provider = (val or "ollama").lower()
+
+    @property
+    def api_key(self) -> str:
+        return self._api_key or getattr(config, "LLM_API_KEY", "")
+
+    @api_key.setter
+    def api_key(self, val: str) -> None:
+        self._api_key = val
+
+    @property
+    def api_base(self) -> str:
+        if self._api_base:
+            return self._api_base
+        cfg_base = getattr(config, "LLM_API_BASE", "")
+        if cfg_base:
+            return cfg_base
+        presets = getattr(config, "PROVIDER_PRESETS", {})
+        return presets.get(self.provider, {}).get("default_base", "https://api.openai.com/v1")
+
+    @api_base.setter
+    def api_base(self, val: str) -> None:
+        self._api_base = val
+
+    @property
+    def host(self) -> str:
+        return self._host or getattr(config, "OLLAMA_HOST", "http://localhost:11434")
+
+    @host.setter
+    def host(self, val: str) -> None:
+        self._host = val
+
+    @property
+    def model(self) -> str:
+        return self._model or getattr(config, "LLM_MODEL", "qwen2.5:3b")
+
+    @model.setter
+    def model(self, val: str) -> None:
+        self._model = val
+
+    @property
+    def api_url(self) -> str:
+        if self._api_url_override:
+            return self._api_url_override
+        h = (self.host or "http://localhost:11434").rstrip("/")
+        return f"{h}/api/chat"
+
+    @api_url.setter
+    def api_url(self, val: str) -> None:
+        self._api_url_override = val
+
+    def set_llm_config(
+        self,
+        provider: str = None,
+        host: str = None,
+        model: str = None,
+        api_key: str = None,
+        api_base: str = None,
+    ) -> None:
+        if provider:
+            self.provider = provider
+        if host:
+            self.host = host
+        if model:
+            self.model = model
+        if api_key is not None:
+            self.api_key = api_key
+        if api_base is not None:
+            self.api_base = api_base
+
+    def set_ollama_config(self, host: str = None, model: str = None) -> None:
+        self.set_llm_config(provider="ollama" if host else None, host=host, model=model)
 
     def reset_memory(self):
         self.history.clear()
@@ -131,19 +226,60 @@ class BrainLLM:
         with urllib.request.urlopen(req, timeout=30) as resp:
             return json.loads(resp.read().decode("utf-8"))
 
-    def _summarize_with_llm(self, instruction: str, content: str) -> str:
-        try:
+    def _post_json_openai(self, payload: dict) -> dict:
+        base = (self.api_base or "https://api.openai.com/v1").rstrip("/")
+        url = f"{base}/chat/completions"
+        headers = {
+            "Content-Type": "application/json",
+            "User-Agent": "Geraldo-Assistant/1.0",
+        }
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key.strip()}"
+
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers=headers
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+
+    def _call_llm(self, messages: list) -> str:
+        """Invoca o provedor LLM ativo (Ollama local ou provedor externo com API Key)."""
+        prov = (self.provider or "ollama").lower()
+        if prov == "ollama":
             res = self._post_json({
-                "model": LLM_MODEL,
-                "messages": [
-                    {"role": "system", "content": instruction},
-                    {"role": "user", "content": content}
-                ],
+                "model": self.model,
+                "messages": messages,
                 "stream": False,
                 "keep_alive": -1,
                 "options": LLM_OPTIONS
             })
-            reply = res.get("message", {}).get("content", "").strip()
+            if "message" in res and isinstance(res["message"], dict):
+                return res["message"].get("content", "").strip()
+            elif "choices" in res and len(res["choices"]) > 0:
+                return res["choices"][0].get("message", {}).get("content", "").strip()
+            return ""
+        else:
+            res = self._post_json_openai({
+                "model": self.model,
+                "messages": messages,
+                "temperature": 0.2,
+                "max_tokens": 150,
+            })
+            if "choices" in res and len(res["choices"]) > 0:
+                return res["choices"][0].get("message", {}).get("content", "").strip()
+            elif "message" in res and isinstance(res["message"], dict):
+                return res["message"].get("content", "").strip()
+            return ""
+
+    def _summarize_with_llm(self, instruction: str, content: str) -> str:
+        try:
+            messages = [
+                {"role": "system", "content": instruction},
+                {"role": "user", "content": content}
+            ]
+            reply = self._call_llm(messages)
             return clean_for_speech(reply) if reply else clean_for_speech(content)
         except Exception as e:
             print(f"[Geraldo:LLM Error]: {e}")
@@ -331,14 +467,8 @@ class BrainLLM:
         messages.append({"role": "user", "content": user_prompt})
 
         try:
-            data = self._post_json({
-                "model": LLM_MODEL,
-                "messages": messages,
-                "stream": False,
-                "keep_alive": -1,
-                "options": LLM_OPTIONS
-            })
-            reply = clean_for_speech(data.get("message", {}).get("content", "").strip())
+            raw_reply = self._call_llm(messages)
+            reply = clean_for_speech(raw_reply.strip())
             if reply:
                 self.history.append({"role": "user", "content": user_prompt})
                 self.history.append({"role": "assistant", "content": reply})

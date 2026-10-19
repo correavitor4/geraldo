@@ -281,3 +281,55 @@ class TestBrainLLM:
         llm = BrainLLM(speak_fn=mock_speak)
         llm._do_speak_sync("Teste de fala")
         mock_speak.assert_called_once_with("Teste de fala")
+
+    def test_dynamic_ollama_config(self, llm):
+        import config
+        assert llm.api_url.endswith("/api/chat")
+        assert llm.model == config.LLM_MODEL
+
+        llm.set_ollama_config(host="http://remote-server:11434", model="mistral:7b")
+        assert llm.host == "http://remote-server:11434"
+        assert llm.model == "mistral:7b"
+        assert llm.api_url == "http://remote-server:11434/api/chat"
+
+    def test_external_llm_configuration(self):
+        llm = BrainLLM(provider="groq", api_key="gsk_12345", model="llama-3.3-70b-versatile")
+        assert llm.provider == "groq"
+        assert llm.api_key == "gsk_12345"
+        assert llm.model == "llama-3.3-70b-versatile"
+        assert llm.api_base == "https://api.groq.com/openai/v1"
+
+    def test_external_llm_post_openai_format(self):
+        llm = BrainLLM(provider="groq", api_key="gsk_secret_key", model="llama-3.3-70b-versatile")
+        mock_response = {
+            "choices": [
+                {
+                    "message": {
+                        "content": "Olá! Eu sou o Geraldo rodando na Groq."
+                    }
+                }
+            ]
+        }
+        with patch.object(BrainLLM, "_post_json_openai", return_value=mock_response) as mock_post:
+            resp = llm.ask("Olá!")
+            assert "Geraldo rodando na Groq" in resp
+            mock_post.assert_called_once()
+            call_payload = mock_post.call_args[0][0]
+            assert call_payload["model"] == "llama-3.3-70b-versatile"
+            assert any(m["role"] == "user" for m in call_payload["messages"])
+
+    def test_external_llm_summarize_dispatch(self):
+        llm = BrainLLM(provider="openai", api_key="sk-12345", model="gpt-4o-mini")
+        mock_response = {
+            "choices": [
+                {
+                    "message": {
+                        "content": "Hoje fará sol em São Paulo com máxima de 28 graus."
+                    }
+                }
+            ]
+        }
+        with patch.object(BrainLLM, "_post_json_openai", return_value=mock_response):
+            summary = llm._summarize_with_llm("Resuma em uma frase", "Clima ensolarado...")
+            assert "sol em São Paulo" in summary
+

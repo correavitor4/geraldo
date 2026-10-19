@@ -280,3 +280,54 @@ def test_ipc_manager_singleton_operations():
 
     IPCManager.stop()
     assert not IPCManager.is_running()
+
+
+@pytest.mark.anyio
+async def test_ipc_get_and_set_config(ipc_server):
+    import config
+    orig_host = config.OLLAMA_HOST
+    orig_model = config.LLM_MODEL
+
+    try:
+        uri = f"ws://{TEST_HOST}:{TEST_PORT}"
+        async with connect(uri) as ws:
+            init_raw = await ws.recv()
+            init_data = json.loads(init_raw)["data"]
+            assert "config" in init_data
+
+            # 1. Obter config atual
+            await ws.send(json.dumps({"id": "cfg-1", "action": "get_config"}))
+            resp1 = json.loads(await asyncio.wait_for(ws.recv(), timeout=2.0))
+            assert resp1["status"] == "ok"
+            assert "ollama_host" in resp1["data"]
+            assert "llm_model" in resp1["data"]
+
+            # 2. Atualizar config
+            await ws.send(json.dumps({
+                "id": "cfg-2",
+                "action": "set_config",
+                "params": {
+                    "ollama_host": "http://ollama-docker:11434",
+                    "llm_model": "llama3.2:3b",
+                    "persist": False,
+                }
+            }))
+
+            # Recebe a resposta e o evento de broadcast
+            msg_a = json.loads(await asyncio.wait_for(ws.recv(), timeout=2.0))
+            msg_b = json.loads(await asyncio.wait_for(ws.recv(), timeout=2.0))
+            messages = [msg_a, msg_b]
+
+            event_msg = next((m for m in messages if m.get("type") == "event"), None)
+            resp_msg = next((m for m in messages if m.get("type") == "response"), None)
+
+            assert event_msg is not None
+            assert event_msg["event"] == "config_changed"
+            assert event_msg["data"]["ollama_host"] == "http://ollama-docker:11434"
+
+            assert resp_msg is not None
+            assert resp_msg["data"]["llm_model"] == "llama3.2:3b"
+    finally:
+        config.OLLAMA_HOST = orig_host
+        config.LLM_MODEL = orig_model
+

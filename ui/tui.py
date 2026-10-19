@@ -6,6 +6,7 @@ from typing import Any, Dict, Optional
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
+from textual.screen import ModalScreen
 from textual.widgets import Button, Footer, Header, Input, Label, RichLog, Static
 
 CSS = """
@@ -172,7 +173,157 @@ Screen {
     margin-left: 1;
     min-width: 10;
 }
+
+OllamaConfigModal {
+    align: center middle;
+    background: rgba(0, 0, 0, 0.75);
+}
+
+#ollama-dialog {
+    width: 68;
+    height: auto;
+    background: #111827;
+    border: round #38bdf8;
+    padding: 1 2;
+}
+
+#ollama-title {
+    color: #38bdf8;
+    text-style: bold;
+    text-align: center;
+    margin-bottom: 1;
+}
+
+.form-label {
+    color: #94a3b8;
+    text-style: bold;
+    margin-top: 1;
+}
+
+.form-hint {
+    color: #64748b;
+    margin-bottom: 1;
+}
+
+#input-host, #input-model, #input-provider, #input-api-key {
+    background: #1e293b;
+    border: none;
+    color: #f8fafc;
+    margin-bottom: 1;
+}
+
+#input-host:focus, #input-model:focus, #input-provider:focus, #input-api-key:focus {
+    border: tall #38bdf8;
+}
+
+#test-status {
+    height: auto;
+    margin: 1 0;
+    padding: 0 1;
+    color: #e2e8f0;
+}
+
+#modal-buttons {
+    height: 3;
+    align: right middle;
+    margin-top: 1;
+}
+
+#modal-buttons Button {
+    margin-left: 1;
+    min-width: 12;
+}
 """
+
+
+class OllamaConfigModal(ModalScreen):
+    """Modal para configuração e teste do container/host do Ollama ou LLM externa no Geraldo."""
+
+    def __init__(
+        self,
+        current_host: str = "http://localhost:11434",
+        current_model: str = "qwen2.5:3b",
+        current_provider: str = "ollama",
+        current_api_key: str = "",
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self.current_host = current_host
+        self.current_model = current_model
+        self.current_provider = current_provider
+        self.current_api_key = current_api_key
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="ollama-dialog"):
+            yield Label("⚙️ Configurações de IA (Ollama / LLM Externa)", id="ollama-title")
+
+            yield Label("Provedor (ollama, groq, openai, openrouter, gemini, custom):", classes="form-label")
+            yield Input(value=self.current_provider, placeholder="ollama", id="input-provider")
+
+            yield Label("Host / URL do Endpoint:", classes="form-label")
+            yield Input(value=self.current_host, placeholder="http://localhost:11434", id="input-host")
+            yield Label("Ex: http://localhost:11434 ou https://api.groq.com/openai/v1", classes="form-hint")
+
+            yield Label("API Key (necessário para Groq, OpenAI, etc.):", classes="form-label")
+            yield Input(value=self.current_api_key, placeholder="sk-... ou gsk_...", id="input-api-key", password=True)
+
+            yield Label("Modelo LLM:", classes="form-label")
+            yield Input(value=self.current_model, placeholder="qwen2.5:3b", id="input-model")
+
+            yield Label("Status: Pronto para testar conexão ou salvar.", id="test-status")
+
+            with Horizontal(id="modal-buttons"):
+                yield Button("🔍 Testar", id="btn-modal-test", variant="default")
+                yield Button("💾 Salvar", id="btn-modal-save", variant="primary")
+                yield Button("✕ Fechar", id="btn-modal-close", variant="error")
+
+    async def on_button_pressed(self, event: Button.Pressed) -> None:
+        button_id = event.button.id
+        if button_id == "btn-modal-close":
+            self.dismiss(False)
+        elif button_id == "btn-modal-save":
+            provider = self.query_one("#input-provider", Input).value.strip().lower() or "ollama"
+            host = self.query_one("#input-host", Input).value.strip() or "http://localhost:11434"
+            model = self.query_one("#input-model", Input).value.strip() or "qwen2.5:3b"
+            api_key = self.query_one("#input-api-key", Input).value.strip()
+            if hasattr(self.app, "save_ollama_config"):
+                self.app.save_ollama_config(host=host, model=model, provider=provider, api_key=api_key)
+            self.dismiss(True)
+        elif button_id == "btn-modal-test":
+            provider = self.query_one("#input-provider", Input).value.strip().lower() or "ollama"
+            host = self.query_one("#input-host", Input).value.strip() or "http://localhost:11434"
+            model = self.query_one("#input-model", Input).value.strip() or "qwen2.5:3b"
+            api_key = self.query_one("#input-api-key", Input).value.strip()
+            status_lbl = self.query_one("#test-status", Label)
+            status_lbl.update(f"[bold yellow]⏳ Verificando {provider.upper()}...[/]")
+            self.run_worker(
+                self._async_test_llm(provider, host, model, api_key),
+                exclusive=True,
+                name="test_llm",
+            )
+
+    async def _async_test_llm(self, provider: str, host: str, model: str, api_key: str) -> None:
+        from core.onboarding import OnboardingManager
+        import asyncio
+
+        res = await asyncio.to_thread(
+            OnboardingManager.check_llm_provider,
+            provider=provider,
+            host=host,
+            model=model,
+            api_key=api_key,
+            timeout=4.0,
+        )
+        status_lbl = self.query_one("#test-status", Label)
+        if res.get("status") == "ok":
+            models = res.get("available_models", [])
+            m_str = ", ".join(models[:3]) + (f" (+{len(models)-3})" if len(models) > 3 else "")
+            status_lbl.update(f"[bold green]✅ Conectado![/] {res.get('message')} Modelos: [cyan]{m_str or model}[/]")
+        else:
+            status_lbl.update(f"[bold red]❌ Erro:[/] {res.get('message', 'Inacessível')}")
+
+    async def _async_test_ollama(self, host: str) -> None:
+        await self._async_test_llm("ollama", host, "qwen2.5:3b", "")
 
 
 class GeraldoTUI(App):
@@ -188,6 +339,7 @@ class GeraldoTUI(App):
         Binding("m", "toggle_mute", "Mutar/Desmutar", show=True),
         Binding("p", "toggle_pomodoro", "Pomodoro Iniciar/Pausar", show=True),
         Binding("c", "cancel_action", "Cancelar/Silenciar", show=True),
+        Binding("o", "open_ollama_settings", "Configurar Ollama", show=True),
         Binding("t", "focus_input", "Digitar Comando", show=True),
         Binding("ctrl+l", "clear_log", "Limpar Histórico", show=True),
         Binding("q", "quit", "Sair", show=True),
@@ -212,6 +364,11 @@ class GeraldoTUI(App):
         self._assistant_state = "idle"
         self._pomodoro_state = "idle"
         self._pomodoro_cycle = 1
+        self._llm_provider = "ollama"
+        self._ollama_host = "http://localhost:11434"
+        self._ollama_model = "qwen2.5:3b"
+        self._llm_api_key = ""
+        self._llm_api_base = ""
 
         self._send_queue: asyncio.Queue = asyncio.Queue()
         self._ws_worker_task = None
@@ -274,6 +431,7 @@ class GeraldoTUI(App):
                 self.update_connection_status(False, "Conectando...")
                 async with connect(uri) as ws:
                     self.update_connection_status(True, f"🟢 Conectado ({self.host}:{self.port})")
+                    self.send_action("get_config")
 
                     # Autenticação se houver token
                     if self.token:
@@ -332,6 +490,15 @@ class GeraldoTUI(App):
             muted = data.get("is_muted", False)
             self.update_state_badge(state)
             self.update_mic_badge(muted)
+            cfg = data.get("config", {})
+            if cfg:
+                self._ollama_host = cfg.get("ollama_host", self._ollama_host)
+                self._ollama_model = cfg.get("llm_model", self._ollama_model)
+
+        elif event_name == "config_changed":
+            self._ollama_host = data.get("ollama_host", self._ollama_host)
+            self._ollama_model = data.get("llm_model", self._ollama_model)
+            chat.write(f"[bold cyan]⚙️ Configuração atualizada:[/] Ollama em {self._ollama_host} ({self._ollama_model})\n")
 
         elif event_name == "state_changed":
             state = data.get("state", "idle")
@@ -367,6 +534,9 @@ class GeraldoTUI(App):
                 pass
             if data.get("pong"):
                 chat.write("[dim italic]📡 Ping respondido com sucesso (Pong).[/]")
+            if data.get("ollama_host"):
+                self._ollama_host = data.get("ollama_host", self._ollama_host)
+                self._ollama_model = data.get("llm_model", self._ollama_model)
         else:
             chat.write(f"[bold red]❌ Erro no comando:[/] {error or 'Falha desconhecida'}")
 
@@ -524,6 +694,50 @@ class GeraldoTUI(App):
         chat = self.query_one("#chat-log", RichLog)
         chat.clear()
         chat.write("[dim italic]Histórico limpo.[/]")
+
+    def action_open_ollama_settings(self) -> None:
+        """Abre o diálogo modal de configuração do Ollama / LLM Externa."""
+        self.push_screen(
+            OllamaConfigModal(
+                current_host=self._ollama_host,
+                current_model=self._ollama_model,
+                current_provider=self._llm_provider,
+                current_api_key=self._llm_api_key,
+            )
+        )
+
+    def save_ollama_config(
+        self,
+        host: str,
+        model: str,
+        provider: str = "ollama",
+        api_key: str = "",
+        api_base: str = "",
+    ) -> None:
+        """Salva a configuração do Ollama / LLM Externa e transmite via IPC."""
+        self._llm_provider = provider
+        self._ollama_host = host
+        self._ollama_model = model
+        if api_key:
+            self._llm_api_key = api_key
+        if api_base:
+            self._llm_api_base = api_base
+
+        payload = {
+            "provider": provider,
+            "ollama_host": host,
+            "llm_model": model,
+            "persist": True,
+        }
+        if api_key:
+            payload["api_key"] = api_key
+        if api_base:
+            payload["api_base"] = api_base
+
+        self.send_action("set_config", payload)
+        chat = self.query_one("#chat-log", RichLog)
+        prov_label = provider.upper() if provider != "ollama" else "Ollama"
+        chat.write(f"[bold green]⚙️ Configuração salva:[/] {prov_label} em {host} ({model})\n")
 
 
 def run_tui(host: str = "127.0.0.1", port: int = 8765, token: Optional[str] = None) -> None:

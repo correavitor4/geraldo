@@ -55,6 +55,10 @@ class GeraldoIPCServer:
         self.register_handler("send_prompt", self._handle_send_prompt)
         self.register_handler("cancel", self._handle_cancel)
         self.register_handler("diagnostics", self._handle_diagnostics)
+        self.register_handler("get_config", self._handle_get_config)
+        self.register_handler("set_config", self._handle_set_config)
+        self.register_handler("check_ollama", self._handle_check_ollama)
+        self.register_handler("check_llm", self._handle_check_llm)
 
     def register_handler(self, action: str, handler: Callable) -> None:
         """Registra um manipulador para uma ação RPC."""
@@ -222,6 +226,7 @@ class GeraldoIPCServer:
 
         # Envia estado inicial imediato para o cliente recém-conectado
         try:
+            import config
             initial_state = {
                 "type": "event",
                 "event": "connected",
@@ -230,6 +235,10 @@ class GeraldoIPCServer:
                     "assistant_state": self._assistant_state,
                     "is_muted": self._is_muted,
                     "auth_required": self.require_auth,
+                    "config": config.get_llm_config() if hasattr(config, "get_llm_config") else {
+                        "ollama_host": getattr(config, "OLLAMA_HOST", "http://localhost:11434"),
+                        "llm_model": getattr(config, "LLM_MODEL", "qwen2.5:3b"),
+                    },
                 },
             }
             await websocket.send(json.dumps(initial_state, ensure_ascii=False))
@@ -361,6 +370,54 @@ class GeraldoIPCServer:
     def _handle_diagnostics(self, params: dict) -> dict:
         from core.onboarding import OnboardingManager
         return OnboardingManager.run_full_diagnostics()
+
+    def _handle_get_config(self, params: dict) -> dict:
+        import config
+        return config.get_llm_config()
+
+    def _handle_set_config(self, params: dict) -> dict:
+        import config
+        provider = params.get("provider") or params.get("llm_provider")
+        host = params.get("ollama_host") or params.get("host")
+        model = params.get("llm_model") or params.get("model")
+        api_key = params.get("api_key") or params.get("llm_api_key")
+        api_base = params.get("api_base") or params.get("llm_api_base")
+        persist = bool(params.get("persist", True))
+        updated = config.update_llm_config(
+            provider=provider,
+            host=host,
+            model=model,
+            api_key=api_key,
+            api_base=api_base,
+            persist=persist,
+        )
+        self.broadcast_event("config_changed", updated)
+        return updated
+
+    def _handle_check_ollama(self, params: dict) -> dict:
+        from core.onboarding import OnboardingManager
+        import config
+        host = params.get("host") or params.get("ollama_host") or getattr(config, "OLLAMA_HOST", "http://localhost:11434")
+        return OnboardingManager.check_ollama(host=host)
+
+    def _handle_check_llm(self, params: dict) -> dict:
+        from core.onboarding import OnboardingManager
+        import config
+        provider = params.get("provider") or getattr(config, "LLM_PROVIDER", "ollama")
+        host = params.get("host") or params.get("ollama_host") or getattr(config, "OLLAMA_HOST", "http://localhost:11434")
+        api_key = params.get("api_key")
+        if api_key is None:
+            api_key = getattr(config, "LLM_API_KEY", "")
+        api_base = params.get("api_base") or getattr(config, "LLM_API_BASE", "")
+        model = params.get("model") or params.get("llm_model") or getattr(config, "LLM_MODEL", "qwen2.5:3b")
+
+        return OnboardingManager.check_llm_provider(
+            provider=provider,
+            host=host,
+            api_key=api_key,
+            api_base=api_base,
+            model=model,
+        )
 
 
 class IPCManager:

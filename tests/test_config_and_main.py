@@ -23,6 +23,32 @@ class TestConfig:
         assert "Geraldo" in config.SYSTEM_PROMPT
         assert "português" in config.SYSTEM_PROMPT
 
+    def test_update_ollama_config(self, tmp_path, monkeypatch):
+        test_settings = tmp_path / "settings.json"
+        monkeypatch.setattr(config, "get_settings_file", lambda: test_settings)
+
+        orig_host = config.OLLAMA_HOST
+        orig_model = config.LLM_MODEL
+
+        try:
+            res = config.update_ollama_config(host="http://container-ollama:11434/", model="llama3.2:3b", persist=True)
+            assert res["ollama_host"] == "http://container-ollama:11434"
+            assert res["llm_model"] == "llama3.2:3b"
+            assert config.OLLAMA_HOST == "http://container-ollama:11434"
+            assert config.LLM_MODEL == "llama3.2:3b"
+
+            # Verifica persistência em disco
+            loaded = config.load_settings()
+            assert loaded.get("ollama_host") == "http://container-ollama:11434"
+            assert loaded.get("llm_model") == "llama3.2:3b"
+
+            # Normalização de host sem protocolo
+            res2 = config.update_ollama_config(host="192.168.1.100:11434", persist=False)
+            assert res2["ollama_host"] == "http://192.168.1.100:11434"
+        finally:
+            config.OLLAMA_HOST = orig_host
+            config.LLM_MODEL = orig_model
+
 class TestMainFlow:
     @patch("main.TimerManager")
     @patch("main.TextToSpeech")

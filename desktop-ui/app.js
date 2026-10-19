@@ -40,8 +40,47 @@ class GeraldoDesktopClient {
             btnAddTimerSubmit: document.getElementById("btn-add-timer-submit"),
             newTimerLabel: document.getElementById("new-timer-label"),
             newTimerMin: document.getElementById("new-timer-min"),
-            newTimerSec: document.getElementById("new-timer-sec")
+            newTimerSec: document.getElementById("new-timer-sec"),
+            // Configurações do Ollama
+            btnOpenSettings: document.getElementById("btn-open-settings"),
+            settingsModal: document.getElementById("settings-modal"),
+            btnCloseSettings: document.getElementById("btn-close-settings"),
+            btnCancelSettings: document.getElementById("btn-cancel-settings"),
+            btnSaveSettings: document.getElementById("btn-save-settings"),
+            btnTestOllama: document.getElementById("btn-test-ollama"),
+            cfgOllamaHost: document.getElementById("cfg-ollama-host"),
+            cfgLlmModel: document.getElementById("cfg-llm-model"),
+            cfgModelDropdown: document.getElementById("cfg-model-dropdown"),
+            testResultBox: document.getElementById("test-result-box"),
+            testStatusBadge: document.getElementById("test-status-badge"),
+            testStatusMsg: document.getElementById("test-status-msg"),
+            testModelsContainer: document.getElementById("test-models-container"),
+            specsLlmText: document.getElementById("specs-llm-text"),
+            providerTabs: document.getElementById("provider-tabs"),
+            cfgProviderSelect: document.getElementById("cfg-provider-select"),
+            sectionOllama: document.getElementById("section-ollama"),
+            sectionExternal: document.getElementById("section-external"),
+            cfgApiKey: document.getElementById("cfg-api-key"),
+            btnToggleKeyVisibility: document.getElementById("btn-toggle-key-visibility"),
+            cfgApiBase: document.getElementById("cfg-api-base"),
+            apiKeyLink: document.getElementById("api-key-link"),
+            apiKeyHelp: document.getElementById("api-key-help"),
+            modelPresetsContainer: document.getElementById("model-presets-container")
         };
+
+        this.llmConfig = {
+            provider: "ollama",
+            ollama_host: "http://localhost:11434",
+            llm_model: "qwen2.5:3b",
+            api_key: "",
+            api_key_masked: "",
+            has_api_key: false,
+            api_base: ""
+        };
+        // Alias de retrocompatibilidade
+        this.ollamaConfig = this.llmConfig;
+        this.currentProvider = "ollama";
+        this._pendingRequests = new Map();
 
         this.initEventListeners();
         this.connect();
@@ -56,6 +95,7 @@ class GeraldoDesktopClient {
 
             this.ws.onopen = () => {
                 this.updateConnectionStatus(true, "Conectado");
+                this.sendAction("get_config");
             };
 
             this.ws.onmessage = (event) => {
@@ -112,6 +152,16 @@ class GeraldoDesktopClient {
             case "connected":
                 this.updateStateBadge(data.assistant_state || "idle");
                 this.updateMicBadge(data.is_muted || false);
+                if (data.config) {
+                    this.updateConfigDisplay(data.config);
+                }
+                break;
+
+            case "config_changed":
+                if (data) {
+                    this.updateConfigDisplay(data);
+                    this.appendSystemMessage(`Configuração atualizada: Ollama em ${data.ollama_host} (${data.llm_model})`);
+                }
                 break;
 
             case "state_changed":
@@ -147,19 +197,41 @@ class GeraldoDesktopClient {
     }
 
     handleResponse(msg) {
+        if (msg.id && this._pendingRequests.has(msg.id)) {
+            const cb = this._pendingRequests.get(msg.id);
+            this._pendingRequests.delete(msg.id);
+            cb(msg.status === "ok", msg.data, msg.error);
+        }
+
         if (msg.status === "error") {
             this.appendSystemMessage(`Erro: ${msg.error || "Operação falhou"}`);
+        } else if (msg.id) {
+            if (msg.id.startsWith("get_config")) {
+                this.updateConfigDisplay(msg.data);
+            } else if (msg.id.startsWith("set_config")) {
+                this.updateConfigDisplay(msg.data);
+                this.closeSettingsModal();
+                this.appendSystemMessage("Configurações de IA salvas com sucesso!");
+            } else if (msg.id.startsWith("check_ollama") || msg.id.startsWith("check_llm")) {
+                this.displayTestResults(msg.data);
+            }
         }
     }
 
-    sendAction(action, params = {}) {
+    sendAction(action, params = {}, callback = null) {
         if (!this.connected || !this.ws) {
             this.appendSystemMessage("Não conectado ao daemon do Geraldo.");
+            if (callback) callback(false, null, "Não conectado");
             return;
         }
 
+        const reqId = `${action}-${Date.now()}`;
+        if (callback) {
+            this._pendingRequests.set(reqId, callback);
+        }
+
         const payload = {
-            id: `gui-${Date.now()}`,
+            id: reqId,
             action: action,
             params: params
         };
@@ -405,6 +477,373 @@ class GeraldoDesktopClient {
 
                 if (this.dom.newTimerForm) this.dom.newTimerForm.classList.add("hidden");
             });
+        }
+
+        // Configurações do Ollama / Modal
+        if (this.dom.btnOpenSettings) {
+            this.dom.btnOpenSettings.addEventListener("click", () => this.openSettingsModal());
+        }
+
+        if (this.dom.btnCloseSettings) {
+            this.dom.btnCloseSettings.addEventListener("click", () => this.closeSettingsModal());
+        }
+
+        if (this.dom.btnCancelSettings) {
+            this.dom.btnCancelSettings.addEventListener("click", () => this.closeSettingsModal());
+        }
+
+        if (this.dom.settingsModal) {
+            this.dom.settingsModal.addEventListener("click", (e) => {
+                if (e.target === this.dom.settingsModal) {
+                    this.closeSettingsModal();
+                }
+            });
+        }
+
+        document.addEventListener("keydown", (e) => {
+            if (e.key === "Escape" && this.dom.settingsModal && !this.dom.settingsModal.classList.contains("hidden")) {
+                this.closeSettingsModal();
+            }
+        });
+
+        // Presets de host Ollama
+        document.querySelectorAll(".preset-chip").forEach(chip => {
+            chip.addEventListener("click", () => {
+                const host = chip.getAttribute("data-host");
+                if (host && this.dom.cfgOllamaHost) {
+                    this.dom.cfgOllamaHost.value = host;
+                }
+            });
+        });
+
+        // Abas de seleção de provedor
+        if (this.dom.providerTabs) {
+            this.dom.providerTabs.querySelectorAll(".provider-tab").forEach(tab => {
+                tab.addEventListener("click", () => {
+                    const prov = tab.getAttribute("data-provider");
+                    if (prov) this.selectProvider(prov);
+                });
+            });
+        }
+
+        // Toggle de visibilidade da API key
+        if (this.dom.btnToggleKeyVisibility && this.dom.cfgApiKey) {
+            this.dom.btnToggleKeyVisibility.addEventListener("click", () => {
+                const isPassword = this.dom.cfgApiKey.type === "password";
+                this.dom.cfgApiKey.type = isPassword ? "text" : "password";
+                this.dom.btnToggleKeyVisibility.textContent = isPassword ? "🙈" : "👁️";
+            });
+        }
+
+        // Dropdown de modelos detectados
+        if (this.dom.cfgModelDropdown) {
+            this.dom.cfgModelDropdown.addEventListener("change", (e) => {
+                if (e.target.value && this.dom.cfgLlmModel) {
+                    this.dom.cfgLlmModel.value = e.target.value;
+                }
+            });
+        }
+
+        // Testar conexão
+        if (this.dom.btnTestOllama) {
+            this.dom.btnTestOllama.addEventListener("click", () => this.testOllamaConnection());
+        }
+
+        // Salvar configurações
+        if (this.dom.btnSaveSettings) {
+            this.dom.btnSaveSettings.addEventListener("click", () => this.saveOllamaSettings());
+        }
+    }
+
+    selectProvider(prov) {
+        this.currentProvider = prov;
+
+        // Atualiza abas visuais
+        if (this.dom.providerTabs) {
+            this.dom.providerTabs.querySelectorAll(".provider-tab").forEach(tab => {
+                if (tab.getAttribute("data-provider") === prov) {
+                    tab.classList.add("active");
+                } else {
+                    tab.classList.remove("active");
+                }
+            });
+        }
+
+        const presets = {
+            ollama: {
+                defaultBase: "http://localhost:11434",
+                defaultModel: "qwen2.5:3b",
+                models: ["qwen2.5:3b", "llama3.2:3b", "mistral:latest"],
+                link: "https://ollama.com",
+                linkLabel: "Site oficial Ollama ↗"
+            },
+            groq: {
+                defaultBase: "https://api.groq.com/openai/v1",
+                defaultModel: "llama-3.3-70b-versatile",
+                models: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"],
+                link: "https://console.groq.com/keys",
+                linkLabel: "Obter chave Groq (grátis) ↗"
+            },
+            openai: {
+                defaultBase: "https://api.openai.com/v1",
+                defaultModel: "gpt-4o-mini",
+                models: ["gpt-4o-mini", "gpt-4o"],
+                link: "https://platform.openai.com/api-keys",
+                linkLabel: "Obter chave OpenAI ↗"
+            },
+            openrouter: {
+                defaultBase: "https://openrouter.ai/api/v1",
+                defaultModel: "meta-llama/llama-3.3-70b-instruct",
+                models: ["meta-llama/llama-3.3-70b-instruct", "deepseek/deepseek-chat"],
+                link: "https://openrouter.ai/keys",
+                linkLabel: "Obter chave OpenRouter ↗"
+            },
+            gemini: {
+                defaultBase: "https://generativelanguage.googleapis.com/v1beta/openai",
+                defaultModel: "gemini-2.0-flash",
+                models: ["gemini-2.0-flash", "gemini-1.5-flash"],
+                link: "https://aistudio.google.com/apikey",
+                linkLabel: "Obter chave Google AI Studio (grátis) ↗"
+            },
+            custom: {
+                defaultBase: "http://localhost:8000/v1",
+                defaultModel: "default",
+                models: [],
+                link: "",
+                linkLabel: ""
+            }
+        };
+
+        const meta = presets[prov] || presets.custom;
+
+        // Alterna visibilidade das seções
+        if (prov === "ollama") {
+            if (this.dom.sectionOllama) this.dom.sectionOllama.classList.remove("hidden");
+            if (this.dom.sectionExternal) this.dom.sectionExternal.classList.add("hidden");
+        } else {
+            if (this.dom.sectionOllama) this.dom.sectionOllama.classList.add("hidden");
+            if (this.dom.sectionExternal) this.dom.sectionExternal.classList.remove("hidden");
+
+            // Atualiza link de ajuda
+            if (this.dom.apiKeyLink) {
+                if (meta.link) {
+                    this.dom.apiKeyLink.href = meta.link;
+                    this.dom.apiKeyLink.textContent = meta.linkLabel || "Obter chave ↗";
+                    this.dom.apiKeyLink.classList.remove("hidden");
+                } else {
+                    this.dom.apiKeyLink.classList.add("hidden");
+                }
+            }
+
+            // Preenche endpoint base padrão se vazio ou se pertencia ao preset anterior
+            if (this.dom.cfgApiBase) {
+                if (!this.dom.cfgApiBase.value || this.dom.cfgApiBase.value.startsWith("https://api.") || this.dom.cfgApiBase.value.startsWith("https://openrouter")) {
+                    this.dom.cfgApiBase.value = meta.defaultBase;
+                }
+            }
+        }
+
+        // Atualiza chips de sugestão de modelos para o provedor escolhido
+        if (this.dom.modelPresetsContainer) {
+            if (meta.models && meta.models.length > 0) {
+                this.dom.modelPresetsContainer.innerHTML = meta.models.map(m =>
+                    `<button type="button" class="model-preset-chip" data-model="${this.escapeHtml(m)}">${this.escapeHtml(m)}</button>`
+                ).join("");
+
+                this.dom.modelPresetsContainer.querySelectorAll(".model-preset-chip").forEach(chip => {
+                    chip.addEventListener("click", () => {
+                        const m = chip.getAttribute("data-model");
+                        if (m && this.dom.cfgLlmModel) {
+                            this.dom.cfgLlmModel.value = m;
+                        }
+                    });
+                });
+            } else {
+                this.dom.modelPresetsContainer.innerHTML = "";
+            }
+        }
+    }
+
+    openSettingsModal() {
+        if (!this.dom.settingsModal) return;
+
+        const prov = this.llmConfig.provider || "ollama";
+        this.selectProvider(prov);
+
+        if (this.dom.cfgOllamaHost) {
+            this.dom.cfgOllamaHost.value = this.llmConfig.ollama_host || "http://localhost:11434";
+        }
+        if (this.dom.cfgLlmModel) {
+            this.dom.cfgLlmModel.value = this.llmConfig.llm_model || "qwen2.5:3b";
+        }
+        if (this.dom.cfgApiBase) {
+            this.dom.cfgApiBase.value = this.llmConfig.api_base || "";
+        }
+        if (this.dom.cfgApiKey) {
+            this.dom.cfgApiKey.value = "";
+            this.dom.cfgApiKey.placeholder = this.llmConfig.has_api_key
+                ? (this.llmConfig.api_key_masked || "Chave configurada (oculta)")
+                : "Insira sua API Key (ex: gsk_... ou sk-...)";
+        }
+
+        if (this.dom.testResultBox) {
+            this.dom.testResultBox.classList.add("hidden");
+        }
+        this.dom.settingsModal.classList.remove("hidden");
+        if (this.connected) {
+            this.sendAction("get_config");
+        }
+    }
+
+    closeSettingsModal() {
+        if (!this.dom.settingsModal) return;
+        this.dom.settingsModal.classList.add("hidden");
+    }
+
+    testOllamaConnection() {
+        const prov = this.currentProvider || "ollama";
+        if (this.dom.testResultBox) {
+            this.dom.testResultBox.classList.remove("hidden");
+        }
+        if (this.dom.testStatusBadge) {
+            this.dom.testStatusBadge.className = "badge-status testing";
+            this.dom.testStatusBadge.textContent = "Testando...";
+        }
+        if (this.dom.testModelsContainer) {
+            this.dom.testModelsContainer.innerHTML = "";
+        }
+
+        if (prov === "ollama") {
+            const host = (this.dom.cfgOllamaHost && this.dom.cfgOllamaHost.value.trim()) || "http://localhost:11434";
+            if (this.dom.testStatusMsg) {
+                this.dom.testStatusMsg.textContent = `Consultando Ollama em ${host}...`;
+            }
+            this.sendAction("check_ollama", { host: host });
+        } else {
+            const apiKey = (this.dom.cfgApiKey && this.dom.cfgApiKey.value.trim()) || "";
+            const apiBase = (this.dom.cfgApiBase && this.dom.cfgApiBase.value.trim()) || "";
+            const model = (this.dom.cfgLlmModel && this.dom.cfgLlmModel.value.trim()) || "";
+            if (this.dom.testStatusMsg) {
+                this.dom.testStatusMsg.textContent = `Verificando credenciais no ${prov.toUpperCase()}...`;
+            }
+            this.sendAction("check_llm", {
+                provider: prov,
+                api_key: apiKey,
+                api_base: apiBase,
+                model: model,
+            });
+        }
+    }
+
+    displayTestResults(data) {
+        if (!this.dom.testResultBox) return;
+        this.dom.testResultBox.classList.remove("hidden");
+
+        const isOk = data && (data.status === "ok" || data.connected === true);
+        if (isOk) {
+            if (this.dom.testStatusBadge) {
+                this.dom.testStatusBadge.className = "badge-status success";
+                this.dom.testStatusBadge.textContent = "CONECTADO";
+            }
+            if (this.dom.testStatusMsg) {
+                const count = (data.available_models && data.available_models.length) || 0;
+                this.dom.testStatusMsg.textContent = data.message || `Provedor ativo e respondendo!`;
+            }
+
+            // Exibe tags de modelos disponíveis e popula dropdown se disponível
+            if (this.dom.testModelsContainer && data.available_models && data.available_models.length > 0) {
+                const currentModel = (this.dom.cfgLlmModel && this.dom.cfgLlmModel.value.trim()) || "";
+                this.dom.testModelsContainer.innerHTML = data.available_models.map(m => {
+                    const isSelected = currentModel && m.includes(currentModel);
+                    return `<span class="model-tag ${isSelected ? 'selected' : ''}" data-model="${this.escapeHtml(m)}">${this.escapeHtml(m)}</span>`;
+                }).join("");
+
+                this.dom.testModelsContainer.querySelectorAll(".model-tag").forEach(tag => {
+                    tag.addEventListener("click", () => {
+                        const m = tag.getAttribute("data-model");
+                        if (this.dom.cfgLlmModel) {
+                            this.dom.cfgLlmModel.value = m;
+                        }
+                        this.dom.testModelsContainer.querySelectorAll(".model-tag").forEach(t => t.classList.remove("selected"));
+                        tag.classList.add("selected");
+                    });
+                });
+            }
+
+            if (this.dom.cfgModelDropdown && data.available_models && data.available_models.length > 0) {
+                this.dom.cfgModelDropdown.classList.remove("hidden");
+                this.dom.cfgModelDropdown.innerHTML = '<option value="">Modelos detectados...</option>' +
+                    data.available_models.map(m => `<option value="${this.escapeHtml(m)}">${this.escapeHtml(m)}</option>`).join("");
+            }
+        } else {
+            if (this.dom.testStatusBadge) {
+                this.dom.testStatusBadge.className = "badge-status error";
+                this.dom.testStatusBadge.textContent = "INACESSÍVEL";
+            }
+            if (this.dom.testStatusMsg) {
+                this.dom.testStatusMsg.textContent = (data && (data.message || data.error)) || "Não foi possível conectar ao endpoint.";
+            }
+            if (this.dom.testModelsContainer) {
+                const hint = this.currentProvider === "ollama"
+                    ? "Dica: certifique-se de que o container do Ollama está rodando com a porta 11434 exposta."
+                    : "Dica: verifique se sua API Key é válida e se há saldo ou cota disponível.";
+                this.dom.testModelsContainer.innerHTML = `<span class="field-hint">${hint}</span>`;
+            }
+        }
+    }
+
+    saveOllamaSettings() {
+        const prov = this.currentProvider || "ollama";
+        const host = (this.dom.cfgOllamaHost && this.dom.cfgOllamaHost.value.trim()) || "http://localhost:11434";
+        const model = (this.dom.cfgLlmModel && this.dom.cfgLlmModel.value.trim()) || "qwen2.5:3b";
+        const apiKey = (this.dom.cfgApiKey && this.dom.cfgApiKey.value.trim()) || "";
+        const apiBase = (this.dom.cfgApiBase && this.dom.cfgApiBase.value.trim()) || "";
+
+        const payload = {
+            provider: prov,
+            ollama_host: host,
+            llm_model: model,
+            persist: true
+        };
+        if (apiKey) payload.api_key = apiKey;
+        if (apiBase) payload.api_base = apiBase;
+
+        this.sendAction("set_config", payload);
+    }
+
+    updateConfigDisplay(config) {
+        if (!config) return;
+        this.llmConfig = Object.assign({}, this.llmConfig, config);
+        this.ollamaConfig = this.llmConfig;
+
+        if (config.provider) {
+            this.currentProvider = config.provider;
+        }
+
+        if (this.dom.cfgOllamaHost && this.dom.settingsModal && !this.dom.settingsModal.classList.contains("hidden")) {
+            this.dom.cfgOllamaHost.value = this.llmConfig.ollama_host || "http://localhost:11434";
+        }
+        if (this.dom.cfgLlmModel && this.dom.settingsModal && !this.dom.settingsModal.classList.contains("hidden")) {
+            this.dom.cfgLlmModel.value = this.llmConfig.llm_model || "qwen2.5:3b";
+        }
+        if (this.dom.cfgApiBase && this.dom.settingsModal && !this.dom.settingsModal.classList.contains("hidden")) {
+            this.dom.cfgApiBase.value = this.llmConfig.api_base || "";
+        }
+        if (this.dom.cfgApiKey && this.dom.settingsModal && !this.dom.settingsModal.classList.contains("hidden")) {
+            if (this.llmConfig.has_api_key) {
+                this.dom.cfgApiKey.placeholder = this.llmConfig.api_key_masked || "Chave configurada (oculta)";
+            }
+        }
+
+        if (this.dom.specsLlmText) {
+            const prov = (this.llmConfig.provider || "ollama").toLowerCase();
+            const provName = prov === "ollama" ? "Ollama" : (prov.charAt(0).toUpperCase() + prov.slice(1));
+            const modelName = this.llmConfig.llm_model || "qwen2.5:3b";
+            this.dom.specsLlmText.textContent = `${provName} (${modelName})`;
+            const titleHost = prov === "ollama"
+                ? (this.llmConfig.ollama_host || "http://localhost:11434")
+                : (this.llmConfig.api_base || "API Externa");
+            this.dom.specsLlmText.title = `Provedor: ${provName} | Endpoint: ${titleHost}`;
         }
     }
 

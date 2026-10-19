@@ -34,6 +34,10 @@
             </div>
 
             <div class="actions-group">
+                <button id="btn-open-settings" class="btn-icon" title="Configurar Ollama / Container">
+                    <span id="settings-icon">⚙️</span>
+                    <span id="settings-text">Ollama</span>
+                </button>
                 <button id="btn-mic-toggle" class="btn-icon" title="Mutar / Ativar Microfone">
                     <span id="mic-icon">🎤</span>
                     <span id="mic-text">Ativo</span>
@@ -153,11 +157,137 @@
                         <li><strong>STT:</strong> Faster-Whisper (CPU int8)</li>
                         <li><strong>NLU:</strong> Scikit-Learn TF-IDF (&lt;1ms)</li>
                         <li><strong>TTS:</strong> Piper Neural ONNX</li>
-                        <li><strong>LLM:</strong> Ollama (qwen2.5:3b)</li>
+                        <li><strong>LLM:</strong> <span id="specs-llm-text">Ollama (qwen2.5:3b)</span></li>
                     </ul>
                 </div>
             </aside>
         </main>
+    </div>
+
+    <!-- MODAL DE CONFIGURAÇÕES DE IA / LLM (OLLAMA OU EXTERNA) -->
+    <div id="settings-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <div class="modal-title-group">
+                    <span class="modal-icon">⚙️</span>
+                    <div>
+                        <h3 id="settings-title">Configurar IA & Modelo LLM</h3>
+                        <p class="modal-subtitle">Escolha entre Ollama local/container ou provedores externos com API Key</p>
+                    </div>
+                </div>
+                <button id="btn-close-settings" class="btn-close" title="Fechar">✕</button>
+            </div>
+
+            <div class="modal-body">
+                <!-- Seletor de Provedor -->
+                <div class="form-group">
+                    <label>Provedor de Inteligência Artificial</label>
+                    <div class="provider-selector-tabs" id="provider-tabs">
+                        <button type="button" class="provider-tab active" data-provider="ollama">
+                            <span class="tab-icon">🦙</span>
+                            <span class="tab-label">Ollama</span>
+                        </button>
+                        <button type="button" class="provider-tab" data-provider="groq">
+                            <span class="tab-icon">⚡</span>
+                            <span class="tab-label">Groq</span>
+                        </button>
+                        <button type="button" class="provider-tab" data-provider="openai">
+                            <span class="tab-icon">🤖</span>
+                            <span class="tab-label">OpenAI</span>
+                        </button>
+                        <button type="button" class="provider-tab" data-provider="openrouter">
+                            <span class="tab-icon">🌐</span>
+                            <span class="tab-label">OpenRouter</span>
+                        </button>
+                        <button type="button" class="provider-tab" data-provider="gemini">
+                            <span class="tab-icon">✨</span>
+                            <span class="tab-label">Gemini</span>
+                        </button>
+                        <button type="button" class="provider-tab" data-provider="custom">
+                            <span class="tab-icon">🔌</span>
+                            <span class="tab-label">Custom</span>
+                        </button>
+                    </div>
+                    <select id="cfg-provider-select" class="provider-select-dropdown hidden">
+                        <option value="ollama">🦙 Ollama (Local / Container)</option>
+                        <option value="groq">⚡ Groq (Ultra rápido)</option>
+                        <option value="openai">🤖 OpenAI (GPT-4o / 4o-mini)</option>
+                        <option value="openrouter">🌐 OpenRouter (DeepSeek / Llama)</option>
+                        <option value="gemini">✨ Google Gemini (2.5 / 2.0 Flash)</option>
+                        <option value="custom">🔌 Custom (Compatível OpenAI)</option>
+                    </select>
+                </div>
+
+                <!-- SEÇÃO OLLAMA (LOCAL / CONTAINER) -->
+                <div id="section-ollama" class="provider-section">
+                    <div class="form-group">
+                        <label for="cfg-ollama-host">Host / URL do Ollama</label>
+                        <div class="input-with-hint">
+                            <input type="text" id="cfg-ollama-host" placeholder="http://localhost:11434" spellcheck="false" autocomplete="off">
+                            <div class="input-presets">
+                                <button type="button" class="preset-chip" data-host="http://localhost:11434">Localhost</button>
+                                <button type="button" class="preset-chip" data-host="http://host.docker.internal:11434">Docker Host</button>
+                                <button type="button" class="preset-chip" data-host="http://ollama:11434">Container 'ollama'</button>
+                                <button type="button" class="preset-chip" data-host="http://172.17.0.1:11434">Bridge 172.17.0.1</button>
+                            </div>
+                        </div>
+                        <span class="field-hint">Se o Ollama rodar em container Docker, use a porta mapeada no host ou o IP da rede bridge.</span>
+                    </div>
+                </div>
+
+                <!-- SEÇÃO PROVEDOR EXTERNO COM API KEY -->
+                <div id="section-external" class="provider-section hidden">
+                    <div class="form-group">
+                        <div class="label-with-link">
+                            <label for="cfg-api-key">API Key</label>
+                            <a id="api-key-link" href="https://console.groq.com/keys" target="_blank" rel="noopener" class="field-link">Obter chave ↗</a>
+                        </div>
+                        <div class="password-input-wrapper">
+                            <input type="password" id="cfg-api-key" placeholder="Insira sua API Key (ex: gsk_... ou sk-...)" spellcheck="false" autocomplete="off">
+                            <button type="button" id="btn-toggle-key-visibility" class="btn-eye-toggle" title="Mostrar/Ocultar chave">👁️</button>
+                        </div>
+                        <span id="api-key-help" class="field-hint">Sua chave é armazenada localmente em arquivo seguro e nunca é compartilhada.</span>
+                    </div>
+
+                    <div class="form-group" id="group-api-base">
+                        <label for="cfg-api-base">Endpoint Base (URL)</label>
+                        <input type="text" id="cfg-api-base" placeholder="https://api.groq.com/openai/v1" spellcheck="false" autocomplete="off">
+                        <span class="field-hint">Base da API compatível com OpenAI (ex: https://api.openai.com/v1).</span>
+                    </div>
+                </div>
+
+                <!-- MODELO LLM (COMUM A TODOS OS PROVEDORES) -->
+                <div class="form-group">
+                    <label for="cfg-llm-model">Modelo LLM</label>
+                    <div class="model-select-row">
+                        <input type="text" id="cfg-llm-model" placeholder="qwen2.5:3b" spellcheck="false" autocomplete="off">
+                        <select id="cfg-model-dropdown" class="model-dropdown hidden" title="Modelos detectados no Ollama">
+                            <option value="">Modelos detectados...</option>
+                        </select>
+                    </div>
+                    <!-- Chips de sugestões de modelos por provedor -->
+                    <div id="model-presets-container" class="model-presets-chips"></div>
+                    <span id="model-field-hint" class="field-hint">Modelo a ser utilizado para raciocínio e síntese.</span>
+                </div>
+
+                <!-- Status do Teste de Conexão -->
+                <div id="test-result-box" class="test-result-box hidden">
+                    <div class="test-status-line">
+                        <span id="test-status-badge" class="badge-status">Testando...</span>
+                        <span id="test-status-msg"></span>
+                    </div>
+                    <div id="test-models-container" class="test-models-container"></div>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button id="btn-test-ollama" class="btn-action">🔍 Testar Conexão</button>
+                <div class="footer-actions">
+                    <button id="btn-cancel-settings" class="btn-action">Cancelar</button>
+                    <button id="btn-save-settings" class="btn-action primary">💾 Salvar Configurações</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script src="app.js"></script>

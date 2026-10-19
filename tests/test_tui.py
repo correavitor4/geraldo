@@ -477,3 +477,96 @@ async def test_tui_multiple_consecutive_user_prompts():
         for p in prompts:
             item = json.loads(await app._send_queue.get())
             assert item["params"]["text"] == p
+
+
+@pytest.mark.anyio
+async def test_tui_ollama_config_modal_flow():
+    """Valida fluxo de abertura, preenchimento e salvamento do modal do Ollama na TUI."""
+    import config
+    orig_host = config.OLLAMA_HOST
+    orig_model = config.LLM_MODEL
+    try:
+        from ui.tui import OllamaConfigModal
+        app = GeraldoTUI(auto_connect=False)
+        async with app.run_test(size=(160, 50)) as pilot:
+            # Pressiona tecla 'o' para abrir o modal
+            await pilot.press("o")
+            await pilot.pause()
+
+            assert isinstance(app.screen, OllamaConfigModal)
+            host_input = app.screen.query_one("#input-host", Input)
+            model_input = app.screen.query_one("#input-model", Input)
+
+            host_input.value = "http://meu-container:11434"
+            model_input.value = "llama3.2:3b"
+
+            # Clica em salvar
+            btn_save = app.screen.query_one("#btn-modal-save", Button)
+            await pilot.click(btn_save)
+            await pilot.pause()
+
+            # Modal deve ter sido fechado
+            assert not isinstance(app.screen, OllamaConfigModal)
+            assert app._ollama_host == "http://meu-container:11434"
+            assert app._ollama_model == "llama3.2:3b"
+
+            # Verifica ação enfileirada no WebSocket
+            assert app._send_queue.qsize() == 1
+            payload = json.loads(await app._send_queue.get())
+            assert payload["action"] == "set_config"
+            assert payload["params"]["ollama_host"] == "http://meu-container:11434"
+            assert payload["params"]["llm_model"] == "llama3.2:3b"
+    finally:
+        config.OLLAMA_HOST = orig_host
+        config.LLM_MODEL = orig_model
+
+
+@pytest.mark.anyio
+async def test_tui_external_llm_modal_flow():
+    """Valida fluxo de configuração de LLM externa com API Key via modal da TUI."""
+    import config
+    orig_prov = config.LLM_PROVIDER
+    orig_key = config.LLM_API_KEY
+    orig_model = config.LLM_MODEL
+    try:
+        from ui.tui import OllamaConfigModal
+        app = GeraldoTUI(auto_connect=False)
+        async with app.run_test(size=(160, 50)) as pilot:
+            # Pressiona tecla 'o' para abrir o modal
+            await pilot.press("o")
+            await pilot.pause()
+
+            assert isinstance(app.screen, OllamaConfigModal)
+            prov_input = app.screen.query_one("#input-provider", Input)
+            host_input = app.screen.query_one("#input-host", Input)
+            key_input = app.screen.query_one("#input-api-key", Input)
+            model_input = app.screen.query_one("#input-model", Input)
+
+            prov_input.value = "groq"
+            host_input.value = "https://api.groq.com/openai/v1"
+            key_input.value = "gsk_test_api_key_456"
+            model_input.value = "llama-3.3-70b-versatile"
+
+            # Clica em salvar
+            btn_save = app.screen.query_one("#btn-modal-save", Button)
+            await pilot.click(btn_save)
+            await pilot.pause()
+
+            assert not isinstance(app.screen, OllamaConfigModal)
+            assert app._llm_provider == "groq"
+            assert app._llm_api_key == "gsk_test_api_key_456"
+            assert app._ollama_model == "llama-3.3-70b-versatile"
+
+            # Verifica ação enviada com api_key e provider
+            assert app._send_queue.qsize() == 1
+            payload = json.loads(await app._send_queue.get())
+            assert payload["action"] == "set_config"
+            assert payload["params"]["provider"] == "groq"
+            assert payload["params"]["api_key"] == "gsk_test_api_key_456"
+            assert payload["params"]["llm_model"] == "llama-3.3-70b-versatile"
+    finally:
+        config.LLM_PROVIDER = orig_prov
+        config.LLM_API_KEY = orig_key
+        config.LLM_MODEL = orig_model
+
+

@@ -80,6 +80,16 @@ def test_html_all_critical_dom_elements():
         "new-timer-label",
         "new-timer-min",
         "new-timer-sec",
+        "btn-open-settings",
+        "settings-modal",
+        "btn-close-settings",
+        "btn-cancel-settings",
+        "btn-save-settings",
+        "btn-test-ollama",
+        "cfg-ollama-host",
+        "cfg-llm-model",
+        "test-result-box",
+        "specs-llm-text",
     ]
 
     for elem_id in required_ids:
@@ -147,6 +157,25 @@ def test_css_grid_and_layout():
     assert ".message-bubble.assistant" in css
 
 
+def test_html_and_css_ollama_settings_modal():
+    """Valida a estrutura do modal de configurações do Ollama e seus estilos CSS."""
+    with open(HTML_PATH, "r", encoding="utf-8") as f:
+        html = f.read()
+    with open(CSS_PATH, "r", encoding="utf-8") as f:
+        css = f.read()
+
+    # Presets de container Docker / Localhost
+    assert "data-host=\"http://localhost:11434\"" in html
+    assert "data-host=\"http://host.docker.internal:11434\"" in html
+    assert "data-host=\"http://ollama:11434\"" in html
+
+    # CSS do modal
+    assert ".modal-overlay" in css
+    assert ".modal-dialog" in css
+    assert ".preset-chip" in css
+    assert "backdrop-filter: blur" in css
+
+
 # ==========================================
 # TESTES DE JS (PROTOCOLO & CLIENTE WEBSOCKET)
 # ==========================================
@@ -158,6 +187,11 @@ def test_js_file_structure_and_syntax():
         js = f.read()
 
     assert "class GeraldoDesktopClient" in js
+    assert "openSettingsModal" in js
+    assert "closeSettingsModal" in js
+    assert "testOllamaConnection" in js
+    assert "saveOllamaSettings" in js
+    assert "updateConfigDisplay" in js
     assert "connect()" in js
     assert "handleMessage(" in js
     assert "handleEvent(" in js
@@ -287,3 +321,101 @@ async def test_desktop_client_ipc_contract_full_exchange():
 
     finally:
         server.stop()
+
+
+def test_html_and_css_external_llm_elements():
+    """Valida presença dos novos elementos de provedores externos e API Key no index.html e styles.css."""
+    with open(HTML_PATH, "r", encoding="utf-8") as f:
+        html = f.read()
+    with open(CSS_PATH, "r", encoding="utf-8") as f:
+        css = f.read()
+
+    # Elementos HTML
+    assert 'id="provider-tabs"' in html
+    assert 'id="cfg-api-key"' in html
+    assert 'id="btn-toggle-key-visibility"' in html
+    assert 'id="cfg-api-base"' in html
+    assert 'id="model-presets-container"' in html
+    assert 'data-provider="groq"' in html
+    assert 'data-provider="openai"' in html
+    assert 'data-provider="gemini"' in html
+
+    # Estilos CSS
+    assert ".provider-selector-tabs" in css
+    assert ".provider-tab" in css
+    assert ".btn-eye-toggle" in css
+    assert ".model-preset-chip" in css
+
+
+@pytest.mark.anyio
+async def test_gui_websocket_external_llm_set_and_get_config():
+    """Valida ciclo completo de configuração de LLM externa (Groq / API Key) via IPC WebSocket."""
+    import config
+    orig_prov = config.LLM_PROVIDER
+    orig_key = config.LLM_API_KEY
+    orig_model = config.LLM_MODEL
+    orig_base = config.LLM_API_BASE
+
+    server = GeraldoIPCServer(host=TEST_GUI_IPC_HOST, port=8799)
+    server.start()
+
+    uri = f"ws://{TEST_GUI_IPC_HOST}:8799"
+    try:
+        async with connect(uri) as ws:
+            # Consome o evento connected inicial
+            raw_init = await asyncio.wait_for(ws.recv(), timeout=2.0)
+            init_data = json.loads(raw_init)
+            assert init_data["event"] == "connected"
+
+            # Envia set_config com Groq e API Key
+            payload = {
+                "id": "set_config-1",
+                "action": "set_config",
+                "params": {
+                    "provider": "groq",
+                    "api_key": "gsk_test123456789",
+                    "model": "llama-3.3-70b-versatile",
+                    "persist": False,
+                }
+            }
+            await ws.send(json.dumps(payload))
+
+            # Aguarda resposta (descartando eventos intercalados se houver)
+            resp = None
+            for _ in range(5):
+                raw = await asyncio.wait_for(ws.recv(), timeout=2.0)
+                msg = json.loads(raw)
+                if msg.get("type") == "response" and msg.get("id") == "set_config-1":
+                    resp = msg
+                    break
+
+            assert resp is not None
+            assert resp["status"] == "ok"
+            assert resp["data"]["provider"] == "groq"
+            assert resp["data"]["llm_model"] == "llama-3.3-70b-versatile"
+            assert "api_key_masked" in resp["data"]
+            assert "6789" in resp["data"]["api_key_masked"]
+
+            # Envia get_config para validar retorno seguro
+            await ws.send(json.dumps({"id": "get_config-1", "action": "get_config", "params": {}}))
+            get_resp = None
+            for _ in range(5):
+                raw = await asyncio.wait_for(ws.recv(), timeout=2.0)
+                msg = json.loads(raw)
+                if msg.get("type") == "response" and msg.get("id") == "get_config-1":
+                    get_resp = msg
+                    break
+
+            assert get_resp is not None
+            assert get_resp["status"] == "ok"
+            assert get_resp["data"]["provider"] == "groq"
+            assert get_resp["data"]["has_api_key"] is True
+            # A chave crua não deve ser vazada no get_config
+            assert "gsk_test123456789" not in json.dumps(get_resp["data"])
+    finally:
+        server.stop()
+        config.LLM_PROVIDER = orig_prov
+        config.LLM_API_KEY = orig_key
+        config.LLM_MODEL = orig_model
+        config.LLM_API_BASE = orig_base
+

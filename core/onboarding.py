@@ -95,6 +95,101 @@ class OnboardingManager:
             }
 
     @classmethod
+    def check_external_llm(
+        cls,
+        base_url: str,
+        api_key: str,
+        model: str = None,
+        timeout: float = 6.0,
+    ) -> Dict[str, Any]:
+        """Testa conectividade e autenticação com um provedor LLM externo (OpenAI-compatível)."""
+        if not api_key:
+            return {
+                "status": "error",
+                "connected": False,
+                "error": "API Key vazia.",
+                "message": "Por favor, informe a API Key do provedor.",
+            }
+
+        clean_base = (base_url or "https://api.openai.com/v1").rstrip("/")
+        url = f"{clean_base}/chat/completions"
+        target_model = model or "gpt-4o-mini"
+
+        payload = {
+            "model": target_model,
+            "messages": [{"role": "user", "content": "teste de conexao"}],
+            "max_tokens": 5,
+        }
+
+        try:
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={
+                    "Authorization": f"Bearer {api_key.strip()}",
+                    "Content-Type": "application/json",
+                    "User-Agent": "Geraldo-Assistant/1.0",
+                },
+            )
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                if resp.status == 200:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    return {
+                        "status": "ok",
+                        "connected": True,
+                        "model": target_model,
+                        "message": f"Conexão com provedor externo validada com sucesso! (modelo: {target_model})",
+                    }
+                else:
+                    return {
+                        "status": "error",
+                        "connected": False,
+                        "message": f"Serviço retornou código HTTP {resp.status}.",
+                    }
+        except urllib.error.HTTPError as he:
+            err_msg = ""
+            try:
+                raw_body = he.read().decode("utf-8")
+                err_json = json.loads(raw_body)
+                err_msg = err_json.get("error", {}).get("message", raw_body)
+            except Exception:
+                err_msg = str(he)
+            return {
+                "status": "error",
+                "connected": False,
+                "error": f"HTTP {he.code}: {err_msg}",
+                "message": f"Falha na API (HTTP {he.code}): {err_msg}",
+            }
+        except Exception as e:
+            return {
+                "status": "error",
+                "connected": False,
+                "error": str(e),
+                "message": f"Falha ao conectar em {url}: {e}",
+            }
+
+    @classmethod
+    def check_llm_provider(
+        cls,
+        provider: str = None,
+        host: str = None,
+        base_url: str = None,
+        api_key: str = None,
+        model: str = None,
+        timeout: float = 5.0,
+    ) -> Dict[str, Any]:
+        """Testa o provedor configurado (Ollama ou provedor externo com API Key)."""
+        prov = (provider or getattr(config, "LLM_PROVIDER", "ollama")).lower().strip()
+        if prov == "ollama":
+            return cls.check_ollama(host=host or getattr(config, "OLLAMA_HOST", "http://localhost:11434"), timeout=timeout)
+        else:
+            key = api_key if api_key is not None else getattr(config, "LLM_API_KEY", "")
+            base = base_url or getattr(config, "LLM_API_BASE", "") or (config.PROVIDER_PRESETS.get(prov, {}).get("default_base", ""))
+            target_model = model or getattr(config, "LLM_MODEL", "") or (config.PROVIDER_PRESETS.get(prov, {}).get("default_model", ""))
+            return cls.check_external_llm(base_url=base, api_key=key, model=target_model, timeout=timeout)
+
+
+    @classmethod
     def check_calendar_integration(cls) -> Dict[str, Any]:
         """Verifica se as credenciais do Google Calendar estão configuradas."""
         creds_path = get_credentials_path()
