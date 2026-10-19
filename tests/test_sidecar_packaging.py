@@ -92,6 +92,8 @@ class TestSidecarPackaging:
         assert "windows-latest" in content
         assert "macos-latest" in content
         assert "ubuntu-22.04" in content
+        assert "aarch64-apple-darwin" in content
+        assert "x86_64-apple-darwin" in content
         assert "tauri-action" in content
 
     def test_nsis_installer_hooks_exist_and_configures_path(self):

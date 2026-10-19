@@ -120,10 +120,11 @@ def verify_installer_configs() -> dict:
     return report
 
 
-def build_installer(dry_run: bool = False):
+def build_installer(target: str = None, dry_run: bool = False):
     """Executa a compilação do pacote instalador na plataforma atual."""
     current_os = platform.system().lower()
-    print(f"[Package Dist] Iniciando empacotamento para SO detectado: {current_os.upper()}...")
+    target_info = f" (target: {target})" if target else ""
+    print(f"[Package Dist] Iniciando empacotamento para SO detectado: {current_os.upper()}{target_info}...")
 
     check_res = verify_installer_configs()
     if not check_res["valid"]:
@@ -140,8 +141,12 @@ def build_installer(dry_run: bool = False):
     if not has_tauri:
         print("[Package Dist] 'tauri' CLI não encontrado no PATH local. Compilando binário release padrão...")
         cmd = ["cargo", "build", "--release"]
+        if target:
+            cmd.extend(["--target", target])
     else:
         cmd = ["cargo", "tauri", "build"]
+        if target:
+            cmd.extend(["--target", target])
 
     try:
         subprocess.run(cmd, cwd=SRC_TAURI, check=True)
@@ -156,6 +161,7 @@ def main():
     parser = argparse.ArgumentParser(description="Geraldo Multiplatform Installer Packaging Utility.")
     parser.add_argument("--check", action="store_true", help="Validate installer configurations for all platforms")
     parser.add_argument("--build", action="store_true", help="Build installer for the current host OS")
+    parser.add_argument("--target", default=None, help="Target triple (e.g. x86_64-apple-darwin, aarch64-apple-darwin)")
     parser.add_argument("--dry-run", action="store_true", help="Simulate build without compiling")
     args = parser.parse_args()
 
@@ -166,7 +172,7 @@ def main():
             sys.exit(1)
 
     if args.build:
-        ok = build_installer(dry_run=args.dry_run)
+        ok = build_installer(target=args.target, dry_run=args.dry_run)
         if not ok:
             sys.exit(1)
 

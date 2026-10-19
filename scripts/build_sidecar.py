@@ -99,6 +99,11 @@ def build_sidecar(target_triple: str = None, dry_run: bool = False) -> Path:
             "--workpath", str(build_dir),
             str(REPO_ROOT / "main.py")
         ]
+        if "apple-darwin" in triple and platform.system().lower() == "darwin":
+            if "x86_64" in triple:
+                cmd.extend(["--target-arch", "x86_64"])
+            elif "aarch64" in triple or "arm64" in triple:
+                cmd.extend(["--target-arch", "arm64"])
         
         try:
             subprocess.run(cmd, check=True)
