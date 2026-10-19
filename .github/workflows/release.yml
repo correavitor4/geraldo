@@ -83,8 +83,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v__VERSION__' }}
-          releaseName: 'Geraldo Desktop ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || ''v__VERSION__'' }}'
+          tagName: v__VERSION__
+          releaseName: 'Geraldo Desktop v__VERSION__'
           releaseBody: 'Instaladores comerciais oficiais do Geraldo para Windows (.exe / .msi), macOS (.dmg) e Linux (.deb / .AppImage).'
           releaseDraft: false
           prerelease: false
