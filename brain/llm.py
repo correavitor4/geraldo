@@ -123,9 +123,11 @@ class BrainLLM:
     def api_base(self) -> str:
         if self._api_base:
             return self._api_base
-        cfg_base = getattr(config, "LLM_API_BASE", "")
-        if cfg_base:
-            return cfg_base
+        active_provider = getattr(config, "LLM_PROVIDER", "ollama")
+        if self.provider == active_provider:
+            cfg_base = getattr(config, "LLM_API_BASE", "")
+            if cfg_base:
+                return cfg_base
         presets = getattr(config, "PROVIDER_PRESETS", {})
         return presets.get(self.provider, {}).get("default_base", "https://api.openai.com/v1")
 
@@ -153,7 +155,9 @@ class BrainLLM:
     def api_url(self) -> str:
         if self._api_url_override:
             return self._api_url_override
-        h = (self.host or "http://localhost:11434").rstrip("/")
+        h = (self.host or "http://localhost:11434").strip().rstrip("/")
+        if not (h.startswith("http://") or h.startswith("https://")):
+            h = f"http://{h}"
         return f"{h}/api/chat"
 
     @api_url.setter
@@ -223,8 +227,24 @@ class BrainLLM:
             data=json.dumps(payload).encode("utf-8"),
             headers={"Content-Type": "application/json"}
         )
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except (urllib.error.URLError, TimeoutError) as e:
+            # Fallback inteligente se o host configurado for nome de container Docker (ex: ollama:11434) que não resolve no host
+            if "localhost" not in self.api_url and "127.0.0.1" not in self.api_url:
+                fallback_url = "http://localhost:11434/api/chat"
+                try:
+                    fallback_req = urllib.request.Request(
+                        fallback_url,
+                        data=json.dumps(payload).encode("utf-8"),
+                        headers={"Content-Type": "application/json"}
+                    )
+                    with urllib.request.urlopen(fallback_req, timeout=30) as resp:
+                        return json.loads(resp.read().decode("utf-8"))
+                except Exception:
+                    pass
+            raise e
 
     def _post_json_openai(self, payload: dict) -> dict:
         base = (self.api_base or "https://api.openai.com/v1").rstrip("/")

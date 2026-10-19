@@ -3,7 +3,7 @@ import os
 import struct
 import pytest
 
-TAURI_DIR = "/home/vitor/projects/geraldo/src-tauri"
+TAURI_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src-tauri"))
 TAURI_CONF_PATH = os.path.join(TAURI_DIR, "tauri.conf.json")
 CARGO_TOML_PATH = os.path.join(TAURI_DIR, "Cargo.toml")
 MAIN_RS_PATH = os.path.join(TAURI_DIR, "src", "main.rs")

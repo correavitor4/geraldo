@@ -65,7 +65,8 @@ class GeraldoDesktopClient {
             cfgApiBase: document.getElementById("cfg-api-base"),
             apiKeyLink: document.getElementById("api-key-link"),
             apiKeyHelp: document.getElementById("api-key-help"),
-            modelPresetsContainer: document.getElementById("model-presets-container")
+            modelPresetsContainer: document.getElementById("model-presets-container"),
+            btnDetectContainer: document.getElementById("btn-detect-container")
         };
 
         this.llmConfig = {
@@ -82,6 +83,7 @@ class GeraldoDesktopClient {
         this.currentProvider = "ollama";
         this._pendingRequests = new Map();
 
+        this.loadLocalConfig();
         this.initEventListeners();
         this.connect();
     }
@@ -114,6 +116,33 @@ class GeraldoDesktopClient {
             this.updateConnectionStatus(false, "Falha");
             setTimeout(() => this.connect(), 2000);
         }
+    }
+
+    loadLocalConfig() {
+        try {
+            const cached = localStorage.getItem("geraldo_llm_config");
+            if (cached) {
+                const parsed = JSON.parse(cached);
+                this.updateConfigDisplay(parsed);
+            }
+        } catch (e) {}
+    }
+
+    async openExternalUrl(url) {
+        if (!url) return;
+        try {
+            if (window.__TAURI__ && window.__TAURI__.core && typeof window.__TAURI__.core.invoke === "function") {
+                await window.__TAURI__.core.invoke("open_external_url", { url });
+                return;
+            }
+            if (window.__TAURI_INTERNALS__ && typeof window.__TAURI_INTERNALS__.invoke === "function") {
+                await window.__TAURI_INTERNALS__.invoke("open_external_url", { url });
+                return;
+            }
+        } catch (e) {
+            console.warn("Tauri open_external_url warning:", e);
+        }
+        window.open(url, "_blank", "noopener,noreferrer");
     }
 
     updateConnectionStatus(connected, text) {
@@ -553,6 +582,31 @@ class GeraldoDesktopClient {
         if (this.dom.btnSaveSettings) {
             this.dom.btnSaveSettings.addEventListener("click", () => this.saveOllamaSettings());
         }
+
+        // Detectar container Docker do Ollama
+        if (this.dom.btnDetectContainer) {
+            this.dom.btnDetectContainer.addEventListener("click", () => this.detectOllamaContainer());
+        }
+
+        // Link de obter API Key
+        if (this.dom.apiKeyLink) {
+            this.dom.apiKeyLink.addEventListener("click", (e) => {
+                e.preventDefault();
+                const url = this.dom.apiKeyLink.getAttribute("href") || this.dom.apiKeyLink.href;
+                if (url && url !== "#") {
+                    this.openExternalUrl(url);
+                }
+            });
+        }
+
+        // Intercepta qualquer outro link externo no documento para abrir confiavelmente no navegador
+        document.addEventListener("click", (e) => {
+            const target = e.target.closest("a[target='_blank'], a.field-link");
+            if (target && target.href && !target.href.startsWith("javascript:")) {
+                e.preventDefault();
+                this.openExternalUrl(target.href);
+            }
+        });
     }
 
     selectProvider(prov) {
@@ -700,17 +754,78 @@ class GeraldoDesktopClient {
         this.dom.settingsModal.classList.add("hidden");
     }
 
+    detectOllamaContainer() {
+        if (this.dom.testResultBox) {
+            this.dom.testResultBox.classList.remove("hidden");
+        }
+        if (this.dom.testModelsContainer) {
+            this.dom.testModelsContainer.innerHTML = "";
+        }
+
+        if (!this.connected) {
+            if (this.dom.cfgOllamaHost) {
+                this.dom.cfgOllamaHost.value = "http://localhost:11434";
+            }
+            if (this.dom.testStatusBadge) {
+                this.dom.testStatusBadge.className = "badge-status warning";
+                this.dom.testStatusBadge.textContent = "DAEMON DESCONECTADO";
+            }
+            if (this.dom.testStatusMsg) {
+                this.dom.testStatusMsg.textContent = "Host configurado para http://localhost:11434 (porta padrão do container Docker). Inicie o Geraldo para testar o container.";
+            }
+            return;
+        }
+
+        if (this.dom.testStatusBadge) {
+            this.dom.testStatusBadge.className = "badge-status testing";
+            this.dom.testStatusBadge.textContent = "Buscando...";
+        }
+        if (this.dom.testStatusMsg) {
+            this.dom.testStatusMsg.textContent = "Procurando container Docker do Ollama no sistema...";
+        }
+
+        this.sendAction("detect_container", {}, (ok, data) => {
+            if (ok && data && data.detected && data.container) {
+                const c = data.container;
+                if (this.dom.cfgOllamaHost) {
+                    this.dom.cfgOllamaHost.value = c.host_url;
+                }
+                this.testOllamaConnection();
+            } else {
+                if (this.dom.cfgOllamaHost) {
+                    this.dom.cfgOllamaHost.value = "http://localhost:11434";
+                }
+                this.testOllamaConnection();
+            }
+        });
+    }
+
     testOllamaConnection() {
         const prov = this.currentProvider || "ollama";
         if (this.dom.testResultBox) {
             this.dom.testResultBox.classList.remove("hidden");
         }
+        if (this.dom.testModelsContainer) {
+            this.dom.testModelsContainer.innerHTML = "";
+        }
+
+        if (!this.connected) {
+            if (this.dom.testStatusBadge) {
+                this.dom.testStatusBadge.className = "badge-status error";
+                this.dom.testStatusBadge.textContent = "DAEMON INATIVO";
+            }
+            if (this.dom.testStatusMsg) {
+                this.dom.testStatusMsg.textContent = "O daemon do Geraldo não está rodando na porta 8765. Inicie o Geraldo ('python main.py' ou app desktop) para testar a conexão com o Ollama.";
+            }
+            if (this.dom.testModelsContainer) {
+                this.dom.testModelsContainer.innerHTML = '<span class="field-hint">Dica: se o container Docker já estiver rodando, o Geraldo irá detectá-lo automaticamente ao iniciar.</span>';
+            }
+            return;
+        }
+
         if (this.dom.testStatusBadge) {
             this.dom.testStatusBadge.className = "badge-status testing";
             this.dom.testStatusBadge.textContent = "Testando...";
-        }
-        if (this.dom.testModelsContainer) {
-            this.dom.testModelsContainer.innerHTML = "";
         }
 
         if (prov === "ollama") {
@@ -741,12 +856,16 @@ class GeraldoDesktopClient {
 
         const isOk = data && (data.status === "ok" || data.connected === true);
         if (isOk) {
+            // Se o backend detectou o container e sugeriu uma URL efetiva diferente da atual, atualiza o input
+            if (data.suggested_host && this.dom.cfgOllamaHost) {
+                this.dom.cfgOllamaHost.value = data.suggested_host;
+            }
+
             if (this.dom.testStatusBadge) {
                 this.dom.testStatusBadge.className = "badge-status success";
                 this.dom.testStatusBadge.textContent = "CONECTADO";
             }
             if (this.dom.testStatusMsg) {
-                const count = (data.available_models && data.available_models.length) || 0;
                 this.dom.testStatusMsg.textContent = data.message || `Provedor ativo e respondendo!`;
             }
 
@@ -785,7 +904,7 @@ class GeraldoDesktopClient {
             }
             if (this.dom.testModelsContainer) {
                 const hint = this.currentProvider === "ollama"
-                    ? "Dica: certifique-se de que o container do Ollama está rodando com a porta 11434 exposta."
+                    ? "Dica: certifique-se de que o container do Ollama está rodando com a porta 11434 exposta ('docker run -d -p 11434:11434 ollama/ollama')."
                     : "Dica: verifique se sua API Key é válida e se há saldo ou cota disponível.";
                 this.dom.testModelsContainer.innerHTML = `<span class="field-hint">${hint}</span>`;
             }
@@ -808,7 +927,70 @@ class GeraldoDesktopClient {
         if (apiKey) payload.api_key = apiKey;
         if (apiBase) payload.api_base = apiBase;
 
-        this.sendAction("set_config", payload);
+        // Salva imediatamente no localStorage para garantir persistência mesmo sem daemon conectado
+        try {
+            localStorage.setItem("geraldo_llm_config", JSON.stringify(payload));
+        } catch (e) {}
+
+        this.updateConfigDisplay(payload);
+
+        // Feedback visual imediato no botão
+        const origBtnText = this.dom.btnSaveSettings ? this.dom.btnSaveSettings.innerHTML : "💾 Salvar Configurações";
+        if (this.dom.btnSaveSettings) {
+            this.dom.btnSaveSettings.innerHTML = "💾 Salvando...";
+            this.dom.btnSaveSettings.disabled = true;
+        }
+
+        if (this.dom.testResultBox) {
+            this.dom.testResultBox.classList.remove("hidden");
+        }
+
+        if (!this.connected) {
+            if (this.dom.testStatusBadge) {
+                this.dom.testStatusBadge.className = "badge-status success";
+                this.dom.testStatusBadge.textContent = "SALVO NO APP";
+            }
+            if (this.dom.testStatusMsg) {
+                this.dom.testStatusMsg.textContent = "Configurações salvas localmente! (Aviso: Daemon do Geraldo está desconectado. As alterações serão sincronizadas assim que o serviço iniciar).";
+            }
+            this.appendSystemMessage("Configurações salvas no cliente (Geraldo daemon desconectado).");
+            setTimeout(() => {
+                if (this.dom.btnSaveSettings) {
+                    this.dom.btnSaveSettings.innerHTML = origBtnText;
+                    this.dom.btnSaveSettings.disabled = false;
+                }
+                this.closeSettingsModal();
+            }, 1200);
+            return;
+        }
+
+        this.sendAction("set_config", payload, (ok, data, err) => {
+            if (this.dom.btnSaveSettings) {
+                this.dom.btnSaveSettings.innerHTML = origBtnText;
+                this.dom.btnSaveSettings.disabled = false;
+            }
+            if (ok) {
+                if (this.dom.testStatusBadge) {
+                    this.dom.testStatusBadge.className = "badge-status success";
+                    this.dom.testStatusBadge.textContent = "SALVO COM SUCESSO";
+                }
+                if (this.dom.testStatusMsg) {
+                    this.dom.testStatusMsg.textContent = "Configurações sincronizadas e salvas com sucesso no Geraldo!";
+                }
+                this.appendSystemMessage("Configurações de IA salvas com sucesso!");
+                setTimeout(() => {
+                    this.closeSettingsModal();
+                }, 1000);
+            } else {
+                if (this.dom.testStatusBadge) {
+                    this.dom.testStatusBadge.className = "badge-status error";
+                    this.dom.testStatusBadge.textContent = "ERRO AO SALVAR";
+                }
+                if (this.dom.testStatusMsg) {
+                    this.dom.testStatusMsg.textContent = err || "Não foi possível salvar configurações no daemon.";
+                }
+            }
+        });
     }
 
     updateConfigDisplay(config) {

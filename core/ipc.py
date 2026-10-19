@@ -59,6 +59,7 @@ class GeraldoIPCServer:
         self.register_handler("set_config", self._handle_set_config)
         self.register_handler("check_ollama", self._handle_check_ollama)
         self.register_handler("check_llm", self._handle_check_llm)
+        self.register_handler("detect_container", self._handle_detect_container)
 
     def register_handler(self, action: str, handler: Callable) -> None:
         """Registra um manipulador para uma ação RPC."""
@@ -418,6 +419,13 @@ class GeraldoIPCServer:
             api_base=api_base,
             model=model,
         )
+
+    def _handle_detect_container(self, params: dict) -> dict:
+        from core.onboarding import OnboardingManager
+        info = OnboardingManager.detect_docker_ollama()
+        if info:
+            return {"detected": True, "container": info}
+        return {"detected": False, "message": "Nenhum container Docker do Ollama detectado em execução."}
 
 
 class IPCManager:

@@ -175,6 +175,7 @@ SAMPLE_RATE = 16000
 CHUNK_SIZE = 512
 VAD_THRESHOLD = 0.5
 SILENCE_LIMIT_SEC = 0.8
+BEEP_VOLUME = float(os.getenv("BEEP_VOLUME", 0.50))
 
 # Barramento IPC Local (WebSocket)
 IPC_HOST = "127.0.0.1"

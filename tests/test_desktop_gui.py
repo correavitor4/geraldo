@@ -7,7 +7,7 @@ from websockets.asyncio.client import connect
 
 from core.ipc import GeraldoIPCServer
 
-GUI_DIR = "/home/vitor/projects/geraldo/desktop-ui"
+GUI_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "desktop-ui"))
 HTML_PATH = os.path.join(GUI_DIR, "index.html")
 CSS_PATH = os.path.join(GUI_DIR, "styles.css")
 JS_PATH = os.path.join(GUI_DIR, "app.js")

@@ -24,25 +24,33 @@ class TextToSpeech:
             return ""
 
         temp_dir = os.environ.get("GERALDO_TEMP_DIR", "/tmp")
+        os.makedirs(temp_dir, exist_ok=True)
         out_path = os.path.join(temp_dir, f"geraldo_response_{threading.get_ident()}.wav")
         cmd = [
             sys.executable,
+            "-X", "utf8",
             "-m", "piper",
             "--model", self.model_path,
             "--output_file", out_path
         ]
+
+        env = os.environ.copy()
+        env["PYTHONIOENCODING"] = "utf-8"
+        env["PYTHONUTF8"] = "1"
 
         subprocess.run(
             cmd,
             input=text.encode("utf-8"),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            env=env,
             check=True
         )
 
         return out_path
+
     def speak(self, text: str):
-        """Sintetiza e reproduz o áudio imediatamente via PipeWire."""
+        """Sintetiza e reproduz o áudio imediatamente via PipeWire/ALSA."""
         wav_path = self.synthesize(text)
         if wav_path:
             import shutil

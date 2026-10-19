@@ -77,7 +77,7 @@ class TestTextToSpeech:
         mock_run.return_value = MagicMock(returncode=0)
         tts = TextToSpeech(model_path="voz_mock.onnx")
         out_path = tts.synthesize("Olá Mundo")
-        assert out_path.startswith("/tmp/geraldo_response_")
+        assert out_path.replace("\\", "/").startswith("/tmp/geraldo_response_")
         assert out_path.endswith(".wav")
         mock_run.assert_called_once()
         cmd = mock_run.call_args[0][0]

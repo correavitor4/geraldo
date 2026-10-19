@@ -33,7 +33,7 @@ class TestPathsManager:
              patch.object(sys, "_MEIPASS", "/tmp/mock_bundle", create=True), \
              patch("os.path.exists", return_value=True):
             base = get_base_dir()
-            assert str(base) == "/tmp/mock_bundle"
+            assert base == Path("/tmp/mock_bundle")
 
     def test_get_user_data_dir_custom_env(self, tmp_path):
         custom = tmp_path / "custom_geraldo"
@@ -64,7 +64,7 @@ class TestPathsManager:
              patch("sys.platform", "darwin"), \
              patch("pathlib.Path.home", return_value=tmp_path):
             data_dir = get_user_data_dir()
-            assert "Library/Application Support/Geraldo" in str(data_dir)
+            assert "Library" in str(data_dir) and "Application Support" in str(data_dir) and "Geraldo" in str(data_dir)
             assert data_dir.exists()
 
     def test_get_temp_dir(self):

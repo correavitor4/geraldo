@@ -274,7 +274,7 @@ class TestTimerManagerWaybarAndPersistence:
         tm.set_assistant_state("listening")
 
         assert os.path.exists(tm._status_file)
-        with open(tm._status_file, "r") as f:
+        with open(tm._status_file, "r", encoding="utf-8") as f:
             data = json.load(f)
 
         assert "text" in data

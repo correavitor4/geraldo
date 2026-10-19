@@ -24,6 +24,32 @@ fn is_daemon_active() -> bool {
     is_daemon_running()
 }
 
+#[tauri::command]
+fn open_external_url(url: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("cmd")
+            .args(["/C", "start", "", &url])
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg(&url)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        Command::new("xdg-open")
+            .arg(&url)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 fn is_daemon_running() -> bool {
     if let Ok(addr) = "127.0.0.1:8765".parse() {
         TcpStream::connect_timeout(&addr, Duration::from_millis(300)).is_ok()
@@ -44,6 +70,12 @@ fn try_spawn_sidecar() {
         "binaries/geraldo-core-x86_64-unknown-linux-gnu",
         "src-tauri/binaries/geraldo-core-x86_64-unknown-linux-gnu",
         "../src-tauri/binaries/geraldo-core-x86_64-unknown-linux-gnu",
+        "binaries/geraldo-core.exe",
+        "src-tauri/binaries/geraldo-core.exe",
+        "../src-tauri/binaries/geraldo-core.exe",
+        "binaries/geraldo-core-x86_64-pc-windows-msvc.exe",
+        "src-tauri/binaries/geraldo-core-x86_64-pc-windows-msvc.exe",
+        "geraldo-core.exe",
         "geraldo-core",
     ];
 
@@ -58,6 +90,17 @@ fn try_spawn_sidecar() {
                 println!("[Tauri] Processo sidecar iniciado com sucesso.");
                 return;
             }
+        }
+    }
+
+    // Se nenhum binário for encontrado, tenta iniciar main.py com o interpretador python disponível
+    for py_cmd in &["python", "py", "python3"] {
+        if let Ok(child) = Command::new(py_cmd).args(["main.py"]).spawn() {
+            if let Ok(mut lock) = SIDECAR_PROCESS.lock() {
+                *lock = Some(child);
+            }
+            println!("[Tauri] Processo daemon iniciado via '{} main.py'.", py_cmd);
+            return;
         }
     }
 }
@@ -213,7 +256,7 @@ fn main() {
                 let _ = window.hide();
             }
         })
-        .invoke_handler(tauri::generate_handler![get_desktop_version, is_daemon_active])
+        .invoke_handler(tauri::generate_handler![get_desktop_version, is_daemon_active, open_external_url])
         .run(tauri::generate_context!())
         .expect("error while running geraldo desktop application");
 }
