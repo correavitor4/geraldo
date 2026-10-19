@@ -239,6 +239,10 @@ class GeraldoDesktopClient {
             case "cancelled":
                 this.appendSystemMessage("Ação ou som interrompido.");
                 break;
+
+            case "calendar_status":
+                this.updateCalendarStatus(data);
+                break;
         }
     }
 
@@ -407,6 +411,13 @@ class GeraldoDesktopClient {
         }
     }
 
+    scrollToBottom() {
+        if (!this.dom.chatStream) return;
+        requestAnimationFrame(() => {
+            this.dom.chatStream.scrollTop = this.dom.chatStream.scrollHeight;
+        });
+    }
+
     appendChatMessage(sender, text, label) {
         if (!this.dom.chatStream) return;
 
@@ -420,7 +431,7 @@ class GeraldoDesktopClient {
         `;
 
         this.dom.chatStream.appendChild(bubble);
-        this.dom.chatStream.scrollTop = this.dom.chatStream.scrollHeight;
+        this.scrollToBottom();
     }
 
     appendSystemMessage(text) {
@@ -431,7 +442,7 @@ class GeraldoDesktopClient {
         msg.textContent = text;
 
         this.dom.chatStream.appendChild(msg);
-        this.dom.chatStream.scrollTop = this.dom.chatStream.scrollHeight;
+        this.scrollToBottom();
     }
 
     initEventListeners() {
@@ -626,25 +637,37 @@ class GeraldoDesktopClient {
             this.dom.btnOpenCalendar.addEventListener("click", () => this.openCalendar());
         }
 
-        // Google Calendar - Autorizar conta
+        // Google Calendar - Autorizar ou Desconectar conta
         if (this.dom.btnAuthCalendar) {
             this.dom.btnAuthCalendar.addEventListener("click", () => {
-                this.dom.btnAuthCalendar.textContent = "Conectando...";
-                this.sendAction("auth_calendar", {}, (ok, data, err) => {
-                    this.dom.btnAuthCalendar.textContent = "🔑 Conectar";
-                    if (ok && data && data.success) {
-                        this.updateCalendarStatus({ status: "configured", token_exists: true });
-                        this.appendSystemMessage("Conta Google vinculada com sucesso à sua agenda!");
-                    } else if (data && data.status === "missing_credentials") {
-                        this.updateCalendarStatus({ status: "not_configured", token_exists: false });
-                        this.appendSystemMessage(data.message || "Arquivo credentials.json ausente.");
-                        if (confirm("O arquivo 'credentials.json' do Google Cloud não foi encontrado. Deseja abrir o console do Google Cloud para gerar suas credenciais?")) {
-                            this.openExternalUrl(data.cloud_console_url || "https://console.cloud.google.com/apis/credentials");
-                        }
-                    } else {
-                        this.appendSystemMessage(`Falha na autorização da agenda: ${err || (data && data.message) || "Erro desconhecido"}`);
+                const isConfigured = this.calendarInfo && (this.calendarInfo.status === "configured" || this.calendarInfo.token_exists);
+                if (isConfigured) {
+                    if (confirm("Deseja realmente desvincular sua conta Google deste computador?")) {
+                        this.sendAction("disconnect_calendar", {}, (ok) => {
+                            if (ok) {
+                                this.appendSystemMessage("Conta Google desvinculada com sucesso.");
+                                this.sendAction("check_calendar");
+                            }
+                        });
                     }
-                });
+                    return;
+                }
+
+                const canAuth = this.calendarInfo && (this.calendarInfo.credentials_exists || this.calendarInfo.ready_to_auth);
+                if (!canAuth) {
+                    const clientId = prompt("Insira seu Google Client ID para ativar a sincronização em 1 clique:");
+                    if (!clientId || !clientId.trim()) return;
+                    const clientSecret = prompt("Insira seu Google Client Secret (opcional):") || "";
+                    this.sendAction("save_google_creds", { client_id: clientId.trim(), client_secret: clientSecret.trim() }, (ok) => {
+                        if (ok) {
+                            this.appendSystemMessage("Client ID salvo! Abrindo navegador para autorizar...");
+                            this.startCalendarAuth();
+                        }
+                    });
+                    return;
+                }
+
+                this.startCalendarAuth();
             });
         }
 
@@ -671,6 +694,29 @@ class GeraldoDesktopClient {
         });
     }
 
+    startCalendarAuth() {
+        if (this.dom.btnAuthCalendar) {
+            this.dom.btnAuthCalendar.textContent = "Aguardando navegador...";
+            this.dom.btnAuthCalendar.disabled = true;
+        }
+        this.appendSystemMessage("Abrindo o navegador para autorizar o Geraldo no Google Calendar. Conclua o login na janela que se abriu...");
+
+        this.sendAction("auth_calendar", {}, (ok, data, err) => {
+            if (this.dom.btnAuthCalendar) {
+                this.dom.btnAuthCalendar.disabled = false;
+            }
+            if (ok && data && data.success) {
+                this.appendSystemMessage("Conta Google vinculada com sucesso! Você já pode consultar ou agendar compromissos.");
+                this.sendAction("check_calendar");
+            } else if (data && data.status === "missing_credentials") {
+                this.appendSystemMessage(data.message || "Credenciais não configuradas.");
+            } else {
+                this.appendSystemMessage(`Falha na autorização: ${err || (data && data.message) || "Cancelado pelo usuário."}`);
+                this.sendAction("check_calendar");
+            }
+        });
+    }
+
     openCalendar() {
         this.openExternalUrl("https://calendar.google.com");
         this.sendAction("open_calendar");
@@ -679,6 +725,7 @@ class GeraldoDesktopClient {
 
     updateCalendarStatus(info) {
         if (!this.dom.calStatusBadge) return;
+        this.calendarInfo = info || {};
         const status = info ? info.status : "not_configured";
 
         if (status === "configured" || (info && info.token_exists)) {
@@ -688,25 +735,31 @@ class GeraldoDesktopClient {
                 this.dom.calStatusDesc.textContent = "Conta Google sincronizada. Comandos de voz ativos.";
             }
             if (this.dom.btnAuthCalendar) {
-                this.dom.btnAuthCalendar.textContent = "✓ Conectado";
+                this.dom.btnAuthCalendar.textContent = "Desconectar";
+                this.dom.btnAuthCalendar.className = "btn-action";
+                this.dom.btnAuthCalendar.title = "Clique para desvincular sua conta Google";
             }
-        } else if (status === "partial" || (info && info.credentials_exists)) {
-            this.dom.calStatusBadge.textContent = "Credenciais OK";
+        } else if (status === "partial" || (info && info.credentials_exists) || (info && info.ready_to_auth)) {
+            this.dom.calStatusBadge.textContent = "1 Clique Pronto";
             this.dom.calStatusBadge.className = "badge-tag status-warn";
             if (this.dom.calStatusDesc) {
-                this.dom.calStatusDesc.textContent = "Arquivo credentials.json detectado. Clique em Conectar para autenticar.";
+                this.dom.calStatusDesc.textContent = "Tudo pronto! Clique em Conectar para autorizar no navegador.";
             }
             if (this.dom.btnAuthCalendar) {
-                this.dom.btnAuthCalendar.textContent = "🔑 Conectar";
+                this.dom.btnAuthCalendar.textContent = "🔗 Conectar com Google";
+                this.dom.btnAuthCalendar.className = "btn-action primary";
+                this.dom.btnAuthCalendar.title = "Autorizar Google Calendar em 1 clique";
             }
         } else {
-            this.dom.calStatusBadge.textContent = "Não Vinculada";
+            this.dom.calStatusBadge.textContent = "Não Configurado";
             this.dom.calStatusBadge.className = "badge-tag status-offline";
             if (this.dom.calStatusDesc) {
-                this.dom.calStatusDesc.textContent = "Vincule o credentials.json ou clique em Conectar para ver instruções.";
+                this.dom.calStatusDesc.textContent = "Clique para configurar seu Client ID do Google.";
             }
             if (this.dom.btnAuthCalendar) {
-                this.dom.btnAuthCalendar.textContent = "🔑 Conectar";
+                this.dom.btnAuthCalendar.textContent = "⚙ Configurar Google";
+                this.dom.btnAuthCalendar.className = "btn-action";
+                this.dom.btnAuthCalendar.title = "Inserir chaves do Google";
             }
         }
     }

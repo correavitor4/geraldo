@@ -5,6 +5,7 @@ Verifica a integridade do ambiente, modelos de voz locais,
 conectividade do Ollama e permissões de áudio para distribuição comercial.
 """
 import sys
+import os
 import shutil
 import urllib.request
 import json
@@ -326,16 +327,32 @@ class OnboardingManager:
     @classmethod
     def check_calendar_integration(cls) -> Dict[str, Any]:
         """Verifica se as credenciais do Google Calendar estão configuradas."""
+        import config
         creds_path = get_credentials_path()
         token_path = get_token_path()
 
-        has_creds = creds_path.exists()
+        has_creds_file = creds_path.exists()
+        client_id = getattr(config, "GOOGLE_CLIENT_ID", "").strip() or os.getenv("GOOGLE_CLIENT_ID", "").strip()
+        has_client_id = bool(client_id)
+
+        has_creds = has_creds_file or has_client_id
         has_token = token_path.exists()
 
+        if has_token:
+            status = "configured"
+        elif has_creds:
+            status = "partial"
+        else:
+            status = "not_configured"
+
         return {
-            "status": "configured" if (has_creds and has_token) else "partial" if has_creds else "not_configured",
+            "status": status,
+            "ready_to_auth": has_creds,
             "credentials_file": str(creds_path),
             "credentials_exists": has_creds,
+            "has_credentials_file": has_creds_file,
+            "has_client_id": has_client_id,
+            "client_id": client_id,
             "token_file": str(token_path),
             "token_exists": has_token,
         }

@@ -84,8 +84,21 @@ def build_sidecar(target_triple: str = None, dry_run: bool = False) -> Path:
         if venv_pyinstaller.exists():
             has_pyinstaller = True
 
-    if has_pyinstaller:
-        print("[Build Sidecar] PyInstaller detectado. Congelando daemon Python...")
+    host_system = platform.system().lower()
+    target_system = "windows" if "windows" in triple else ("darwin" if ("darwin" in triple or "apple" in triple) else "linux")
+    
+    host_arch = "x86_64" if platform.machine().lower() in ("x86_64", "amd64") else "aarch64"
+    target_arch = "aarch64" if ("aarch64" in triple or "arm64" in triple) else "x86_64"
+
+    can_use_pyinstaller = False
+    if has_pyinstaller and host_system == target_system:
+        if host_system == "darwin":
+            can_use_pyinstaller = True
+        elif host_arch == target_arch:
+            can_use_pyinstaller = True
+
+    if can_use_pyinstaller:
+        print(f"[Build Sidecar] PyInstaller detectado para {host_system} {host_arch}. Congelando daemon Python...")
         build_dir = REPO_ROOT / "build" / "sidecar"
         dist_dir = REPO_ROOT / "dist" / "sidecar"
         
@@ -114,6 +127,8 @@ def build_sidecar(target_triple: str = None, dry_run: bool = False) -> Path:
                 return dest_path
         except Exception as e:
             print(f"[Build Sidecar] Aviso: compilação com PyInstaller falhou ({e}). Gerando runner nativo...")
+    else:
+        print(f"[Build Sidecar] Compilando para alvo '{triple}' a partir de host '{host_system}-{host_arch}'. Gerando runner nativo...")
 
     # Fallback / Modo Desenvolvimento: Gera um launcher executável padrão
     print("[Build Sidecar] Gerando launcher executável para sidecar...")

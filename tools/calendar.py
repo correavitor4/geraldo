@@ -2,6 +2,7 @@ import datetime
 import os
 import os.path
 import re
+from typing import Optional, Dict, Any, List
 from dotenv import load_dotenv
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -80,6 +81,19 @@ class CalendarTools:
         if cls._service:
             return cls._service
 
+        creds = cls.get_credentials()
+        if creds:
+            try:
+                cls._service = build("calendar", "v3", credentials=creds)
+                return cls._service
+            except Exception as e:
+                print(f"[Geraldo:Calendar Build Error]: {e}")
+                return None
+        return None
+
+    @classmethod
+    def get_credentials(cls) -> Optional[Credentials]:
+        """Obtém credenciais válidas do Google, renovando o token se expirado."""
         creds = None
         if os.path.exists(TOKEN_FILE):
             try:
@@ -87,26 +101,74 @@ class CalendarTools:
             except Exception:
                 creds = None
 
-        if not creds or not creds.valid:
-            if creds and creds.expired and creds.refresh_token:
-                try:
-                    creds.refresh(Request())
-                except Exception:
-                    creds = None
-            
-            if not creds and os.path.exists(CREDENTIALS_FILE):
-                try:
-                    flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
-                    creds = flow.run_local_server(port=0)
-                    with open(TOKEN_FILE, "w") as token:
-                        token.write(creds.to_json())
-                except Exception as e:
-                    print(f"[Geraldo:Calendar Auth Error]: {e}")
-                    return None
+        if creds and creds.valid:
+            return creds
 
-        if creds:
-            cls._service = build("calendar", "v3", credentials=creds)
-            return cls._service
+        if creds and creds.expired and creds.refresh_token:
+            try:
+                creds.refresh(Request())
+                with open(TOKEN_FILE, "w", encoding="utf-8") as token:
+                    token.write(creds.to_json())
+                return creds
+            except Exception as e:
+                print(f"[Geraldo:Calendar Refresh Error]: {e}")
+                creds = None
+
+        return None
+
+    @classmethod
+    def authenticate(cls) -> Optional[Credentials]:
+        """
+        Executa o fluxo de autenticação OAuth 2.0 no navegador (1 clique).
+        Suporta tanto o GOOGLE_CLIENT_ID embutido/configurado quanto o credentials.json tradicional.
+        """
+        import config
+
+        flow = None
+
+        # 1. Se existir o arquivo credentials.json físico, respeita-o
+        if os.path.exists(CREDENTIALS_FILE):
+            try:
+                flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
+            except Exception as e:
+                print(f"[Geraldo:Calendar] Erro ao ler credentials.json: {e}")
+
+        # 2. Se não houver arquivo, usa o Client ID configurado (fluxo de 1 clique sem arquivos)
+        if not flow:
+            client_id = getattr(config, "GOOGLE_CLIENT_ID", "").strip() or os.getenv("GOOGLE_CLIENT_ID", "").strip()
+            client_secret = getattr(config, "GOOGLE_CLIENT_SECRET", "").strip() or os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
+
+            if client_id:
+                client_config = {
+                    "installed": {
+                        "client_id": client_id,
+                        "client_secret": client_secret,
+                        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                        "token_uri": "https://oauth2.googleapis.com/token",
+                        "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+                        "redirect_uris": ["http://localhost", "http://127.0.0.1"]
+                    }
+                }
+                try:
+                    flow = InstalledAppFlow.from_client_config(client_config, SCOPES)
+                except Exception as e:
+                    print(f"[Geraldo:Calendar] Erro ao instanciar flow OAuth: {e}")
+
+        if not flow:
+            return None
+
+        try:
+            creds = flow.run_local_server(port=0, prompt="consent", access_type="offline")
+            if creds:
+                os.makedirs(os.path.dirname(TOKEN_FILE), exist_ok=True)
+                with open(TOKEN_FILE, "w", encoding="utf-8") as token:
+                    token.write(creds.to_json())
+                cls._service = build("calendar", "v3", credentials=creds)
+                return creds
+        except Exception as e:
+            print(f"[Geraldo:Calendar Auth Error]: {e}")
+            return None
+
         return None
 
     @classmethod

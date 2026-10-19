@@ -63,6 +63,8 @@ class GeraldoIPCServer:
         self.register_handler("check_calendar", self._handle_check_calendar)
         self.register_handler("open_calendar", self._handle_open_calendar)
         self.register_handler("auth_calendar", self._handle_auth_calendar)
+        self.register_handler("disconnect_calendar", self._handle_disconnect_calendar)
+        self.register_handler("save_google_creds", self._handle_save_google_creds)
 
     def register_handler(self, action: str, handler: Callable) -> None:
         """Registra um manipulador para uma ação RPC."""
@@ -443,17 +445,26 @@ class GeraldoIPCServer:
         except Exception as e:
             return {"opened": False, "url": url, "error": str(e)}
 
-    def _handle_auth_calendar(self, params: dict) -> dict:
+    async def _handle_auth_calendar(self, params: dict) -> dict:
+        import asyncio
+        import config
         from core.onboarding import OnboardingManager
         from core.paths import get_credentials_path
+
+        # Se o cliente enviar chaves na chamada, salva imediatamente
+        client_id = params.get("client_id")
+        client_secret = params.get("client_secret")
+        if client_id is not None or client_secret is not None:
+            config.update_google_oauth_config(client_id=client_id, client_secret=client_secret)
+
         status = OnboardingManager.check_calendar_integration()
         if not status["credentials_exists"]:
             return {
                 "success": False,
                 "status": "missing_credentials",
                 "message": (
-                    f"Arquivo 'credentials.json' não encontrado em: {get_credentials_path()}. "
-                    "Baixe o arquivo de credenciais OAuth no Google Cloud Console e salve nessa pasta."
+                    "Nenhum Client ID do Google configurado. "
+                    "Informe o Client ID do Google para conectar com 1 clique."
                 ),
                 "credentials_file": str(get_credentials_path()),
                 "cloud_console_url": "https://console.cloud.google.com/apis/credentials",
@@ -461,12 +472,37 @@ class GeraldoIPCServer:
 
         try:
             from tools.calendar import CalendarTools
-            srv = CalendarTools.get_service()
-            if srv:
+            # Executa o fluxo OAuth (que abre o navegador) em thread separada para não travar o WebSocket
+            creds = await asyncio.to_thread(CalendarTools.authenticate)
+            if creds:
+                self.broadcast_event("calendar_status", {"status": "configured", "token_exists": True})
                 return {"success": True, "status": "authenticated", "message": "Conta do Google vinculada com sucesso!"}
-            return {"success": False, "status": "failed", "message": "Falha ao obter autorização do Google."}
+            return {"success": False, "status": "failed", "message": "A autorização no navegador foi cancelada ou falhou."}
         except Exception as e:
             return {"success": False, "status": "error", "message": str(e)}
+
+    def _handle_disconnect_calendar(self, params: dict) -> dict:
+        from core.paths import get_token_path
+        from tools.calendar import CalendarTools
+        token_path = get_token_path()
+        if token_path.exists():
+            try:
+                token_path.unlink()
+            except Exception:
+                pass
+        CalendarTools._service = None
+        self.broadcast_event("calendar_status", {"status": "partial", "token_exists": False})
+        return {"success": True, "status": "disconnected", "message": "Conta do Google desvinculada com sucesso."}
+
+    def _handle_save_google_creds(self, params: dict) -> dict:
+        import config
+        client_id = params.get("client_id", "")
+        client_secret = params.get("client_secret", "")
+        updated = config.update_google_oauth_config(client_id=client_id, client_secret=client_secret)
+        from core.onboarding import OnboardingManager
+        status = OnboardingManager.check_calendar_integration()
+        self.broadcast_event("calendar_status", status)
+        return {"success": True, "config": updated, "status": status}
 
 
 class IPCManager:

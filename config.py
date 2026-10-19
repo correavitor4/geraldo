@@ -170,6 +170,33 @@ def get_ollama_config() -> dict:
 def update_ollama_config(host: str = None, model: str = None, persist: bool = True) -> dict:
     return update_llm_config(provider="ollama" if host else None, host=host, model=model, persist=persist)
 
+# Google Calendar OAuth 2.0 (Configuração para 1 clique)
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", _user_settings.get("google_client_id", "")).strip()
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", _user_settings.get("google_client_secret", "")).strip()
+
+def get_google_oauth_config() -> dict:
+    return {
+        "client_id": GOOGLE_CLIENT_ID,
+        "client_secret": GOOGLE_CLIENT_SECRET,
+        "has_client_id": bool(GOOGLE_CLIENT_ID),
+        "has_client_secret": bool(GOOGLE_CLIENT_SECRET),
+    }
+
+def update_google_oauth_config(client_id: str = None, client_secret: str = None, persist: bool = True) -> dict:
+    global GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
+    if client_id is not None:
+        GOOGLE_CLIENT_ID = client_id.strip()
+    if client_secret is not None:
+        GOOGLE_CLIENT_SECRET = client_secret.strip()
+
+    if persist:
+        save_settings({
+            "google_client_id": GOOGLE_CLIENT_ID,
+            "google_client_secret": GOOGLE_CLIENT_SECRET,
+        })
+
+    return get_google_oauth_config()
+
 # Parâmetros de Áudio
 SAMPLE_RATE = 16000
 CHUNK_SIZE = 512

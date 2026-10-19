@@ -17,6 +17,9 @@ jobs:
           - platform: 'windows-latest'
             args: '--target x86_64-pc-windows-msvc'
             target: 'x86_64-pc-windows-msvc'
+          - platform: 'windows-latest'
+            args: '--target aarch64-pc-windows-msvc'
+            target: 'aarch64-pc-windows-msvc'
           - platform: 'macos-latest'
             args: '--target aarch64-apple-darwin'
             target: 'aarch64-apple-darwin'
@@ -26,6 +29,9 @@ jobs:
           - platform: 'ubuntu-22.04'
             args: '--target x86_64-unknown-linux-gnu'
             target: 'x86_64-unknown-linux-gnu'
+          - platform: 'ubuntu-24.04-arm'
+            args: '--target aarch64-unknown-linux-gnu'
+            target: 'aarch64-unknown-linux-gnu'
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -72,7 +78,7 @@ jobs:
           pip install pyinstaller
 
       - name: Instalar dependências de sistema (Linux)
-        if: matrix.platform == 'ubuntu-22.04'
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libasound2-dev
@@ -88,7 +94,7 @@ jobs:
         with:
           tagName: v__VERSION__
           releaseName: 'Geraldo Desktop v__VERSION__'
-          releaseBody: 'Instaladores comerciais oficiais do Geraldo para Windows (.exe / .msi), macOS (.dmg) e Linux (.deb / .AppImage).'
+          releaseBody: 'Instaladores oficiais do Geraldo para Windows (x64 e ARM64), macOS (Apple Silicon e Intel) e Linux (x64 e ARM64).'
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}

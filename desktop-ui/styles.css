@@ -66,6 +66,7 @@ body {
 
 .top-navbar {
     height: 64px;
+    flex-shrink: 0;
     background: var(--bg-surface);
     border-bottom: 1px solid var(--border-color);
     display: flex;
@@ -257,6 +258,8 @@ body {
     display: grid;
     grid-template-columns: 1fr 360px;
     height: calc(100vh - 64px);
+    flex: 1;
+    min-height: 0;
     overflow: hidden;
 }
 
@@ -265,6 +268,8 @@ body {
     display: flex;
     flex-direction: column;
     height: 100%;
+    min-height: 0;
+    overflow: hidden;
     border-right: 1px solid var(--border-color);
     background: var(--bg-dark);
     padding: 16px 24px;
@@ -275,6 +280,7 @@ body {
     justify-content: space-between;
     align-items: center;
     margin-bottom: 12px;
+    flex-shrink: 0;
 }
 
 .section-header h2 {
@@ -299,21 +305,33 @@ body {
 }
 
 .chat-stream {
-    flex: 1;
+    flex: 1 1 0%;
+    min-height: 0;
+    height: 100%;
     overflow-y: auto;
+    overflow-x: hidden;
     display: flex;
     flex-direction: column;
     gap: 14px;
     padding-right: 8px;
     margin-bottom: 12px;
+    scroll-behavior: smooth;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-color) transparent;
 }
 
 .chat-stream::-webkit-scrollbar {
     width: 6px;
 }
+.chat-stream::-webkit-scrollbar-track {
+    background: transparent;
+}
 .chat-stream::-webkit-scrollbar-thumb {
     background: var(--border-color);
     border-radius: var(--radius-full);
+}
+.chat-stream::-webkit-scrollbar-thumb:hover {
+    background: var(--text-muted);
 }
 
 /* BOLHAS DE MENSAGENS */
@@ -326,6 +344,8 @@ body {
     font-size: 14.5px;
     line-height: 1.5;
     animation: fadeIn 0.25s ease;
+    word-break: break-word;
+    overflow-wrap: break-word;
 }
 
 @keyframes fadeIn {
@@ -374,6 +394,7 @@ body {
     overflow-x: auto;
     padding-bottom: 10px;
     margin-bottom: 10px;
+    flex-shrink: 0;
 }
 
 .chip-suggestion {
@@ -404,6 +425,7 @@ body {
     border-radius: var(--radius-lg);
     padding: 6px 8px 6px 16px;
     box-shadow: var(--shadow-sm);
+    flex-shrink: 0;
 }
 
 .input-wrapper {
