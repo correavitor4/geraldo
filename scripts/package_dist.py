@@ -86,7 +86,7 @@ def verify_installer_configs() -> dict:
     }
 
     # 3. Configuração de Instalador macOS (DMG & App Bundle)
-    mac_conf = bundle.get("macos", {})
+    mac_conf = bundle.get("macOS", {}) or bundle.get("macos", {})
     dmg_conf = mac_conf.get("dmg", {})
     mac_valid = bool(dmg_conf) and has_icns and bool(mac_conf.get("minimumSystemVersion"))
 

@@ -64,7 +64,7 @@
         "language": "pt-BR"
       }
     },
-    "macos": {
+    "macOS": {
       "frameworks": [],
       "minimumSystemVersion": "10.15",
       "dmg": {
