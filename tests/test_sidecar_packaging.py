@@ -93,3 +93,29 @@ class TestSidecarPackaging:
         assert "macos-latest" in content
         assert "ubuntu-22.04" in content
         assert "tauri-action" in content
+
+    def test_nsis_installer_hooks_exist_and_configures_path(self):
+        hooks_file = SRC_TAURI / "nsis" / "installer_hooks.nsi"
+        assert hooks_file.exists(), "src-tauri/nsis/installer_hooks.nsi não encontrado"
+        content = hooks_file.read_text(encoding="utf-8")
+        assert "customInstall" in content
+        assert "customUnInstall" in content
+        assert 'HKCU "Environment" "Path"' in content
+        assert "SendMessage" in content
+
+    def test_cli_wrapper_scripts_exist_and_valid(self):
+        bin_dir = REPO_ROOT / "bin"
+        assert (bin_dir / "geraldo_tui.cmd").exists()
+        assert (bin_dir / "geraldo-tui.cmd").exists()
+        assert (bin_dir / "geraldo_tui").exists()
+        assert (bin_dir / "geraldo-tui").exists()
+
+        assert os.access(bin_dir / "geraldo_tui", os.X_OK)
+        assert os.access(bin_dir / "geraldo-tui", os.X_OK)
+
+        cmd_content = (bin_dir / "geraldo_tui.cmd").read_text(encoding="utf-8")
+        assert "--tui" in cmd_content
+
+        sh_content = (bin_dir / "geraldo_tui").read_text(encoding="utf-8")
+        assert "--tui" in sh_content
+

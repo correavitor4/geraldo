@@ -247,16 +247,46 @@ Ao iniciar, você verá:
 
 ---
 
-### 6.3. Execução da Interface de Terminal (TUI)
+### 6.3. Execução da Interface de Terminal (TUI nos 3 Sistemas Operacionais)
 
-Em outro terminal (com o daemon em execução ou antes de iniciá-lo):
+A TUI do Geraldo é multiplataforma e funciona nativamente no **Linux**, **macOS** e **Windows**.
+
+#### 🚀 Comando Global após Instalação (Windows e macOS)
+Nos instaladores do Windows e macOS, o comando `geraldo_tui` (e `geraldo-tui`) é **configurado automaticamente no PATH do seu sistema**. Você pode simplesmente abrir qualquer terminal e digitar:
 
 ```bash
-source venv/bin/activate
-python ui/tui.py
+# Funciona no Windows (PowerShell/CMD/Windows Terminal) e no macOS (Zsh/Bash/Terminal.app):
+geraldo_tui
 ```
 
-A TUI se conecta automaticamente ao WebSocket e oferece controle total:
+---
+
+#### 💻 Modo de Desenvolvimento / Repositório:
+
+##### 🐧 No Linux:
+```bash
+./bin/geraldo_tui
+# ou:
+./run_tui.sh
+```
+
+##### 🍏 No macOS:
+```bash
+./bin/geraldo_tui
+# ou:
+./run_tui.sh
+```
+
+##### 🪟 No Windows (Windows Terminal ou PowerShell):
+```powershell
+.\bin\geraldo_tui.cmd
+# ou:
+.\run_tui.bat
+```
+
+> **Dica Windows:** Recomendamos executar no **Windows Terminal** (já padrão no Windows 11 ou disponível na Microsoft Store) para melhor renderização de fontes e cores.
+
+A TUI se conecta automaticamente ao barramento WebSocket local (`127.0.0.1:8765`) e oferece controle total:
 - Histórico de mensagens com cores ricas.
 - Painéis laterais de **Pomodoro**, **Timers ativos** e **Alarmes programados**.
 - Caixa de digitação de texto para comandos silenciosos (ex: *"timer de 10 minutos"*, *"minha agenda de hoje"*).

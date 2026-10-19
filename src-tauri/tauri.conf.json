@@ -44,6 +44,12 @@
     "externalBin": [
       "binaries/geraldo-core"
     ],
+    "resources": [
+      "../bin/geraldo_tui.cmd",
+      "../bin/geraldo-tui.cmd",
+      "../bin/geraldo_tui",
+      "../bin/geraldo-tui"
+    ],
     "copyright": "Copyright © 2026 Geraldo AI",
     "category": "Productivity",
     "shortDescription": "Assistente de voz desktop inteligente e local",
@@ -54,6 +60,7 @@
       "timestampUrl": "",
       "nsis": {
         "installMode": "currentUser",
+        "installerHooks": "nsis/installer_hooks.nsi",
         "languages": [
           "Portuguese",
           "English"

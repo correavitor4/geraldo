@@ -146,3 +146,22 @@ def test_tauri_main_rs_source_components():
 
     # Comando exposto
     assert 'get_desktop_version' in code
+
+    # Configuração de PATH CLI para geraldo_tui
+    assert 'ensure_cli_path' in code
+    assert 'geraldo_tui' in code
+
+
+def test_tauri_nsis_installer_hooks_config():
+    """Valida se o instalador NSIS do Windows aponta para o script de hooks com PATH export."""
+    with open(TAURI_CONF_PATH, "r", encoding="utf-8") as f:
+        conf = json.load(f)
+
+    nsis = conf.get("bundle", {}).get("windows", {}).get("nsis", {})
+    assert "installerHooks" in nsis
+    assert "installer_hooks.nsi" in nsis.get("installerHooks", "")
+
+    resources = conf.get("bundle", {}).get("resources", [])
+    assert any("geraldo_tui.cmd" in r for r in resources)
+    assert any("geraldo_tui" in r for r in resources)
+

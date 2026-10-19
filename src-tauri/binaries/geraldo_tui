@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+
+# 1. macOS Bundle instalado em /Applications
+if [ -f "/Applications/Geraldo.app/Contents/MacOS/geraldo-core" ]; then
+    exec "/Applications/Geraldo.app/Contents/MacOS/geraldo-core" --tui "$@"
+fi
+
+# 2. Executavel sidecar local
+if [ -f "$DIR/geraldo-core" ]; then
+    exec "$DIR/geraldo-core" --tui "$@"
+fi
+
+if [ -f "$DIR/binaries/geraldo-core" ]; then
+    exec "$DIR/binaries/geraldo-core" --tui "$@"
+fi
+
+# 3. Fallback no repositorio / desenvolvimento com venv
+if [ -f "$DIR/../venv/bin/python" ]; then
+    exec "$DIR/../venv/bin/python" "$DIR/../ui/tui.py" "$@"
+fi
+
+if [ -f "$DIR/venv/bin/python" ]; then
+    exec "$DIR/venv/bin/python" "$DIR/ui/tui.py" "$@"
+fi
+
+# 4. Fallback com python3 global
+exec python3 -m ui.tui "$@"

@@ -108,4 +108,9 @@ def main():
         IPCManager.stop()
 
 if __name__ == "__main__":
-    main()
+    if any(arg in ("--tui", "tui", "-t") for arg in sys.argv[1:]):
+        from ui.tui import run_tui
+        run_tui()
+    else:
+        main()
+

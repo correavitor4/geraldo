@@ -139,6 +139,13 @@ exec "$PYTHON_EXEC" -u "$DIR/main.py" "$@"
             f.write(launcher_content)
         dest_path.chmod(0o755)
 
+    # Copia wrappers CLI do geraldo_tui para a pasta de binarios do Tauri
+    bin_dir = REPO_ROOT / "bin"
+    for name in ("geraldo_tui.cmd", "geraldo-tui.cmd", "geraldo_tui", "geraldo-tui"):
+        src = bin_dir / name
+        if src.exists():
+            shutil.copy2(src, BINARIES_DIR / name)
+
     print(f"[Build Sidecar] Sidecar executável pronto em: {dest_path}")
     return dest_path
 

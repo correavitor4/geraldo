@@ -72,6 +72,65 @@ fn stop_sidecar() {
     }
 }
 
+fn ensure_cli_path() {
+    #[cfg(target_os = "macos")]
+    {
+        if let Ok(home) = std::env::var("HOME") {
+            let local_bin = std::path::PathBuf::from(&home).join(".local").join("bin");
+            let _ = std::fs::create_dir_all(&local_bin);
+
+            let app_target = "/Applications/Geraldo.app/Contents/MacOS/geraldo-core";
+
+            for cmd_name in &["geraldo_tui", "geraldo-tui"] {
+                let link_path = local_bin.join(cmd_name);
+                if !link_path.exists() {
+                    let script = format!(
+                        "#!/usr/bin/env bash\nif [ -f \"{0}\" ]; then\n  exec \"{0}\" --tui \"$@\"\nelif [ -f \"$(dirname \"$0\")/geraldo-core\" ]; then\n  exec \"$(dirname \"$0\")/geraldo-core\" --tui \"$@\"\nelse\n  exec python3 -m ui.tui \"$@\"\nfi\n",
+                        app_target
+                    );
+                    let _ = std::fs::write(&link_path, script);
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::PermissionsExt;
+                        let _ = std::fs::set_permissions(&link_path, std::fs::Permissions::from_mode(0o755));
+                    }
+                }
+            }
+
+            // Garante que ~/.local/bin esteja presente no ~/.zshrc se ausente
+            let zshrc = std::path::PathBuf::from(&home).join(".zshrc");
+            if zshrc.exists() {
+                if let Ok(content) = std::fs::read_to_string(&zshrc) {
+                    if !content.contains(".local/bin") && !content.contains("geraldo_tui") {
+                        use std::io::Write;
+                        if let Ok(mut file) = std::fs::OpenOptions::new().append(true).open(&zshrc) {
+                            let _ = writeln!(file, "\n# Geraldo TUI CLI\nexport PATH=\"$HOME/.local/bin:$PATH\"");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(exe_path) = std::env::current_exe() {
+            if let Some(parent) = exe_path.parent() {
+                let dir_str = parent.to_string_lossy().to_string();
+                let _ = Command::new("cmd")
+                    .args([
+                        "/C",
+                        &format!(
+                            "powershell -NoProfile -Command \"$d='{0}'; $p=[Environment]::GetEnvironmentVariable('Path', 'User'); if ($p -notlike '*'+$d+'*') {{ [Environment]::SetEnvironmentVariable('Path', $p+';'+$d, 'User') }}\"",
+                            dir_str.replace("'", "''")
+                        ),
+                    ])
+                    .spawn();
+            }
+        }
+    }
+}
+
 fn main() {
     // Corrige compatibilidade do WebKitGTK em ambientes Wayland (Hyprland, Sway, GNOME)
     #[cfg(target_os = "linux")]
@@ -83,6 +142,9 @@ fn main() {
 
     tauri::Builder::default()
         .setup(|app| {
+            // Garante comando CLI geraldo_tui no PATH do sistema
+            ensure_cli_path();
+
             // Tenta iniciar o daemon se não estiver em execução
             try_spawn_sidecar();
 
