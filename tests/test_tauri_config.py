@@ -167,3 +167,24 @@ def test_tauri_nsis_installer_hooks_config():
     assert any("geraldo_tui.cmd" in r for r in resources)
     assert any("geraldo_tui" in r for r in resources)
 
+
+def test_tauri_updater_plugin_config():
+    """Valida se o plugin de Auto-Update está habilitado e configurado no ecossistema Tauri."""
+    with open(TAURI_CONF_PATH, "r", encoding="utf-8") as f:
+        conf = json.load(f)
+
+    updater = conf.get("plugins", {}).get("updater", {})
+    assert "endpoints" in updater, "Endpoint do updater não encontrado em plugins.updater"
+    endpoints = updater.get("endpoints", [])
+    assert len(endpoints) >= 1
+    assert any("github.com" in ep for ep in endpoints)
+
+    with open(CARGO_TOML_PATH, "r", encoding="utf-8") as f:
+        cargo = f.read()
+    assert "tauri-plugin-updater" in cargo
+
+    with open(MAIN_RS_PATH, "r", encoding="utf-8") as f:
+        main_rs = f.read()
+    assert "tauri_plugin_updater" in main_rs
+
+

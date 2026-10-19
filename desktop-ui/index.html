@@ -34,6 +34,10 @@
             </div>
 
             <div class="actions-group">
+                <button id="btn-header-calendar" class="btn-icon" title="Abrir Google Calendar">
+                    <span>📅</span>
+                    <span>Agenda</span>
+                </button>
                 <button id="btn-open-settings" class="btn-icon" title="Configurar Ollama / Container">
                     <span id="settings-icon">⚙️</span>
                     <span id="settings-text">Ollama</span>
@@ -144,6 +148,25 @@
                     </div>
                     <div id="alarms-list" class="items-list">
                         <div class="empty-state">Nenhum alarme programado</div>
+                    </div>
+                </div>
+
+                <!-- CARD GOOGLE CALENDAR -->
+                <div class="dashboard-card calendar-card">
+                    <div class="card-header">
+                        <h3>📅 Agenda do Google</h3>
+                        <span id="cal-status-badge" class="badge-tag">Verificando...</span>
+                    </div>
+                    <div class="calendar-card-body">
+                        <p id="cal-status-desc" class="sub-label">Acesse seus compromissos ou conecte sua conta Google.</p>
+                        <div class="calendar-actions-row">
+                            <button id="btn-open-calendar" class="btn-action primary" title="Abrir Agenda do Google no navegador">
+                                🌐 Abrir Agenda
+                            </button>
+                            <button id="btn-auth-calendar" class="btn-action" title="Vincular ou autorizar conta Google">
+                                🔑 Conectar
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -269,7 +292,18 @@
                     </div>
                     <!-- Chips de sugestões de modelos por provedor -->
                     <div id="model-presets-container" class="model-presets-chips"></div>
-                    <span id="model-field-hint" class="field-hint">Modelo a ser utilizado para raciocínio e síntese.</span>
+                <!-- SEÇÃO AUTO-UPDATE -->
+                <div class="form-group" id="group-auto-update">
+                    <div class="label-with-link">
+                        <label>Auto-Update (Atualizações Automáticas)</label>
+                        <span id="updater-status-badge" class="badge-tag status-ok">Plugin Ativo (Tauri)</span>
+                    </div>
+                    <p class="field-hint">O plugin de atualizações automáticas verifica novas versões no GitHub e mantém o Geraldo sempre atualizado.</p>
+                    <div class="updater-actions-row">
+                        <button type="button" id="btn-check-updates" class="btn-action">
+                            🔄 Verificar Atualizações
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Status do Teste de Conexão -->

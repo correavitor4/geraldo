@@ -340,6 +340,7 @@ class GeraldoTUI(App):
         Binding("p", "toggle_pomodoro", "Pomodoro Iniciar/Pausar", show=True),
         Binding("c", "cancel_action", "Cancelar/Silenciar", show=True),
         Binding("o", "open_ollama_settings", "Configurar Ollama", show=True),
+        Binding("a", "open_calendar", "Agenda Google", show=True),
         Binding("t", "focus_input", "Digitar Comando", show=True),
         Binding("ctrl+l", "clear_log", "Limpar Histórico", show=True),
         Binding("q", "quit", "Sair", show=True),
@@ -402,6 +403,13 @@ class GeraldoTUI(App):
                 with Vertical(classes="side-card"):
                     yield Label("⏰ ALARMES PROGRAMADOS", classes="card-title")
                     yield Label("Nenhum alarme programado", id="alarms-box")
+
+                with Vertical(classes="side-card"):
+                    yield Label("📅 AGENDA DO GOOGLE", classes="card-title")
+                    yield Label("Status: [dim]Não Vinculada[/dim]", id="cal-status-label")
+                    with Horizontal(id="cal-buttons"):
+                        yield Button("🌐 Abrir", id="btn-cal-open", variant="primary")
+                        yield Button("🔑 Conectar", id="btn-cal-auth")
 
         with Horizontal(id="input-bar"):
             yield Input(
@@ -537,6 +545,27 @@ class GeraldoTUI(App):
             if data.get("ollama_host"):
                 self._ollama_host = data.get("ollama_host", self._ollama_host)
                 self._ollama_model = data.get("llm_model", self._ollama_model)
+            if req_id.startswith("check_calendar") and isinstance(data, dict):
+                try:
+                    lbl = self.query_one("#cal-status-label", Label)
+                    if data.get("status") == "configured" or data.get("token_exists"):
+                        lbl.update("Status: [bold green]Conectada (OK)[/]")
+                    elif data.get("status") == "partial" or data.get("credentials_exists"):
+                        lbl.update("Status: [bold yellow]Credenciais OK[/]")
+                    else:
+                        lbl.update("Status: [dim]Não Vinculada[/]")
+                except Exception:
+                    pass
+            elif req_id.startswith("auth_calendar") and isinstance(data, dict):
+                if data.get("success"):
+                    chat.write("[bold green]✅ Agenda do Google vinculada com sucesso![/]")
+                    try:
+                        self.query_one("#cal-status-label", Label).update("Status: [bold green]Conectada (OK)[/]")
+                    except Exception:
+                        pass
+                else:
+                    msg = data.get("message", "Falha na autenticação.")
+                    chat.write(f"[bold red]❌ {msg}[/]")
         else:
             chat.write(f"[bold red]❌ Erro no comando:[/] {error or 'Falha desconhecida'}")
 
@@ -672,9 +701,27 @@ class GeraldoTUI(App):
         elif button_id == "btn-pomo-reset":
             self.send_action("pomodoro", {"sub_action": "reset"})
 
+        elif button_id == "btn-cal-open":
+            self.action_open_calendar()
+
+        elif button_id == "btn-cal-auth":
+            self.send_action("auth_calendar", {})
+            chat = self.query_one("#chat-log", RichLog)
+            chat.write("[bold yellow]🔑 Solicitando autorização da conta Google Calendar...[/]")
+
     # ==========================================
     # AÇÕES DOS ATALHOS DE TECLADO
     # ==========================================
+    def action_open_calendar(self) -> None:
+        """Abre o Google Calendar no navegador padrão e notifica o barramento."""
+        import webbrowser
+        try:
+            webbrowser.open("https://calendar.google.com")
+        except Exception:
+            pass
+        self.send_action("open_calendar", {"url": "https://calendar.google.com"})
+        chat = self.query_one("#chat-log", RichLog)
+        chat.write("[bold cyan]📅 Abrindo Google Calendar no navegador padrão...[/]")
     def action_toggle_mute(self) -> None:
         self.send_action("toggle_mute")
 

@@ -184,6 +184,7 @@ fn main() {
     }
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             // Garante comando CLI geraldo_tui no PATH do sistema
             ensure_cli_path();

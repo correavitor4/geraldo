@@ -60,6 +60,9 @@ class GeraldoIPCServer:
         self.register_handler("check_ollama", self._handle_check_ollama)
         self.register_handler("check_llm", self._handle_check_llm)
         self.register_handler("detect_container", self._handle_detect_container)
+        self.register_handler("check_calendar", self._handle_check_calendar)
+        self.register_handler("open_calendar", self._handle_open_calendar)
+        self.register_handler("auth_calendar", self._handle_auth_calendar)
 
     def register_handler(self, action: str, handler: Callable) -> None:
         """Registra um manipulador para uma ação RPC."""
@@ -426,6 +429,44 @@ class GeraldoIPCServer:
         if info:
             return {"detected": True, "container": info}
         return {"detected": False, "message": "Nenhum container Docker do Ollama detectado em execução."}
+
+    def _handle_check_calendar(self, params: dict) -> dict:
+        from core.onboarding import OnboardingManager
+        return OnboardingManager.check_calendar_integration()
+
+    def _handle_open_calendar(self, params: dict) -> dict:
+        import webbrowser
+        url = params.get("url") or "https://calendar.google.com"
+        try:
+            opened = webbrowser.open(url)
+            return {"opened": opened, "url": url}
+        except Exception as e:
+            return {"opened": False, "url": url, "error": str(e)}
+
+    def _handle_auth_calendar(self, params: dict) -> dict:
+        from core.onboarding import OnboardingManager
+        from core.paths import get_credentials_path
+        status = OnboardingManager.check_calendar_integration()
+        if not status["credentials_exists"]:
+            return {
+                "success": False,
+                "status": "missing_credentials",
+                "message": (
+                    f"Arquivo 'credentials.json' não encontrado em: {get_credentials_path()}. "
+                    "Baixe o arquivo de credenciais OAuth no Google Cloud Console e salve nessa pasta."
+                ),
+                "credentials_file": str(get_credentials_path()),
+                "cloud_console_url": "https://console.cloud.google.com/apis/credentials",
+            }
+
+        try:
+            from tools.calendar import CalendarTools
+            srv = CalendarTools.get_service()
+            if srv:
+                return {"success": True, "status": "authenticated", "message": "Conta do Google vinculada com sucesso!"}
+            return {"success": False, "status": "failed", "message": "Falha ao obter autorização do Google."}
+        except Exception as e:
+            return {"success": False, "status": "error", "message": str(e)}
 
 
 class IPCManager:

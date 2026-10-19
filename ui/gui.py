@@ -14,19 +14,26 @@ def run_gui():
     base_dir = get_base_dir()
     html_file = os.path.join(base_dir, "desktop-ui", "index.html")
 
-    # Inicia o daemon IPC em segundo plano se não estiver ativo
-    if not IPCManager.is_running():
-        try:
-            import config
-            IPCManager.start(
-                host=getattr(config, "IPC_HOST", "127.0.0.1"),
-                port=getattr(config, "IPC_PORT", 8765),
-                token=getattr(config, "IPC_AUTH_TOKEN", None),
-                require_auth=getattr(config, "IPC_REQUIRE_AUTH", False),
-            )
-            print("[Geraldo:GUI] Daemon IPC operacional em ws://127.0.0.1:8765")
-        except Exception as e:
-            print(f"[Geraldo:GUI] Aviso ao iniciar daemon IPC: {e}")
+    # Verifica se o motor principal (main.py com voz e IA) já está escutando na porta 8765
+    import socket
+    import subprocess
+    is_active = False
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(0.3)
+            is_active = (s.connect_ex(("127.0.0.1", 8765)) == 0)
+    except Exception:
+        is_active = False
+
+    if not is_active:
+        main_script = os.path.join(base_dir, "main.py")
+        if os.path.exists(main_script):
+            try:
+                subprocess.Popen([sys.executable, main_script])
+                print("[Geraldo:GUI] Motor Geraldo (main.py) iniciado em segundo plano.")
+                time.sleep(1.0)
+            except Exception as e:
+                print(f"[Geraldo:GUI] Aviso ao iniciar motor principal: {e}")
 
     # 1. Tentativa nativa via pywebview (usa WebView2 diretamente)
     try:

@@ -66,7 +66,15 @@ class GeraldoDesktopClient {
             apiKeyLink: document.getElementById("api-key-link"),
             apiKeyHelp: document.getElementById("api-key-help"),
             modelPresetsContainer: document.getElementById("model-presets-container"),
-            btnDetectContainer: document.getElementById("btn-detect-container")
+            btnDetectContainer: document.getElementById("btn-detect-container"),
+            // Google Calendar & Auto-Update
+            btnHeaderCalendar: document.getElementById("btn-header-calendar"),
+            btnOpenCalendar: document.getElementById("btn-open-calendar"),
+            btnAuthCalendar: document.getElementById("btn-auth-calendar"),
+            calStatusBadge: document.getElementById("cal-status-badge"),
+            calStatusDesc: document.getElementById("cal-status-desc"),
+            btnCheckUpdates: document.getElementById("btn-check-updates"),
+            updaterStatusBadge: document.getElementById("updater-status-badge")
         };
 
         this.llmConfig = {
@@ -98,6 +106,7 @@ class GeraldoDesktopClient {
             this.ws.onopen = () => {
                 this.updateConnectionStatus(true, "Conectado");
                 this.sendAction("get_config");
+                this.sendAction("check_calendar");
             };
 
             this.ws.onmessage = (event) => {
@@ -211,7 +220,15 @@ class GeraldoDesktopClient {
             case "reply_generated":
                 const replyText = data.reply || data.text;
                 if (replyText) {
-                    this.appendChatMessage("assistant", replyText, "Geraldo");
+                    if (this._lastDisplayedReply !== replyText) {
+                        this._lastDisplayedReply = replyText;
+                        setTimeout(() => {
+                            if (this._lastDisplayedReply === replyText) {
+                                this._lastDisplayedReply = null;
+                            }
+                        }, 3000);
+                        this.appendChatMessage("assistant", replyText, "Geraldo");
+                    }
                 }
                 break;
 
@@ -243,6 +260,8 @@ class GeraldoDesktopClient {
                 this.appendSystemMessage("Configurações de IA salvas com sucesso!");
             } else if (msg.id.startsWith("check_ollama") || msg.id.startsWith("check_llm")) {
                 this.displayTestResults(msg.data);
+            } else if (msg.id.startsWith("check_calendar")) {
+                this.updateCalendarStatus(msg.data);
             }
         }
     }
@@ -599,6 +618,49 @@ class GeraldoDesktopClient {
             });
         }
 
+        // Google Calendar - Abrir agenda no navegador
+        if (this.dom.btnHeaderCalendar) {
+            this.dom.btnHeaderCalendar.addEventListener("click", () => this.openCalendar());
+        }
+        if (this.dom.btnOpenCalendar) {
+            this.dom.btnOpenCalendar.addEventListener("click", () => this.openCalendar());
+        }
+
+        // Google Calendar - Autorizar conta
+        if (this.dom.btnAuthCalendar) {
+            this.dom.btnAuthCalendar.addEventListener("click", () => {
+                this.dom.btnAuthCalendar.textContent = "Conectando...";
+                this.sendAction("auth_calendar", {}, (ok, data, err) => {
+                    this.dom.btnAuthCalendar.textContent = "🔑 Conectar";
+                    if (ok && data && data.success) {
+                        this.updateCalendarStatus({ status: "configured", token_exists: true });
+                        this.appendSystemMessage("Conta Google vinculada com sucesso à sua agenda!");
+                    } else if (data && data.status === "missing_credentials") {
+                        this.updateCalendarStatus({ status: "not_configured", token_exists: false });
+                        this.appendSystemMessage(data.message || "Arquivo credentials.json ausente.");
+                        if (confirm("O arquivo 'credentials.json' do Google Cloud não foi encontrado. Deseja abrir o console do Google Cloud para gerar suas credenciais?")) {
+                            this.openExternalUrl(data.cloud_console_url || "https://console.cloud.google.com/apis/credentials");
+                        }
+                    } else {
+                        this.appendSystemMessage(`Falha na autorização da agenda: ${err || (data && data.message) || "Erro desconhecido"}`);
+                    }
+                });
+            });
+        }
+
+        // Auto-Update - Verificar atualizações
+        if (this.dom.btnCheckUpdates) {
+            this.dom.btnCheckUpdates.addEventListener("click", () => {
+                const originalText = this.dom.btnCheckUpdates.textContent;
+                this.dom.btnCheckUpdates.textContent = "Verificando...";
+                setTimeout(() => {
+                    this.dom.btnCheckUpdates.textContent = originalText;
+                }, 2000);
+                this.appendSystemMessage("Verificando atualizações automáticas via GitHub Releases...");
+                this.openExternalUrl("https://github.com/correavitor4/geraldo/releases");
+            });
+        }
+
         // Intercepta qualquer outro link externo no documento para abrir confiavelmente no navegador
         document.addEventListener("click", (e) => {
             const target = e.target.closest("a[target='_blank'], a.field-link");
@@ -607,6 +669,46 @@ class GeraldoDesktopClient {
                 this.openExternalUrl(target.href);
             }
         });
+    }
+
+    openCalendar() {
+        this.openExternalUrl("https://calendar.google.com");
+        this.sendAction("open_calendar");
+        this.appendSystemMessage("Abrindo o Google Calendar no navegador...");
+    }
+
+    updateCalendarStatus(info) {
+        if (!this.dom.calStatusBadge) return;
+        const status = info ? info.status : "not_configured";
+
+        if (status === "configured" || (info && info.token_exists)) {
+            this.dom.calStatusBadge.textContent = "Conectada";
+            this.dom.calStatusBadge.className = "badge-tag status-ok";
+            if (this.dom.calStatusDesc) {
+                this.dom.calStatusDesc.textContent = "Conta Google sincronizada. Comandos de voz ativos.";
+            }
+            if (this.dom.btnAuthCalendar) {
+                this.dom.btnAuthCalendar.textContent = "✓ Conectado";
+            }
+        } else if (status === "partial" || (info && info.credentials_exists)) {
+            this.dom.calStatusBadge.textContent = "Credenciais OK";
+            this.dom.calStatusBadge.className = "badge-tag status-warn";
+            if (this.dom.calStatusDesc) {
+                this.dom.calStatusDesc.textContent = "Arquivo credentials.json detectado. Clique em Conectar para autenticar.";
+            }
+            if (this.dom.btnAuthCalendar) {
+                this.dom.btnAuthCalendar.textContent = "🔑 Conectar";
+            }
+        } else {
+            this.dom.calStatusBadge.textContent = "Não Vinculada";
+            this.dom.calStatusBadge.className = "badge-tag status-offline";
+            if (this.dom.calStatusDesc) {
+                this.dom.calStatusDesc.textContent = "Vincule o credentials.json ou clique em Conectar para ver instruções.";
+            }
+            if (this.dom.btnAuthCalendar) {
+                this.dom.btnAuthCalendar.textContent = "🔑 Conectar";
+            }
+        }
     }
 
     selectProvider(prov) {
@@ -1035,7 +1137,23 @@ class GeraldoDesktopClient {
         if (!text) return;
 
         this.appendChatMessage("user", text, "Você");
-        this.sendAction("send_prompt", { text: text });
+        this.updateStateBadge("thinking");
+        this.sendAction("send_prompt", { text: text }, (ok, data, err) => {
+            if (ok && data && (data.reply || data.text)) {
+                const rep = data.reply || data.text;
+                if (this._lastDisplayedReply !== rep) {
+                    this._lastDisplayedReply = rep;
+                    setTimeout(() => {
+                        if (this._lastDisplayedReply === rep) {
+                            this._lastDisplayedReply = null;
+                        }
+                    }, 3000);
+                    this.appendChatMessage("assistant", rep, "Geraldo");
+                }
+            } else if (!ok && err) {
+                this.appendSystemMessage(`Erro ao processar prompt: ${err}`);
+            }
+        });
         this.dom.promptInput.value = "";
     }
 
