@@ -1,7 +1,7 @@
 import os
 import json
 from pathlib import Path
-from core.paths import get_user_data_dir
+from core.paths import get_user_data_dir, get_base_dir
 
 # Gerenciamento de Configurações Persistentes do Usuário
 def get_settings_file() -> Path:
@@ -16,6 +16,16 @@ def load_settings() -> dict:
         except Exception:
             return {}
     return {}
+
+# Configurações embutidas no build (injetadas via GitHub Secrets)
+_bundled_file = get_base_dir() / "_bundled_defaults.json"
+_bundled_defaults = {}
+if _bundled_file.exists():
+    try:
+        with open(_bundled_file, "r", encoding="utf-8") as bf:
+            _bundled_defaults = json.load(bf)
+    except Exception:
+        _bundled_defaults = {}
 
 def save_settings(new_settings: dict) -> None:
     sf = get_settings_file()
@@ -90,11 +100,26 @@ PROVIDER_PRESETS = {
 }
 
 # Configuração Ativa de LLM
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", _user_settings.get("llm_provider", "ollama")).lower()
-OLLAMA_HOST = os.getenv("OLLAMA_HOST", _user_settings.get("ollama_host", "http://localhost:11434"))
-LLM_MODEL = os.getenv("LLM_MODEL", _user_settings.get("llm_model", "qwen2.5:3b"))
-LLM_API_KEY = os.getenv("LLM_API_KEY", os.getenv("OPENAI_API_KEY", os.getenv("GROQ_API_KEY", _user_settings.get("llm_api_key", ""))))
-LLM_API_BASE = os.getenv("LLM_API_BASE", _user_settings.get("llm_api_base", ""))
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", _user_settings.get("llm_provider", _bundled_defaults.get("llm_provider", "ollama"))).lower()
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", _user_settings.get("ollama_host", _bundled_defaults.get("ollama_host", "http://localhost:11434")))
+LLM_MODEL = os.getenv("LLM_MODEL", _user_settings.get("llm_model", _bundled_defaults.get("llm_model", "qwen2.5:3b")))
+LLM_API_KEY = os.getenv(
+    "LLM_API_KEY",
+    os.getenv(
+        "GEMINI_API_KEY",
+        os.getenv(
+            "GOOGLE_API_KEY",
+            os.getenv(
+                "OPENAI_API_KEY",
+                os.getenv(
+                    "GROQ_API_KEY",
+                    _user_settings.get("llm_api_key", _bundled_defaults.get("llm_api_key", ""))
+                )
+            )
+        )
+    )
+)
+LLM_API_BASE = os.getenv("LLM_API_BASE", _user_settings.get("llm_api_base", _bundled_defaults.get("llm_api_base", "")))
 
 def mask_api_key(key: str) -> str:
     if not key:
@@ -171,8 +196,8 @@ def update_ollama_config(host: str = None, model: str = None, persist: bool = Tr
     return update_llm_config(provider="ollama" if host else None, host=host, model=model, persist=persist)
 
 # Google Calendar OAuth 2.0 (Configuração para 1 clique)
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", _user_settings.get("google_client_id", "")).strip()
-GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", _user_settings.get("google_client_secret", "")).strip()
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", _user_settings.get("google_client_id", _bundled_defaults.get("google_client_id", ""))).strip()
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", _user_settings.get("google_client_secret", _bundled_defaults.get("google_client_secret", ""))).strip()
 
 def get_google_oauth_config() -> dict:
     return {

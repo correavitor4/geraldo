@@ -153,6 +153,11 @@ class OnboardingManager:
         ollama_url = raw_host.rstrip("/")
 
         target_model = getattr(config, "LLM_MODEL", "qwen2.5:3b")
+        if (
+            getattr(config, "LLM_PROVIDER", "ollama") != "ollama"
+            or any(cloud_kw in target_model.lower() for cloud_kw in ["gemini", "gpt", "claude", "deepseek-chat"])
+        ):
+            target_model = "qwen2.5:3b"
 
         # Verifica se o container Docker está rodando no sistema
         docker_info = cls.detect_docker_ollama()

@@ -73,7 +73,7 @@ class TestBrainLLM:
     @pytest.fixture
     def llm(self, shared_nlu_engine):
         with patch("brain.llm.IntentEngine", return_value=shared_nlu_engine):
-            instance = BrainLLM(max_history_turns=4)
+            instance = BrainLLM(max_history_turns=4, provider="ollama")
             return instance
 
     def test_reset_memory(self, llm):

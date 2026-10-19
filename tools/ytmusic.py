@@ -1,6 +1,9 @@
 from ytmusicapi import YTMusic
 import subprocess
+import sys
 import re
+import os
+import webbrowser
 
 class YTMusicPlayer:
     _yt = None
@@ -12,8 +15,47 @@ class YTMusicPlayer:
         return cls._yt
 
     @classmethod
+    def _open_url(cls, target_url: str) -> bool:
+        """Abre o YouTube Music no navegador padrão de forma compatível com Windows, macOS e Linux."""
+        try:
+            # webbrowser.open é o padrão oficial multiplataforma
+            opened = webbrowser.open(target_url)
+            if opened:
+                return True
+        except Exception:
+            pass
+
+        try:
+            if sys.platform == "win32":
+                os.startfile(target_url)
+                return True
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", target_url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                return True
+            else:
+                subprocess.Popen(["xdg-open", target_url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                return True
+        except Exception as e:
+            print(f"[Geraldo:YTMusic Launch Error]: {e}")
+            return False
+
+    @classmethod
     def stop(cls, *args, **kwargs) -> str:
-        subprocess.run(["playerctl", "stop"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        """Pausa ou para a reprodução de mídia de forma agnóstica ao sistema operacional."""
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                # VK_MEDIA_PLAY_PAUSE (0xB3) / VK_MEDIA_STOP (0xB2)
+                VK_MEDIA_PLAY_PAUSE = 0xB3
+                ctypes.windll.user32.keybd_event(VK_MEDIA_PLAY_PAUSE, 0, 0, 0)
+                ctypes.windll.user32.keybd_event(VK_MEDIA_PLAY_PAUSE, 0, 2, 0)
+            except Exception:
+                pass
+        else:
+            try:
+                subprocess.run(["playerctl", "stop"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception:
+                pass
         return "Mídia parada."
 
     @classmethod
@@ -59,7 +101,19 @@ class YTMusicPlayer:
                         target_url = f"https://music.youtube.com/browse/{browse_id}"
 
                     # Abre diretamente no YouTube Music no navegador / PWA
-                    subprocess.Popen(["xdg-open", target_url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    cls._open_url(target_url)
+
+                    try:
+                        from core.ipc import IPCManager
+                        IPCManager.broadcast("music_playing", {
+                            "type": "album",
+                            "title": album_title,
+                            "artist": artist_name,
+                            "url": target_url,
+                        })
+                    except Exception:
+                        pass
+
                     return f"Abrindo o álbum {album_title} de {artist_name} no YouTube Music."
 
             # 2. Busca padrão por músicas/faixas individuais
@@ -76,7 +130,18 @@ class YTMusicPlayer:
             artist = first_track.get("artists", [{}])[0].get("name", "")
 
             target_url = f"https://music.youtube.com/watch?v={video_id}"
-            subprocess.Popen(["xdg-open", target_url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            cls._open_url(target_url)
+
+            try:
+                from core.ipc import IPCManager
+                IPCManager.broadcast("music_playing", {
+                    "type": "song",
+                    "title": title,
+                    "artist": artist,
+                    "url": target_url,
+                })
+            except Exception:
+                pass
 
             if artist:
                 return f"Tocando {title} de {artist} no YouTube Music."

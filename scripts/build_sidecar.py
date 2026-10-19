@@ -97,6 +97,31 @@ def build_sidecar(target_triple: str = None, dry_run: bool = False) -> Path:
         elif host_arch == target_arch:
             can_use_pyinstaller = True
 
+    # Injeta credenciais padrão se fornecidas via variável de ambiente no CI
+    default_key = os.getenv("GEMINI_API_KEY") or os.getenv("DEFAULT_LLM_API_KEY") or os.getenv("GOOGLE_API_KEY") or os.getenv("LLM_API_KEY")
+    client_id = os.getenv("GOOGLE_CLIENT_ID", "").strip()
+    client_secret = os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
+    bundled_file = REPO_ROOT / "_bundled_defaults.json"
+    if (default_key or client_id or client_secret) and not bundled_file.exists():
+        import json
+        bundled_data = {}
+        if default_key:
+            bundled_data["llm_api_key"] = default_key.strip()
+            if default_key.startswith("AIzaSy"):
+                bundled_data["llm_provider"] = "gemini"
+                bundled_data["llm_model"] = "gemini-2.5-flash"
+                bundled_data["llm_api_base"] = "https://generativelanguage.googleapis.com/v1beta/openai"
+        if client_id:
+            bundled_data["google_client_id"] = client_id
+        if client_secret:
+            bundled_data["google_client_secret"] = client_secret
+        try:
+            with open(bundled_file, "w", encoding="utf-8") as f:
+                json.dump(bundled_data, f, indent=2)
+            print("[Build Sidecar] Configurações de API e OAuth padrão embutidas no build com sucesso.")
+        except Exception as e:
+            print(f"[Build Sidecar] Aviso ao gerar _bundled_defaults.json: {e}")
+
     if can_use_pyinstaller:
         print(f"[Build Sidecar] PyInstaller detectado para {host_system} {host_arch}. Congelando daemon Python...")
         build_dir = REPO_ROOT / "build" / "sidecar"
@@ -110,8 +135,11 @@ def build_sidecar(target_triple: str = None, dry_run: bool = False) -> Path:
             "--name", "geraldo-core",
             "--distpath", str(dist_dir),
             "--workpath", str(build_dir),
-            str(REPO_ROOT / "main.py")
         ]
+        if bundled_file.exists():
+            cmd.extend(["--add-data", f"{bundled_file}{os.pathsep}."])
+        cmd.append(str(REPO_ROOT / "main.py"))
+
         if "apple-darwin" in triple and platform.system().lower() == "darwin":
             if "x86_64" in triple:
                 cmd.extend(["--target-arch", "x86_64"])

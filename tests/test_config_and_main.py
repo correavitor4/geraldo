@@ -27,6 +27,7 @@ class TestConfig:
         test_settings = tmp_path / "settings.json"
         monkeypatch.setattr(config, "get_settings_file", lambda: test_settings)
 
+        orig_prov = config.LLM_PROVIDER
         orig_host = config.OLLAMA_HOST
         orig_model = config.LLM_MODEL
 
@@ -46,6 +47,7 @@ class TestConfig:
             res2 = config.update_ollama_config(host="192.168.1.100:11434", persist=False)
             assert res2["ollama_host"] == "http://192.168.1.100:11434"
         finally:
+            config.LLM_PROVIDER = orig_prov
             config.OLLAMA_HOST = orig_host
             config.LLM_MODEL = orig_model
 
