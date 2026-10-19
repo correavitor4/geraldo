@@ -54,6 +54,7 @@ class GeraldoIPCServer:
         self.register_handler("set_mute", self._handle_set_mute)
         self.register_handler("send_prompt", self._handle_send_prompt)
         self.register_handler("cancel", self._handle_cancel)
+        self.register_handler("diagnostics", self._handle_diagnostics)
 
     def register_handler(self, action: str, handler: Callable) -> None:
         """Registra um manipulador para uma ação RPC."""
@@ -168,8 +169,13 @@ class GeraldoIPCServer:
 
         try:
             self._loop.run_until_complete(self._async_serve())
+        except Exception:
+            pass
         finally:
-            self._loop.close()
+            try:
+                self._loop.close()
+            except Exception:
+                pass
 
     async def _async_serve(self) -> None:
         """Cria e mantém o servidor WebSocket escutando."""
@@ -182,14 +188,17 @@ class GeraldoIPCServer:
             self._ready_event.set()
             # Mantém vivo até ser sinalizado para parar
             while self._running:
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(0.2)
         except Exception as e:
             logger.error(f"[Geraldo:IPC] Erro no servidor WebSocket: {e}")
             self._ready_event.set()
         finally:
             if self._server:
-                self._server.close()
-                await self._server.wait_closed()
+                try:
+                    self._server.close()
+                    await self._server.wait_closed()
+                except Exception:
+                    pass
 
     async def _async_stop(self) -> None:
         """Fecha todas as conexões ativas."""
@@ -199,7 +208,10 @@ class GeraldoIPCServer:
             except Exception:
                 pass
         if self._server:
-            self._server.close()
+            try:
+                self._server.close()
+            except Exception:
+                pass
 
     async def _handle_client(self, websocket: ServerConnection) -> None:
         """Gerencia a sessão de um cliente conectado."""
@@ -345,6 +357,10 @@ class GeraldoIPCServer:
         self.set_assistant_state("idle")
         self.broadcast_event("cancelled", {"timestamp": time.time()})
         return {"cancelled": True}
+
+    def _handle_diagnostics(self, params: dict) -> dict:
+        from core.onboarding import OnboardingManager
+        return OnboardingManager.run_full_diagnostics()
 
 
 class IPCManager:

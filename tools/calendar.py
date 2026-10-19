@@ -8,15 +8,19 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
-load_dotenv(os.path.expanduser("~/projects/geraldo/.env"))
+from core.paths import get_env_path, get_credentials_path, get_token_path
+
+_env_file = get_env_path()
+if _env_file:
+    load_dotenv(str(_env_file))
 
 # Escopo com permissão de leitura e criação de eventos
 SCOPES = [
     "https://www.googleapis.com/auth/calendar.readonly",
     "https://www.googleapis.com/auth/calendar.events"
 ]
-CREDENTIALS_FILE = os.getenv("GOOGLE_CREDENTIALS_FILE", os.path.expanduser("~/projects/geraldo/credentials.json"))
-TOKEN_FILE = os.getenv("GOOGLE_TOKEN_FILE", os.path.expanduser("~/projects/geraldo/token.json"))
+CREDENTIALS_FILE = os.getenv("GOOGLE_CREDENTIALS_FILE", str(get_credentials_path()))
+TOKEN_FILE = os.getenv("GOOGLE_TOKEN_FILE", str(get_token_path()))
 CALENDAR_ID = os.getenv("GOOGLE_CALENDAR_ID", "primary")
 
 try:

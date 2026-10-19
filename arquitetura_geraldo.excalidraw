@@ -248,14 +248,14 @@
       "updated": 1792287961853,
       "link": null,
       "locked": false,
-      "text": "• Windows, macOS e Linux (Gnome, KDE)\n• Frontend leve em React/Svelte (consome ~30MB RAM)\n• Onboarding Wizard: 1º boot baixa modelos c/ 1 clique\n• Dashboard: Timers visuais, agenda, decibéis do mic\n• Login Google OAuth direto no navegador",
+      "text": "• Windows, macOS e Linux (Gnome, KDE, Hyprland)\n• Frontend leve Vanilla HTML5/CSS3/ES6 (zero bloat, ~25MB RAM)\n• Onboarding e Diagnóstico: modelos locais, TTS e Ollama\n• Dashboard: Onda sonora viva, timers, alarmes e chat em tempo real\n• Integração nativa com Tray Icon e minimização ao fechar",
       "fontSize": 13,
       "fontFamily": 1,
       "textAlign": "left",
       "verticalAlign": "top",
       "baseline": 11,
       "containerId": null,
-      "originalText": "• Windows, macOS e Linux (Gnome, KDE)\n• Frontend leve em React/Svelte (consome ~30MB RAM)\n• Onboarding Wizard: 1º boot baixa modelos c/ 1 clique\n• Dashboard: Timers visuais, agenda, decibéis do mic\n• Login Google OAuth direto no navegador"
+      "originalText": "• Windows, macOS e Linux (Gnome, KDE, Hyprland)\n• Frontend leve Vanilla HTML5/CSS3/ES6 (zero bloat, ~25MB RAM)\n• Onboarding e Diagnóstico: modelos locais, TTS e Ollama\n• Dashboard: Onda sonora viva, timers, alarmes e chat em tempo real\n• Integração nativa com Tray Icon e minimização ao fechar"
     },
     {
       "id": "rect_9_1792287961",
@@ -598,14 +598,14 @@
       "updated": 1792287961853,
       "link": null,
       "locked": false,
-      "text": "CAMADA 2: BARRAMENTO LOCAL DE EVENTOS & RPC (ws://127.0.0.1:4321 / Unix Socket)",
+      "text": "CAMADA 2: BARRAMENTO LOCAL DE EVENTOS & RPC (ws://127.0.0.1:8765 WebSocket)",
       "fontSize": 16,
       "fontFamily": 1,
       "textAlign": "left",
       "verticalAlign": "top",
       "baseline": 14,
       "containerId": null,
-      "originalText": "CAMADA 2: BARRAMENTO LOCAL DE EVENTOS & RPC (ws://127.0.0.1:4321 / Unix Socket)"
+      "originalText": "CAMADA 2: BARRAMENTO LOCAL DE EVENTOS & RPC (ws://127.0.0.1:8765 WebSocket)"
     },
     {
       "id": "rect_20_1792287961",
@@ -1394,14 +1394,14 @@
       "updated": 1792287961853,
       "link": null,
       "locked": false,
-      "text": "• Usuário NÃO precisa instalar Python nem compiladores\n• PyInstaller / Nuitka empacotam o binário do Core\n• Tauri sobe e monitora o Daemon silenciosamente",
+      "text": "• Usuário NÃO precisa instalar Python nem compiladores\n• scripts/build_sidecar.py gera geraldo-core-<triple> autônomo\n• Tauri monitora porta 8765, inicia sidecar em background e encerra no exit\n• core/paths.py resolve dados em %APPDATA%, Library e ~/.config",
       "fontSize": 13,
       "fontFamily": 1,
       "textAlign": "left",
       "verticalAlign": "top",
       "baseline": 11,
       "containerId": null,
-      "originalText": "• Usuário NÃO precisa instalar Python nem compiladores\n• PyInstaller / Nuitka empacotam o binário do Core\n• Tauri sobe e monitora o Daemon silenciosamente"
+      "originalText": "• Usuário NÃO precisa instalar Python nem compiladores\n• scripts/build_sidecar.py gera geraldo-core-<triple> autônomo\n• Tauri monitora porta 8765, inicia sidecar em background e encerra no exit\n• core/paths.py resolve dados em %APPDATA%, Library e ~/.config"
     },
     {
       "id": "rect_45_1792287961",

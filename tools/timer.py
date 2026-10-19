@@ -555,6 +555,12 @@ class TimerManager:
                 json.dump(data, f, ensure_ascii=False)
             os.replace(temp_path, cls._status_file)
 
+            try:
+                from core.ipc import IPCManager
+                IPCManager.broadcast("status_update", data)
+            except Exception:
+                pass
+
         except Exception as exc:
             print(f"[Geraldo:Timer Error] Falha ao exportar status: {exc}")
 

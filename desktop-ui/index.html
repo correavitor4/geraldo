@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Geraldo - Assistente de Voz</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div id="app" class="app-container">
+        <!-- BARRA SUPERIOR -->
+        <header id="top-navbar" class="top-navbar">
+            <div class="brand-group">
+                <div class="brand-icon">🎙️</div>
+                <div class="brand-text">
+                    <h1>GERALDO</h1>
+                    <span class="version-tag">Desktop v0.1.0</span>
+                </div>
+            </div>
+
+            <!-- VISUALIZADOR DE ONDA SONORA & ESTADO -->
+            <div class="status-center">
+                <div id="audio-wave" class="audio-wave idle">
+                    <span class="bar"></span>
+                    <span class="bar"></span>
+                    <span class="bar"></span>
+                    <span class="bar"></span>
+                    <span class="bar"></span>
+                </div>
+                <div id="state-badge" class="state-badge state-idle">PRONTO</div>
+            </div>
+
+            <div class="actions-group">
+                <button id="btn-mic-toggle" class="btn-icon" title="Mutar / Ativar Microfone">
+                    <span id="mic-icon">🎤</span>
+                    <span id="mic-text">Ativo</span>
+                </button>
+                <div id="conn-pill" class="conn-pill disconnected" title="Status da Conexão Local">
+                    <span class="dot"></span>
+                    <span id="conn-text">Desconectado</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- CORPO PRINCIPAL EM 2 COLUNAS -->
+        <main id="main-content" class="main-content">
+            <!-- COLUNA ESQUERDA: FEED DE MENSAGENS -->
+            <section id="chat-section" class="chat-section">
+                <div class="section-header">
+                    <h2>Histórico de Interação</h2>
+                    <button id="btn-clear-chat" class="btn-link" title="Limpar mensagens">Limpar</button>
+                </div>
+
+                <div id="chat-stream" class="chat-stream">
+                    <div class="system-message">
+                        <span class="msg-time">Sistema</span>
+                        <p>Bem-vindo ao Geraldo Desktop! O assistente está conectado ao motor local em segundo plano.</p>
+                    </div>
+                </div>
+
+                <!-- SUGESTÕES RÁPIDAS -->
+                <div class="suggestions-bar">
+                    <button class="chip-suggestion" data-prompt="Como está minha agenda para amanhã?">📅 Agenda de amanhã</button>
+                    <button class="chip-suggestion" data-prompt="Timer de 5 minutos">⏱️ Timer 5 min</button>
+                    <button class="chip-suggestion" data-prompt="Que horas são?">🕒 Que horas são?</button>
+                    <button class="chip-suggestion" data-prompt="Notícias de tecnologia">📰 Notícias</button>
+                </div>
+
+                <!-- BARRA DE ENTRADA DE COMANDOS -->
+                <div id="input-bar" class="input-bar">
+                    <div class="input-wrapper">
+                        <input 
+                            type="text" 
+                            id="prompt-input" 
+                            placeholder="Digite uma instrução ou pergunta ao Geraldo..." 
+                            autocomplete="off"
+                        >
+                    </div>
+                    <button id="btn-send" class="btn-primary" title="Enviar comando">
+                        <span>Enviar</span>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="22" y1="2" x2="11" y2="13"></line>
+                            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                        </svg>
+                    </button>
+                    <button id="btn-cancel" class="btn-secondary" title="Cancelar fala ou sons ativos">
+                        ⏹
+                    </button>
+                </div>
+            </section>
+
+            <!-- COLUNA DIREITA: PAINEL LATERAL DE WIDGETS -->
+            <aside id="sidebar-section" class="sidebar-section">
+                <!-- CARD POMODORO -->
+                <div class="dashboard-card pomo-card">
+                    <div class="card-header">
+                        <h3>🍅 Pomodoro</h3>
+                        <span id="pomo-phase-badge" class="badge-phase">Inativo</span>
+                    </div>
+                    <div class="pomo-body">
+                        <div id="pomo-countdown" class="big-timer">25:00</div>
+                        <span id="pomo-cycle-text" class="sub-label">Ciclo 1 de 4</span>
+                    </div>
+                    <div class="pomo-actions">
+                        <button id="btn-pomo-toggle" class="btn-action primary">▶ Iniciar</button>
+                        <button id="btn-pomo-skip" class="btn-action">⏭ Pular</button>
+                        <button id="btn-pomo-reset" class="btn-action">🔄 Reset</button>
+                    </div>
+                </div>
+
+                <!-- CARD TIMERS ATIVOS -->
+                <div class="dashboard-card timers-card">
+                    <div class="card-header">
+                        <h3>⏱️ Timers Ativos</h3>
+                        <button id="btn-toggle-new-timer" class="btn-link" title="Novo timer">+ Adicionar</button>
+                    </div>
+
+                    <!-- FORMULÁRIO COLAPSÁVEL DE NOVO TIMER -->
+                    <div id="new-timer-form" class="new-timer-form hidden">
+                        <input type="text" id="new-timer-label" placeholder="Rótulo (ex: Café)" value="Timer">
+                        <div class="timer-inputs-row">
+                            <input type="number" id="new-timer-min" placeholder="Min" min="0" max="180" value="5">
+                            <input type="number" id="new-timer-sec" placeholder="Seg" min="0" max="59" value="0">
+                            <button id="btn-add-timer-submit" class="btn-action primary">Criar</button>
+                        </div>
+                    </div>
+
+                    <div id="timers-list" class="items-list">
+                        <div class="empty-state">Nenhum timer ativo</div>
+                    </div>
+                </div>
+
+                <!-- CARD ALARMES -->
+                <div class="dashboard-card alarms-card">
+                    <div class="card-header">
+                        <h3>⏰ Alarmes</h3>
+                    </div>
+                    <div id="alarms-list" class="items-list">
+                        <div class="empty-state">Nenhum alarme programado</div>
+                    </div>
+                </div>
+
+                <!-- CARD STATUS DO MOTOR LOCAL -->
+                <div class="dashboard-card info-card">
+                    <div class="card-header">
+                        <h3>⚡ Motor Local</h3>
+                        <span class="badge-tag">Zero Cloud</span>
+                    </div>
+                    <ul class="engine-specs">
+                        <li><strong>STT:</strong> Faster-Whisper (CPU int8)</li>
+                        <li><strong>NLU:</strong> Scikit-Learn TF-IDF (&lt;1ms)</li>
+                        <li><strong>TTS:</strong> Piper Neural ONNX</li>
+                        <li><strong>LLM:</strong> Ollama (qwen2.5:3b)</li>
+                    </ul>
+                </div>
+            </aside>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
