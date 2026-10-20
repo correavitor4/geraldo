@@ -13,14 +13,18 @@ class WakeWordDetector:
         exatamente a palavra-chave, ignorando ruídos aleatórios.
         """
         import sounddevice as sd
+        import config
+        from audio.device_utils import resolve_audio_device
         
         sample_rate = 16000
         block_duration = 1.5  # Analisa blocos de 1.5 segundos
         block_size = int(sample_rate * block_duration)
 
-        print(f"[Geraldo] Aguardando wake word: '{self.target_word}'...")
+        dev_idx = resolve_audio_device(getattr(config, "AUDIO_INPUT_DEVICE", None), kind="input")
 
-        with sd.InputStream(device=None, samplerate=sample_rate, channels=1, dtype='float32') as stream:
+        print(f"[Geraldo] Aguardando wake word: '{self.target_word}' (dispositivo: {dev_idx if dev_idx is not None else 'padrão'})...")
+
+        with sd.InputStream(device=dev_idx, samplerate=sample_rate, channels=1, dtype='float32') as stream:
             while True:
                 # Captura um bloco contínuo de áudio do microfone sem fechar o stream
                 audio_chunk, _ = stream.read(block_size)

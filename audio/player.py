@@ -2,12 +2,32 @@ import shutil
 import subprocess
 import numpy as np
 import sounddevice as sd
+import config
+from audio.device_utils import resolve_audio_device
 
 class AudioPlayer:
     @staticmethod
-    def play(audio_file: str):
+    def play(audio_file: str, device = None):
         if not audio_file:
             return
+
+        out_spec = device if device is not None else getattr(config, "AUDIO_OUTPUT_DEVICE", None)
+        out_dev = resolve_audio_device(out_spec, kind="output")
+
+        # Se um dispositivo específico for configurado, prioriza sounddevice com o device id
+        if out_dev is not None:
+            try:
+                import wave
+                with wave.open(audio_file, 'rb') as wf:
+                    sr = wf.getframerate()
+                    frames = wf.readframes(wf.getnframes())
+                    dtype = np.int16 if wf.getsampwidth() == 2 else np.int32
+                    audio = np.frombuffer(frames, dtype=dtype)
+                    sd.play(audio, samplerate=sr, device=out_dev)
+                    sd.wait()
+                    return
+            except Exception:
+                pass
 
         players = [
             ["pw-play", audio_file],
@@ -47,7 +67,7 @@ class AudioPlayer:
                 frames = wf.readframes(wf.getnframes())
                 dtype = np.int16 if wf.getsampwidth() == 2 else np.int32
                 audio = np.frombuffer(frames, dtype=dtype)
-                sd.play(audio, samplerate=sr)
+                sd.play(audio, samplerate=sr, device=out_dev)
                 sd.wait()
                 return
         except Exception:
@@ -56,13 +76,15 @@ class AudioPlayer:
         print("[Player] Falha ao reproduzir áudio via utilitários do sistema.")
 
     @staticmethod
-    def play_beep(volume: float = None):
+    def play_beep(volume: float = None, device = None):
         if volume is None:
             try:
-                import config
                 volume = getattr(config, "BEEP_VOLUME", 0.50)
             except Exception:
                 volume = 0.50
+
+        out_spec = device if device is not None else getattr(config, "AUDIO_OUTPUT_DEVICE", None)
+        out_dev = resolve_audio_device(out_spec, kind="output")
 
         sample_rate = 16000
 
@@ -78,6 +100,7 @@ class AudioPlayer:
 
         chime = np.concatenate([tone1, gap, tone2]).astype(np.float32)
         chime = np.clip(chime, -0.95, 0.95)
-        sd.play(chime, samplerate=sample_rate)
+        sd.play(chime, samplerate=sample_rate, device=out_dev)
         sd.wait()
+
 

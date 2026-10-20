@@ -2,6 +2,16 @@
 setlocal
 set "DIR=%~dp0"
 
+if exist "%DIR%Geraldo.exe" (
+    "%DIR%Geraldo.exe" --tui %*
+    exit /b %ERRORLEVEL%
+)
+
+if exist "%DIR%geraldo-desktop.exe" (
+    "%DIR%geraldo-desktop.exe" --tui %*
+    exit /b %ERRORLEVEL%
+)
+
 if exist "%DIR%geraldo-core.exe" (
     "%DIR%geraldo-core.exe" --tui %*
     exit /b %ERRORLEVEL%

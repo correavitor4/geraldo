@@ -6,9 +6,21 @@ if [ -f "/Applications/Geraldo.app/Contents/MacOS/geraldo-core" ]; then
     exec "/Applications/Geraldo.app/Contents/MacOS/geraldo-core" --tui "$@"
 fi
 
-# 2. Executavel sidecar local
+# 2. Executavel sidecar local ou instalado no sistema Linux
+if [ -f "/usr/bin/geraldo-desktop" ]; then
+    exec "/usr/bin/geraldo-desktop" --tui "$@"
+fi
+
+if [ -f "/usr/bin/geraldo" ]; then
+    exec "/usr/bin/geraldo" --tui "$@"
+fi
+
 if [ -f "$DIR/geraldo-core" ]; then
     exec "$DIR/geraldo-core" --tui "$@"
+fi
+
+if [ -f "$DIR/geraldo-desktop" ]; then
+    exec "$DIR/geraldo-desktop" --tui "$@"
 fi
 
 if [ -f "$DIR/binaries/geraldo-core" ]; then

@@ -74,7 +74,20 @@ class GeraldoDesktopClient {
             calStatusBadge: document.getElementById("cal-status-badge"),
             calStatusDesc: document.getElementById("cal-status-desc"),
             btnCheckUpdates: document.getElementById("btn-check-updates"),
-            updaterStatusBadge: document.getElementById("updater-status-badge")
+            updaterStatusBadge: document.getElementById("updater-status-badge"),
+            // Áudio & Atalho TUI
+            cfgAudioInput: document.getElementById("cfg-audio-input"),
+            cfgAudioOutput: document.getElementById("cfg-audio-output"),
+            btnRefreshAudio: document.getElementById("btn-refresh-audio"),
+            btnTestAudioBeep: document.getElementById("btn-test-audio-beep"),
+            tuiPathStatusBadge: document.getElementById("tui-path-status-badge"),
+            btnExportTuiPath: document.getElementById("btn-export-tui-path")
+        };
+
+        this.audioConfig = {
+            input_device: null,
+            output_device: null,
+            devices: { inputs: [], outputs: [] }
         };
 
         this.llmConfig = {
@@ -243,6 +256,10 @@ class GeraldoDesktopClient {
             case "calendar_status":
                 this.updateCalendarStatus(data);
                 break;
+
+            case "audio_config_changed":
+                this.updateAudioDevicesDisplay(data);
+                break;
         }
     }
 
@@ -266,6 +283,10 @@ class GeraldoDesktopClient {
                 this.displayTestResults(msg.data);
             } else if (msg.id.startsWith("check_calendar")) {
                 this.updateCalendarStatus(msg.data);
+            } else if (msg.id.startsWith("get_audio_config")) {
+                this.updateAudioDevicesDisplay(msg.data);
+            } else if (msg.id.startsWith("get_tui_path_status")) {
+                this.updateTuiPathBadge(msg.data);
             }
         }
     }
@@ -684,6 +705,19 @@ class GeraldoDesktopClient {
             });
         }
 
+        // Dispositivos de Áudio
+        if (this.dom.btnRefreshAudio) {
+            this.dom.btnRefreshAudio.addEventListener("click", () => this.loadAudioDevices());
+        }
+        if (this.dom.btnTestAudioBeep) {
+            this.dom.btnTestAudioBeep.addEventListener("click", () => this.testAudioOutput());
+        }
+
+        // Atalho TUI (Terminal)
+        if (this.dom.btnExportTuiPath) {
+            this.dom.btnExportTuiPath.addEventListener("click", () => this.exportTuiPath());
+        }
+
         // Intercepta qualquer outro link externo no documento para abrir confiavelmente no navegador
         document.addEventListener("click", (e) => {
             const target = e.target.closest("a[target='_blank'], a.field-link");
@@ -901,6 +935,8 @@ class GeraldoDesktopClient {
         this.dom.settingsModal.classList.remove("hidden");
         if (this.connected) {
             this.sendAction("get_config");
+            this.loadAudioDevices();
+            this.checkTuiPathStatus();
         }
     }
 
@@ -1073,10 +1109,15 @@ class GeraldoDesktopClient {
         const apiKey = (this.dom.cfgApiKey && this.dom.cfgApiKey.value.trim()) || "";
         const apiBase = (this.dom.cfgApiBase && this.dom.cfgApiBase.value.trim()) || "";
 
+        const audioIn = this.dom.cfgAudioInput ? this.dom.cfgAudioInput.value : "";
+        const audioOut = this.dom.cfgAudioOutput ? this.dom.cfgAudioOutput.value : "";
+
         const payload = {
             provider: prov,
             ollama_host: host,
             llm_model: model,
+            audio_input_device: audioIn || null,
+            audio_output_device: audioOut || null,
             persist: true
         };
         if (apiKey) payload.api_key = apiKey;
@@ -1153,6 +1194,10 @@ class GeraldoDesktopClient {
         this.llmConfig = Object.assign({}, this.llmConfig, config);
         this.ollamaConfig = this.llmConfig;
 
+        if (config.audio) {
+            this.updateAudioDevicesDisplay(config.audio);
+        }
+
         if (config.provider) {
             this.currentProvider = config.provider;
         }
@@ -1182,6 +1227,116 @@ class GeraldoDesktopClient {
                 : (this.llmConfig.api_base || "API Externa");
             this.dom.specsLlmText.title = `Provedor: ${provName} | Endpoint: ${titleHost}`;
         }
+    }
+
+    loadAudioDevices() {
+        if (!this.connected) return;
+        this.sendAction("get_audio_config", {}, (ok, data) => {
+            if (ok && data) {
+                this.updateAudioDevicesDisplay(data);
+            }
+        });
+    }
+
+    updateAudioDevicesDisplay(data) {
+        if (!data) return;
+        this.audioConfig = Object.assign({}, this.audioConfig, data);
+        const inSelect = this.dom.cfgAudioInput;
+        const outSelect = this.dom.cfgAudioOutput;
+        const curIn = (data.input_device !== undefined && data.input_device !== null) ? String(data.input_device) : "";
+        const curOut = (data.output_device !== undefined && data.output_device !== null) ? String(data.output_device) : "";
+
+        if (inSelect && data.devices && Array.isArray(data.devices.inputs)) {
+            let html = '<option value="">Padrão do Sistema</option>';
+            data.devices.inputs.forEach(dev => {
+                const isSelected = (curIn !== "" && (String(dev.id) === curIn || dev.name.toLowerCase().includes(curIn.toLowerCase())));
+                const api = dev.hostapi_name ? ` (${dev.hostapi_name})` : '';
+                html += `<option value="${dev.id}" ${isSelected ? 'selected' : ''}>[${dev.id}] ${this.escapeHtml(dev.name)}${api}</option>`;
+            });
+            inSelect.innerHTML = html;
+        }
+
+        if (outSelect && data.devices && Array.isArray(data.devices.outputs)) {
+            let html = '<option value="">Padrão do Sistema</option>';
+            data.devices.outputs.forEach(dev => {
+                const isSelected = (curOut !== "" && (String(dev.id) === curOut || dev.name.toLowerCase().includes(curOut.toLowerCase())));
+                const api = dev.hostapi_name ? ` (${dev.hostapi_name})` : '';
+                html += `<option value="${dev.id}" ${isSelected ? 'selected' : ''}>[${dev.id}] ${this.escapeHtml(dev.name)}${api}</option>`;
+            });
+            outSelect.innerHTML = html;
+        }
+    }
+
+    testAudioOutput() {
+        const outSelect = this.dom.cfgAudioOutput;
+        const selectedDev = outSelect ? outSelect.value : "";
+        const origText = this.dom.btnTestAudioBeep ? this.dom.btnTestAudioBeep.innerHTML : "🔔 Testar Saída de Áudio";
+        if (this.dom.btnTestAudioBeep) {
+            this.dom.btnTestAudioBeep.innerHTML = "🔔 Reproduzindo...";
+            this.dom.btnTestAudioBeep.disabled = true;
+        }
+
+        this.sendAction("test_audio_beep", { device: selectedDev || null }, (ok, data, err) => {
+            setTimeout(() => {
+                if (this.dom.btnTestAudioBeep) {
+                    this.dom.btnTestAudioBeep.innerHTML = origText;
+                    this.dom.btnTestAudioBeep.disabled = false;
+                }
+            }, 1000);
+            if (ok) {
+                this.appendSystemMessage("🔔 Som de teste reproduzido na saída de áudio.");
+            } else {
+                this.appendSystemMessage(`Erro ao reproduzir teste de som: ${err || (data && data.message) || "Falha"}`);
+            }
+        });
+    }
+
+    checkTuiPathStatus() {
+        if (!this.connected) return;
+        this.sendAction("get_tui_path_status", {}, (ok, data) => {
+            if (ok && data) {
+                this.updateTuiPathBadge(data);
+            }
+        });
+    }
+
+    updateTuiPathBadge(data) {
+        const badge = this.dom.tuiPathStatusBadge;
+        if (!badge || !data) return;
+        if (data.in_path) {
+            badge.textContent = "Configurado no PATH";
+            badge.className = "badge-tag status-ok";
+        } else if (data.installed) {
+            badge.textContent = "Reabra o Terminal";
+            badge.className = "badge-tag status-warn";
+        } else {
+            badge.textContent = "Não Configurado";
+            badge.className = "badge-tag status-offline";
+        }
+    }
+
+    exportTuiPath() {
+        const origText = this.dom.btnExportTuiPath ? this.dom.btnExportTuiPath.innerHTML : "⚡ Configurar 'geraldo_tui' no PATH";
+        if (this.dom.btnExportTuiPath) {
+            this.dom.btnExportTuiPath.innerHTML = "⚡ Configurando...";
+            this.dom.btnExportTuiPath.disabled = true;
+        }
+
+        this.sendAction("export_tui_path", {}, (ok, data, err) => {
+            setTimeout(() => {
+                if (this.dom.btnExportTuiPath) {
+                    this.dom.btnExportTuiPath.innerHTML = origText;
+                    this.dom.btnExportTuiPath.disabled = false;
+                }
+            }, 1200);
+
+            if (ok && data) {
+                this.appendSystemMessage(`Atalho TUI: ${data.message || 'Configurado com sucesso!'}`);
+                this.checkTuiPathStatus();
+            } else {
+                this.appendSystemMessage(`Falha ao configurar atalho TUI: ${err || 'Erro'}`);
+            }
+        });
     }
 
     submitPrompt() {

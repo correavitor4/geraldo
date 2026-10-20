@@ -570,3 +570,53 @@ async def test_tui_external_llm_modal_flow():
         config.LLM_MODEL = orig_model
 
 
+@pytest.mark.anyio
+async def test_tui_audio_config_modal_flow():
+    """Valida fluxo de configuração de dispositivos de áudio via modal na TUI (tecla 's')."""
+    from ui.tui import AudioConfigModal
+    app = GeraldoTUI(auto_connect=False)
+    async with app.run_test(size=(160, 50)) as pilot:
+        # Pressiona tecla 's' para abrir o modal de áudio
+        await pilot.press("s")
+        await pilot.pause()
+
+        assert isinstance(app.screen, AudioConfigModal)
+        mic_input = app.screen.query_one("#input-audio-mic", Input)
+        out_input = app.screen.query_one("#input-audio-out", Input)
+
+        mic_input.value = "fifine"
+        out_input.value = "2"
+
+        # Clica no botão de salvar
+        btn_save = app.screen.query_one("#btn-audio-save", Button)
+        await pilot.click(btn_save)
+        await pilot.pause()
+
+        # Modal fechou e valores foram salvos
+        assert not isinstance(app.screen, AudioConfigModal)
+        assert app._audio_input_device == "fifine"
+        assert app._audio_output_device == "2"
+
+        # Ação set_audio_config transmitida
+        assert app._send_queue.qsize() == 1
+        payload = json.loads(await app._send_queue.get())
+        assert payload["action"] == "set_audio_config"
+        assert payload["params"]["input_device"] == "fifine"
+        assert payload["params"]["output_device"] == "2"
+
+
+def test_cli_path_status_and_export():
+    """Testa utilitário cross-platform de status e exportação do atalho TUI."""
+    from core.cli_path import get_tui_path_status, export_tui_path
+    st = get_tui_path_status()
+    assert isinstance(st, dict)
+    assert st.get("status") == "ok"
+    assert "os" in st
+
+    res = export_tui_path()
+    assert isinstance(res, dict)
+    assert res.get("status") == "ok"
+    assert res.get("installed") is True
+
+
+

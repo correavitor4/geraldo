@@ -6,6 +6,11 @@
 ; ==============================================================================
 
 !macro customInstall
+  ; Opcao interativa para o usuario: exportar atalho geraldo_tui no PATH
+  IfSilent set_path_silent
+  MessageBox MB_YESNO|MB_ICONQUESTION "Deseja adicionar o comando 'geraldo_tui' ao PATH do Windows para permitir a execucao imediata via CMD ou PowerShell?" IDNO skip_path
+
+set_path_silent:
   DetailPrint "Configurando comando 'geraldo_tui' no PATH do usuario..."
   
   ; Le o PATH atual do usuario no Registro do Windows (HKCU\Environment)
@@ -38,6 +43,10 @@ notify_system:
   DetailPrint "Notificando o Windows da atualizacao de variaveis de ambiente..."
   ; Envia mensagem de broadcast WM_SETTINGCHANGE para atualizar terminals abertos
   SendMessage ${HWND_BROADCAST} 0x001A 0 "STR:Environment" /TIMEOUT=3000
+  Goto done_install
+
+skip_path:
+  DetailPrint "Exportacao de 'geraldo_tui' no PATH ignorada a pedido do usuario."
 
 done_install:
 !macroend

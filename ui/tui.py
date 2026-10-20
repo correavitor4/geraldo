@@ -233,7 +233,139 @@ OllamaConfigModal {
     margin-left: 1;
     min-width: 12;
 }
+
+AudioConfigModal {
+    align: center middle;
+    background: rgba(0, 0, 0, 0.75);
+}
+
+#audio-dialog {
+    width: 76;
+    height: auto;
+    max-height: 90%;
+    background: #111827;
+    border: round #38bdf8;
+    padding: 1 2;
+}
+
+#audio-title {
+    color: #38bdf8;
+    text-style: bold;
+    text-align: center;
+    margin-bottom: 1;
+}
+
+#audio-devices-scroll {
+    height: 8;
+    background: #0f172a;
+    border: solid #1e293b;
+    padding: 0 1;
+    margin-bottom: 1;
+}
+
+#input-audio-mic, #input-audio-out {
+    background: #1e293b;
+    border: none;
+    color: #f8fafc;
+    margin-bottom: 1;
+}
+
+#input-audio-mic:focus, #input-audio-out:focus {
+    border: tall #38bdf8;
+}
 """
+
+
+class AudioConfigModal(ModalScreen):
+    """Modal para configuração e teste dos dispositivos de áudio (microfone e saída) no Geraldo."""
+
+    def __init__(
+        self,
+        current_input: Optional[Any] = None,
+        current_output: Optional[Any] = None,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self.current_input = "" if current_input is None else str(current_input)
+        self.current_output = "" if current_output is None else str(current_output)
+        self.devices_info: Dict[str, Any] = {"inputs": [], "outputs": []}
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="audio-dialog"):
+            yield Label("🎙️ Dispositivos de Áudio (Microfone e Saída)", id="audio-title")
+
+            yield Label("Dispositivos detectados no sistema:", classes="form-label")
+            with VerticalScroll(id="audio-devices-scroll"):
+                yield Static("Carregando lista de dispositivos...", id="audio-device-list")
+
+            yield Label("🎤 Microfone (ID, nome ou vazio para Padrão):", classes="form-label")
+            yield Input(value=self.current_input, placeholder="Ex: 1 ou fifine (vazio = padrão)", id="input-audio-mic")
+
+            yield Label("🔊 Alto-falante / Saída (ID, nome ou vazio para Padrão):", classes="form-label")
+            yield Input(value=self.current_output, placeholder="Ex: 0 ou realtek (vazio = padrão)", id="input-audio-out")
+
+            yield Label("Status: Escolha o dispositivo ou teste o som de saída.", id="audio-status")
+
+            with Horizontal(id="modal-buttons"):
+                yield Button("🔔 Testar Saída", id="btn-audio-test", variant="default")
+                yield Button("🔄 Atualizar", id="btn-audio-refresh", variant="default")
+                yield Button("💾 Salvar", id="btn-audio-save", variant="primary")
+                yield Button("✕ Fechar", id="btn-audio-close", variant="error")
+
+    def on_mount(self) -> None:
+        self.refresh_devices()
+
+    def refresh_devices(self) -> None:
+        from audio.device_utils import list_audio_devices
+        try:
+            self.devices_info = list_audio_devices()
+            lines = []
+            lines.append("[bold cyan]🎤 MICROFONES (Entrada):[/]")
+            lines.append("  [0] Padrão do Sistema")
+            for d in self.devices_info.get("inputs", []):
+                lines.append(f"  [{d['id']}] {d['name']}")
+
+            lines.append("\n[bold cyan]🔊 SAÍDAS (Alto-falante / Fone):[/]")
+            lines.append("  [0] Padrão do Sistema")
+            for d in self.devices_info.get("outputs", []):
+                lines.append(f"  [{d['id']}] {d['name']}")
+
+            list_widget = self.query_one("#audio-device-list", Static)
+            list_widget.update("\n".join(lines))
+        except Exception as e:
+            try:
+                self.query_one("#audio-device-list", Static).update(f"[red]Erro ao listar dispositivos: {e}[/]")
+            except Exception:
+                pass
+
+    async def on_button_pressed(self, event: Button.Pressed) -> None:
+        button_id = event.button.id
+        if button_id == "btn-audio-close":
+            self.dismiss(False)
+        elif button_id == "btn-audio-refresh":
+            self.refresh_devices()
+            self.query_one("#audio-status", Label).update("[yellow]Lista de dispositivos atualizada![/]")
+        elif button_id == "btn-audio-save":
+            in_val = self.query_one("#input-audio-mic", Input).value.strip() or None
+            out_val = self.query_one("#input-audio-out", Input).value.strip() or None
+            if hasattr(self.app, "save_audio_config"):
+                self.app.save_audio_config(input_device=in_val, output_device=out_val)
+            self.dismiss(True)
+        elif button_id == "btn-audio-test":
+            out_val = self.query_one("#input-audio-out", Input).value.strip() or None
+            status_lbl = self.query_one("#audio-status", Label)
+            status_lbl.update("[bold yellow]🔔 Tocando som de teste...[/]")
+            self.run_worker(self._async_test_beep(out_val), exclusive=True)
+
+    async def _async_test_beep(self, device: Optional[str]) -> None:
+        from audio.player import AudioPlayer
+        import asyncio
+        try:
+            await asyncio.to_thread(AudioPlayer.play_beep, device=device)
+            self.query_one("#audio-status", Label).update("[bold green]✅ Som reproduzido com sucesso![/]")
+        except Exception as e:
+            self.query_one("#audio-status", Label).update(f"[bold red]❌ Falha na reprodução: {e}[/]")
+
 
 
 class OllamaConfigModal(ModalScreen):
@@ -340,6 +472,7 @@ class GeraldoTUI(App):
         Binding("p", "toggle_pomodoro", "Pomodoro Iniciar/Pausar", show=True),
         Binding("c", "cancel_action", "Cancelar/Silenciar", show=True),
         Binding("o", "open_ollama_settings", "Configurar Ollama", show=True),
+        Binding("s", "open_audio_settings", "Dispositivos Áudio", show=True),
         Binding("a", "open_calendar", "Agenda Google", show=True),
         Binding("t", "focus_input", "Digitar Comando", show=True),
         Binding("ctrl+l", "clear_log", "Limpar Histórico", show=True),
@@ -370,6 +503,8 @@ class GeraldoTUI(App):
         self._ollama_model = "qwen2.5:3b"
         self._llm_api_key = ""
         self._llm_api_base = ""
+        self._audio_input_device: Optional[Any] = None
+        self._audio_output_device: Optional[Any] = None
 
         self._send_queue: asyncio.Queue = asyncio.Queue()
         self._ws_worker_task = None
@@ -502,11 +637,24 @@ class GeraldoTUI(App):
             if cfg:
                 self._ollama_host = cfg.get("ollama_host", self._ollama_host)
                 self._ollama_model = cfg.get("llm_model", self._ollama_model)
+                if "audio" in cfg and isinstance(cfg["audio"], dict):
+                    self._audio_input_device = cfg["audio"].get("input_device")
+                    self._audio_output_device = cfg["audio"].get("output_device")
 
         elif event_name == "config_changed":
             self._ollama_host = data.get("ollama_host", self._ollama_host)
             self._ollama_model = data.get("llm_model", self._ollama_model)
+            if "audio" in data and isinstance(data["audio"], dict):
+                self._audio_input_device = data["audio"].get("input_device")
+                self._audio_output_device = data["audio"].get("output_device")
             chat.write(f"[bold cyan]⚙️ Configuração atualizada:[/] Ollama em {self._ollama_host} ({self._ollama_model})\n")
+
+        elif event_name == "audio_config_changed":
+            self._audio_input_device = data.get("input_device")
+            self._audio_output_device = data.get("output_device")
+            in_lbl = self._audio_input_device if self._audio_input_device is not None else "Padrão"
+            out_lbl = self._audio_output_device if self._audio_output_device is not None else "Padrão"
+            chat.write(f"[bold cyan]🎙️ Dispositivos de Áudio alterados:[/] Mic: {in_lbl} | Saída: {out_lbl}\n")
 
         elif event_name == "state_changed":
             state = data.get("state", "idle")
@@ -545,6 +693,12 @@ class GeraldoTUI(App):
             if data.get("ollama_host"):
                 self._ollama_host = data.get("ollama_host", self._ollama_host)
                 self._ollama_model = data.get("llm_model", self._ollama_model)
+            if "audio" in data and isinstance(data["audio"], dict):
+                self._audio_input_device = data["audio"].get("input_device")
+                self._audio_output_device = data["audio"].get("output_device")
+            elif "input_device" in data or "output_device" in data:
+                self._audio_input_device = data.get("input_device")
+                self._audio_output_device = data.get("output_device")
             if req_id.startswith("check_calendar") and isinstance(data, dict):
                 try:
                     lbl = self.query_one("#cal-status-label", Label)
@@ -785,6 +939,35 @@ class GeraldoTUI(App):
         chat = self.query_one("#chat-log", RichLog)
         prov_label = provider.upper() if provider != "ollama" else "Ollama"
         chat.write(f"[bold green]⚙️ Configuração salva:[/] {prov_label} em {host} ({model})\n")
+
+    def action_open_audio_settings(self) -> None:
+        """Abre o diálogo modal de configuração de microfone e saída de áudio."""
+        self.push_screen(
+            AudioConfigModal(
+                current_input=self._audio_input_device,
+                current_output=self._audio_output_device,
+            )
+        )
+
+    def save_audio_config(
+        self,
+        input_device: Optional[Any] = None,
+        output_device: Optional[Any] = None,
+    ) -> None:
+        """Salva a configuração dos dispositivos de áudio e transmite via IPC."""
+        self._audio_input_device = input_device
+        self._audio_output_device = output_device
+
+        payload = {
+            "input_device": input_device,
+            "output_device": output_device,
+            "persist": True,
+        }
+        self.send_action("set_audio_config", payload)
+        chat = self.query_one("#chat-log", RichLog)
+        in_lbl = input_device if input_device is not None else "Padrão"
+        out_lbl = output_device if output_device is not None else "Padrão"
+        chat.write(f"[bold green]🎙️ Dispositivos de áudio salvos:[/] Mic: [cyan]{in_lbl}[/] | Saída: [cyan]{out_lbl}[/]\n")
 
 
 def run_tui(host: str = "127.0.0.1", port: int = 8765, token: Optional[str] = None) -> None:

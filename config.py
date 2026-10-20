@@ -229,6 +229,76 @@ VAD_THRESHOLD = 0.5
 SILENCE_LIMIT_SEC = 0.8
 BEEP_VOLUME = float(os.getenv("BEEP_VOLUME", 0.50))
 
+# Dispositivos de Áudio Selecionados (None = padrão do sistema)
+AUDIO_INPUT_DEVICE = _user_settings.get("audio_input_device", None)
+AUDIO_OUTPUT_DEVICE = _user_settings.get("audio_output_device", None)
+
+
+def get_audio_config() -> dict:
+    from audio.device_utils import list_audio_devices, resolve_audio_device
+    devices = list_audio_devices()
+    return {
+        "input_device": AUDIO_INPUT_DEVICE,
+        "output_device": AUDIO_OUTPUT_DEVICE,
+        "resolved_input_id": resolve_audio_device(AUDIO_INPUT_DEVICE, kind="input"),
+        "resolved_output_id": resolve_audio_device(AUDIO_OUTPUT_DEVICE, kind="output"),
+        "available_inputs": devices.get("inputs", []),
+        "available_outputs": devices.get("outputs", []),
+    }
+
+
+def update_audio_config(input_device=None, output_device=None, persist: bool = True) -> dict:
+    global AUDIO_INPUT_DEVICE, AUDIO_OUTPUT_DEVICE
+    if input_device is not None:
+        val_str = str(input_device).strip().lower()
+        if val_str in ("default", "none", "", "padrão"):
+            AUDIO_INPUT_DEVICE = None
+        else:
+            try:
+                AUDIO_INPUT_DEVICE = int(input_device)
+            except (ValueError, TypeError):
+                AUDIO_INPUT_DEVICE = str(input_device).strip()
+
+    if output_device is not None:
+        val_str = str(output_device).strip().lower()
+        if val_str in ("default", "none", "", "padrão"):
+            AUDIO_OUTPUT_DEVICE = None
+        else:
+            try:
+                AUDIO_OUTPUT_DEVICE = int(output_device)
+            except (ValueError, TypeError):
+                AUDIO_OUTPUT_DEVICE = str(output_device).strip()
+
+    try:
+        from audio.device_utils import resolve_audio_device
+        import sounddevice as sd
+        in_id = resolve_audio_device(AUDIO_INPUT_DEVICE, kind="input")
+        out_id = resolve_audio_device(AUDIO_OUTPUT_DEVICE, kind="output")
+        sd.default.device = (in_id, out_id)
+    except Exception:
+        pass
+
+    if persist:
+        save_settings({
+            "audio_input_device": AUDIO_INPUT_DEVICE,
+            "audio_output_device": AUDIO_OUTPUT_DEVICE,
+        })
+
+    return get_audio_config()
+
+
+# Inicializa o dispositivo padrão do sounddevice se configurado
+try:
+    if AUDIO_INPUT_DEVICE is not None or AUDIO_OUTPUT_DEVICE is not None:
+        from audio.device_utils import resolve_audio_device
+        import sounddevice as sd
+        in_id = resolve_audio_device(AUDIO_INPUT_DEVICE, kind="input")
+        out_id = resolve_audio_device(AUDIO_OUTPUT_DEVICE, kind="output")
+        sd.default.device = (in_id, out_id)
+except Exception:
+    pass
+
+
 # Barramento IPC Local (WebSocket)
 IPC_HOST = "127.0.0.1"
 IPC_PORT = 8765

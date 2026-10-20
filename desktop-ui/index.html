@@ -292,6 +292,50 @@
                     </div>
                     <!-- Chips de sugestões de modelos por provedor -->
                     <div id="model-presets-container" class="model-presets-chips"></div>
+                </div>
+
+                <!-- SEÇÃO DISPOSITIVOS DE ÁUDIO -->
+                <div class="form-group" id="group-audio-devices">
+                    <div class="label-with-link">
+                        <label>Dispositivos de Áudio (Microfone e Saída)</label>
+                        <button type="button" id="btn-refresh-audio" class="field-link" style="background:none; border:none; cursor:pointer;" title="Recarregar lista de dispositivos">🔄 Atualizar lista</button>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 6px;">
+                        <div>
+                            <label for="cfg-audio-input" style="font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; display: block;">🎤 Microfone (Dispositivo de Entrada)</label>
+                            <select id="cfg-audio-input" class="audio-device-select" style="width: 100%; padding: 8px 10px; background: var(--bg-input); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: var(--radius-sm); font-size: 12.5px;">
+                                <option value="">Padrão do Sistema</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="cfg-audio-output" style="font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; display: block;">🔊 Alto-falante / Fone (Dispositivo de Saída)</label>
+                            <select id="cfg-audio-output" class="audio-device-select" style="width: 100%; padding: 8px 10px; background: var(--bg-input); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: var(--radius-sm); font-size: 12.5px;">
+                                <option value="">Padrão do Sistema</option>
+                            </select>
+                        </div>
+                        <div style="display: flex; gap: 8px; margin-top: 2px;">
+                            <button type="button" id="btn-test-audio-beep" class="btn-action" style="flex: 1;" title="Reproduzir som de teste na saída selecionada">
+                                🔔 Testar Saída de Áudio
+                            </button>
+                        </div>
+                    </div>
+                    <span class="field-hint">Escolha o microfone para escuta contínua e a saída para a voz do Geraldo e alertas sonoros.</span>
+                </div>
+
+                <!-- SEÇÃO ATALHO DE TERMINAL (TUI) -->
+                <div class="form-group" id="group-tui-path">
+                    <div class="label-with-link">
+                        <label>Atalho de Terminal (TUI: <code>geraldo_tui</code>)</label>
+                        <span id="tui-path-status-badge" class="badge-tag status-ok">Verificando...</span>
+                    </div>
+                    <p class="field-hint">Permite abrir a interface de terminal do Geraldo em qualquer prompt de comando executando <code>geraldo_tui</code> (Windows, Linux e macOS).</p>
+                    <div class="updater-actions-row">
+                        <button type="button" id="btn-export-tui-path" class="btn-action">
+                            ⚡ Configurar 'geraldo_tui' no PATH
+                        </button>
+                    </div>
+                </div>
+
                 <!-- SEÇÃO AUTO-UPDATE -->
                 <div class="form-group" id="group-auto-update">
                     <div class="label-with-link">

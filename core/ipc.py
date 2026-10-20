@@ -65,6 +65,12 @@ class GeraldoIPCServer:
         self.register_handler("auth_calendar", self._handle_auth_calendar)
         self.register_handler("disconnect_calendar", self._handle_disconnect_calendar)
         self.register_handler("save_google_creds", self._handle_save_google_creds)
+        self.register_handler("get_audio_devices", self._handle_get_audio_devices)
+        self.register_handler("get_audio_config", self._handle_get_audio_config)
+        self.register_handler("set_audio_config", self._handle_set_audio_config)
+        self.register_handler("test_audio_beep", self._handle_test_audio_beep)
+        self.register_handler("get_tui_path_status", self._handle_get_tui_path_status)
+        self.register_handler("export_tui_path", self._handle_export_tui_path)
 
     def register_handler(self, action: str, handler: Callable) -> None:
         """Registra um manipulador para uma ação RPC."""
@@ -379,7 +385,9 @@ class GeraldoIPCServer:
 
     def _handle_get_config(self, params: dict) -> dict:
         import config
-        return config.get_llm_config()
+        cfg = config.get_llm_config()
+        cfg["audio"] = config.get_audio_config()
+        return cfg
 
     def _handle_set_config(self, params: dict) -> dict:
         import config
@@ -397,8 +405,59 @@ class GeraldoIPCServer:
             api_base=api_base,
             persist=persist,
         )
+
+        # Atualiza configurações de áudio se fornecidas
+        if any(k in params for k in ("input_device", "audio_input_device", "output_device", "audio_output_device")):
+            in_dev = params.get("input_device") if "input_device" in params else params.get("audio_input_device")
+            out_dev = params.get("output_device") if "output_device" in params else params.get("audio_output_device")
+            audio_up = config.update_audio_config(
+                input_device=in_dev,
+                output_device=out_dev,
+                persist=persist,
+            )
+            updated["audio"] = audio_up
+
         self.broadcast_event("config_changed", updated)
         return updated
+
+    def _handle_get_audio_devices(self, params: dict) -> dict:
+        from audio.device_utils import list_audio_devices
+        return list_audio_devices()
+
+    def _handle_get_audio_config(self, params: dict) -> dict:
+        import config
+        return config.get_audio_config()
+
+    def _handle_set_audio_config(self, params: dict) -> dict:
+        import config
+        in_dev = params.get("input_device") if "input_device" in params else params.get("audio_input_device")
+        out_dev = params.get("output_device") if "output_device" in params else params.get("audio_output_device")
+        persist = bool(params.get("persist", True))
+        updated = config.update_audio_config(
+            input_device=in_dev,
+            output_device=out_dev,
+            persist=persist,
+        )
+        self.broadcast_event("audio_config_changed", updated)
+        return updated
+
+    def _handle_test_audio_beep(self, params: dict) -> dict:
+        from audio.player import AudioPlayer
+        device = params.get("device")
+        volume = params.get("volume")
+        try:
+            AudioPlayer.play_beep(volume=float(volume) if volume else None, device=device)
+            return {"status": "ok", "message": "Beep reproduzido com sucesso."}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    def _handle_get_tui_path_status(self, params: dict) -> dict:
+        from core.cli_path import get_tui_path_status
+        return get_tui_path_status()
+
+    def _handle_export_tui_path(self, params: dict) -> dict:
+        from core.cli_path import export_tui_path
+        return export_tui_path()
 
     def _handle_check_ollama(self, params: dict) -> dict:
         from core.onboarding import OnboardingManager

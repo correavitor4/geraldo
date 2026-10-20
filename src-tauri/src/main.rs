@@ -116,20 +116,25 @@ fn stop_sidecar() {
 }
 
 fn ensure_cli_path() {
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     {
         if let Ok(home) = std::env::var("HOME") {
             let local_bin = std::path::PathBuf::from(&home).join(".local").join("bin");
             let _ = std::fs::create_dir_all(&local_bin);
 
-            let app_target = "/Applications/Geraldo.app/Contents/MacOS/geraldo-core";
+            let macos_target = "/Applications/Geraldo.app/Contents/MacOS/geraldo-core";
 
             for cmd_name in &["geraldo_tui", "geraldo-tui"] {
                 let link_path = local_bin.join(cmd_name);
                 if !link_path.exists() {
                     let script = format!(
-                        "#!/usr/bin/env bash\nif [ -f \"{0}\" ]; then\n  exec \"{0}\" --tui \"$@\"\nelif [ -f \"$(dirname \"$0\")/geraldo-core\" ]; then\n  exec \"$(dirname \"$0\")/geraldo-core\" --tui \"$@\"\nelse\n  exec python3 -m ui.tui \"$@\"\nfi\n",
-                        app_target
+                        "#!/usr/bin/env bash\n\
+                        if [ -f \"{0}\" ]; then\n  exec \"{0}\" --tui \"$@\"\n\
+                        elif [ -f \"/usr/bin/geraldo-desktop\" ]; then\n  exec \"/usr/bin/geraldo-desktop\" --tui \"$@\"\n\
+                        elif [ -f \"/usr/bin/geraldo\" ]; then\n  exec \"/usr/bin/geraldo\" --tui \"$@\"\n\
+                        elif [ -f \"$(dirname \"$0\")/geraldo-core\" ]; then\n  exec \"$(dirname \"$0\")/geraldo-core\" --tui \"$@\"\n\
+                        else\n  exec python3 -m ui.tui \"$@\"\nfi\n",
+                        macos_target
                     );
                     let _ = std::fs::write(&link_path, script);
                     #[cfg(unix)]
@@ -140,14 +145,16 @@ fn ensure_cli_path() {
                 }
             }
 
-            // Garante que ~/.local/bin esteja presente no ~/.zshrc se ausente
-            let zshrc = std::path::PathBuf::from(&home).join(".zshrc");
-            if zshrc.exists() {
-                if let Ok(content) = std::fs::read_to_string(&zshrc) {
-                    if !content.contains(".local/bin") && !content.contains("geraldo_tui") {
-                        use std::io::Write;
-                        if let Ok(mut file) = std::fs::OpenOptions::new().append(true).open(&zshrc) {
-                            let _ = writeln!(file, "\n# Geraldo TUI CLI\nexport PATH=\"$HOME/.local/bin:$PATH\"");
+            // Garante que ~/.local/bin esteja presente nos arquivos de perfil do shell
+            for rc_name in &[".zshrc", ".bashrc", ".profile"] {
+                let rc_path = std::path::PathBuf::from(&home).join(rc_name);
+                if rc_path.exists() {
+                    if let Ok(content) = std::fs::read_to_string(&rc_path) {
+                        if !content.contains(".local/bin") && !content.contains("geraldo_tui") {
+                            use std::io::Write;
+                            if let Ok(mut file) = std::fs::OpenOptions::new().append(true).open(&rc_path) {
+                                let _ = writeln!(file, "\n# Geraldo TUI CLI PATH\nexport PATH=\"$HOME/.local/bin:$PATH\"");
+                            }
                         }
                     }
                 }

@@ -1,11 +1,14 @@
 import sounddevice as sd
 import numpy as np
 import time
+import config
+from audio.device_utils import resolve_audio_device
 
 class AudioRecorder:
-    def __init__(self, sample_rate: int = 16000, chunk_size: int = 1024):
+    def __init__(self, sample_rate: int = 16000, chunk_size: int = 1024, device = None):
         self.sample_rate = sample_rate
         self.chunk_size = chunk_size
+        self.device = device
         self.energy_threshold = 0.016
         self.silence_limit = 1.5
 
@@ -16,8 +19,11 @@ class AudioRecorder:
         has_spoken = False
         start_time = time.time()
 
-        # device=None utiliza o microfone padrão do sistema
-        with sd.InputStream(device=None, samplerate=self.sample_rate, channels=1, dtype='float32', blocksize=self.chunk_size) as stream:
+        dev_spec = self.device if self.device is not None else getattr(config, "AUDIO_INPUT_DEVICE", None)
+        dev_idx = resolve_audio_device(dev_spec, kind="input")
+
+        # device=dev_idx utiliza o microfone configurado (ou None para o padrão do sistema)
+        with sd.InputStream(device=dev_idx, samplerate=self.sample_rate, channels=1, dtype='float32', blocksize=self.chunk_size) as stream:
             while True:
                 data, _ = stream.read(self.chunk_size)
                 chunk = data.flatten()
