@@ -133,6 +133,17 @@ fn ensure_cli_path() {
                         elif [ -f \"/usr/bin/geraldo-desktop\" ]; then\n  exec \"/usr/bin/geraldo-desktop\" --tui \"$@\"\n\
                         elif [ -f \"/usr/bin/geraldo\" ]; then\n  exec \"/usr/bin/geraldo\" --tui \"$@\"\n\
                         elif [ -f \"$(dirname \"$0\")/geraldo-core\" ]; then\n  exec \"$(dirname \"$0\")/geraldo-core\" --tui \"$@\"\n\
+                        fi\n\
+                        CANDIDATES=(\"$HOME/projects/geraldo\" \"$HOME/geraldo\" \"$HOME/.local/share/geraldo\")\n\
+                        for DIR in \"${{CANDIDATES[@]}}\"; do\n\
+                            if [ -f \"$DIR/venv/bin/python\" ] && [ -f \"$DIR/main.py\" ]; then\n\
+                                exec \"$DIR/venv/bin/python\" \"$DIR/main.py\" --tui \"$@\"\n\
+                            fi\n\
+                            if [ -f \"$DIR/venv/bin/python\" ] && [ -f \"$DIR/ui/tui.py\" ]; then\n\
+                                PYTHONPATH=\"$DIR:${{PYTHONPATH}}\" exec \"$DIR/venv/bin/python\" -m ui.tui \"$@\"\n\
+                            fi\n\
+                        done\n\
+                        if [ -f \"./venv/bin/python\" ]; then\n  exec \"./venv/bin/python\" -m ui.tui \"$@\"\n\
                         else\n  exec python3 -m ui.tui \"$@\"\nfi\n",
                         macos_target
                     );

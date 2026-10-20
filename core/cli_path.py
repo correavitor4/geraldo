@@ -76,6 +76,7 @@ def export_tui_path() -> Dict[str, Any]:
         geraldo_dir = Path(local_app_data) / "Geraldo" / "bin"
         geraldo_dir.mkdir(parents=True, exist_ok=True)
         
+        repo_dir = str(Path(__file__).resolve().parent.parent)
         batch_content = (
             "@echo off\r\n"
             "REM Wrapper executável do Geraldo TUI para Windows\r\n"
@@ -85,6 +86,14 @@ def export_tui_path() -> Dict[str, Any]:
             ")\r\n"
             "if exist \"%ProgramFiles%\\Geraldo\\Geraldo.exe\" (\r\n"
             "    start \"\" \"%ProgramFiles%\\Geraldo\\Geraldo.exe\" --tui %*\r\n"
+            "    goto :eof\r\n"
+            ")\r\n"
+            f"if exist \"{repo_dir}\\venv\\Scripts\\python.exe\" (\r\n"
+            f"    \"{repo_dir}\\venv\\Scripts\\python.exe\" \"{repo_dir}\\main.py\" --tui %*\r\n"
+            "    goto :eof\r\n"
+            ")\r\n"
+            "if exist \"%USERPROFILE%\\projects\\geraldo\\venv\\Scripts\\python.exe\" (\r\n"
+            "    \"%USERPROFILE%\\projects\\geraldo\\venv\\Scripts\\python.exe\" \"%USERPROFILE%\\projects\\geraldo\\main.py\" --tui %*\r\n"
             "    goto :eof\r\n"
             ")\r\n"
             "python -m ui.tui %*\r\n"
@@ -133,6 +142,7 @@ def export_tui_path() -> Dict[str, Any]:
         # Linux e macOS
         local_bin = home / ".local" / "bin"
         local_bin.mkdir(parents=True, exist_ok=True)
+        repo_dir = str(Path(__file__).resolve().parent.parent)
         
         script_content = (
             "#!/usr/bin/env bash\n"
@@ -145,13 +155,28 @@ def export_tui_path() -> Dict[str, Any]:
             '    exec "/usr/bin/geraldo" --tui "$@"\n'
             'elif [ -f "$(dirname "$0")/geraldo-core" ]; then\n'
             '    exec "$(dirname "$0")/geraldo-core" --tui "$@"\n'
-            'else\n'
-            '    if command -v python3 >/dev/null 2>&1; then\n'
-            '        exec python3 -m ui.tui "$@"\n'
-            '    else\n'
-            '        exec python -m ui.tui "$@"\n'
+            "fi\n\n"
+            "# Ambientes de desenvolvimento / repositório local\n"
+            f'CANDIDATES=("{repo_dir}" "$HOME/projects/geraldo" "$HOME/geraldo" "$HOME/.local/share/geraldo")\n'
+            'for DIR in "${CANDIDATES[@]}"; do\n'
+            '    if [ -f "$DIR/venv/bin/python" ] && [ -f "$DIR/main.py" ]; then\n'
+            '        exec "$DIR/venv/bin/python" "$DIR/main.py" --tui "$@"\n'
             '    fi\n'
-            'fi\n'
+            '    if [ -f "$DIR/venv/bin/python" ] && [ -f "$DIR/ui/tui.py" ]; then\n'
+            '        PYTHONPATH="$DIR:${PYTHONPATH}" exec "$DIR/venv/bin/python" -m ui.tui "$@"\n'
+            '    fi\n'
+            "done\n\n"
+            "# Fallback se executado dentro da pasta do repositório\n"
+            'if [ -f "./ui/tui.py" ]; then\n'
+            '    if [ -f "./venv/bin/python" ]; then\n'
+            '        exec "./venv/bin/python" -m ui.tui "$@"\n'
+            '    elif command -v python3 >/dev/null 2>&1; then\n'
+            '        exec python3 -m ui.tui "$@"\n'
+            '    fi\n'
+            "fi\n\n"
+            'echo "[Erro] Não foi possível localizar a instalação ou ambiente virtual do Geraldo." >&2\n'
+            f'echo "Certifique-se de que o repositório existe em \'{repo_dir}\' com o \'venv\' configurado." >&2\n'
+            "exit 1\n"
         )
         
         created_paths = []

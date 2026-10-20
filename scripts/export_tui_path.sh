@@ -19,26 +19,41 @@ install_cli() {
 
     for cmd_name in "geraldo_tui" "geraldo-tui"; do
         target_file="${BIN_DIR}/${cmd_name}"
-        cat << 'EOF' > "${target_file}"
+        cat << EOF > "${target_file}"
 #!/usr/bin/env bash
 # Wrapper executável do Geraldo TUI
 if [ -f "/Applications/Geraldo.app/Contents/MacOS/geraldo-core" ]; then
-    exec "/Applications/Geraldo.app/Contents/MacOS/geraldo-core" --tui "$@"
+    exec "/Applications/Geraldo.app/Contents/MacOS/geraldo-core" --tui "\$@"
 elif [ -f "/usr/bin/geraldo-desktop" ]; then
-    exec "/usr/bin/geraldo-desktop" --tui "$@"
+    exec "/usr/bin/geraldo-desktop" --tui "\$@"
 elif [ -f "/usr/bin/geraldo" ]; then
-    exec "/usr/bin/geraldo" --tui "$@"
-elif [ -f "$(dirname "$0")/geraldo-core" ]; then
-    exec "$(dirname "$0")/geraldo-core" --tui "$@"
-else
-    # Fallback para execução local do repositório
-    DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
-    if [ -f "${DIR}/../venv/bin/python" ]; then
-        exec "${DIR}/../venv/bin/python" -m ui.tui "$@"
-    else
-        exec python3 -m ui.tui "$@"
+    exec "/usr/bin/geraldo" --tui "\$@"
+elif [ -f "\$(dirname "\$0")/geraldo-core" ]; then
+    exec "\$(dirname "\$0")/geraldo-core" --tui "\$@"
+fi
+
+# Ambientes de desenvolvimento / repositório local
+CANDIDATES=("${REPO_DIR}" "\$HOME/projects/geraldo" "\$HOME/geraldo" "\$HOME/.local/share/geraldo")
+for DIR in "\${CANDIDATES[@]}"; do
+    if [ -f "\$DIR/venv/bin/python" ] && [ -f "\$DIR/main.py" ]; then
+        exec "\$DIR/venv/bin/python" "\$DIR/main.py" --tui "\$@"
+    fi
+    if [ -f "\$DIR/venv/bin/python" ] && [ -f "\$DIR/ui/tui.py" ]; then
+        PYTHONPATH="\$DIR:\${PYTHONPATH}" exec "\$DIR/venv/bin/python" -m ui.tui "\$@"
+    fi
+done
+
+if [ -f "./ui/tui.py" ]; then
+    if [ -f "./venv/bin/python" ]; then
+        exec "./venv/bin/python" -m ui.tui "\$@"
+    elif command -v python3 >/dev/null 2>&1; then
+        exec python3 -m ui.tui "\$@"
     fi
 fi
+
+echo "[Erro] Não foi possível localizar a instalação ou ambiente virtual do Geraldo." >&2
+echo "Certifique-se de que o repositório existe em '${REPO_DIR}' com o 'venv' configurado." >&2
+exit 1
 EOF
         chmod 0755 "${target_file}"
         echo "[OK] Atalho executável criado em: ${target_file}"
