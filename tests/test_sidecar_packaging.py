@@ -5,6 +5,8 @@ import sys
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from scripts.build_sidecar import (
     get_default_target_triple,
     prepare_binaries_dir,
@@ -58,6 +60,40 @@ class TestSidecarPackaging:
         dest = build_sidecar(target_triple="x86_64-unknown-linux-gnu", dry_run=False)
         assert dest.exists()
         assert os.access(dest, os.X_OK)
+
+    @pytest.mark.parametrize("target,expected_ext,expected_name", [
+        ("x86_64-unknown-linux-gnu", "", "geraldo-core-x86_64-unknown-linux-gnu"),
+        ("aarch64-unknown-linux-gnu", "", "geraldo-core-aarch64-unknown-linux-gnu"),
+        ("x86_64-pc-windows-msvc", ".exe", "geraldo-core-x86_64-pc-windows-msvc.exe"),
+        ("aarch64-pc-windows-msvc", ".exe", "geraldo-core-aarch64-pc-windows-msvc.exe"),
+        ("x86_64-apple-darwin", "", "geraldo-core-x86_64-apple-darwin"),
+        ("aarch64-apple-darwin", "", "geraldo-core-aarch64-apple-darwin"),
+    ])
+    def test_build_sidecar_for_all_os_targets(self, target, expected_ext, expected_name):
+        dest = build_sidecar(target_triple=target, dry_run=False)
+        assert dest.exists()
+        assert dest.name == expected_name
+        if expected_ext:
+            assert dest.name.endswith(expected_ext)
+            cmd_dest = dest.with_suffix(".cmd")
+            assert cmd_dest.exists()
+            cmd_dest.unlink(missing_ok=True)
+        else:
+            assert os.access(dest, os.X_OK)
+        if dest.name != "geraldo-core-x86_64-unknown-linux-gnu":
+            dest.unlink(missing_ok=True)
+
+    def test_package_dist_build_installer_dry_run_all_targets(self):
+        from scripts.package_dist import build_installer
+        for t in [
+            "x86_64-unknown-linux-gnu",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-pc-windows-msvc",
+            "aarch64-pc-windows-msvc",
+            "x86_64-apple-darwin",
+            "aarch64-apple-darwin",
+        ]:
+            assert build_installer(target=t, dry_run=True) is True
 
     def test_ipc_diagnostics_handler(self):
         server = GeraldoIPCServer(host="127.0.0.1", port=9999)

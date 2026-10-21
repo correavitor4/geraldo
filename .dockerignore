@@ -1,0 +1,6 @@
+venv/
+src-tauri/target/
+build/
+dist/
+.pytest_cache/
+__pycache__/
