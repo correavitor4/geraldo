@@ -18,8 +18,6 @@ from tools.calendar import CalendarTools
 from tools.hyprland import HyprlandTools
 from tools.waybar import WaybarTools
 
-TimerManager.start_background_loop()
-
 LLM_OPTIONS = {
     "temperature": 0.2,
     "num_ctx": 1024,

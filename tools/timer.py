@@ -111,6 +111,11 @@ class TimerManager:
                                 cls._pomodoro["remaining"] = int(rem)
                             else:
                                 cls._pomodoro["state"] = "work_finished" if cls._pomodoro.get("state") == "work" else "break_finished"
+                                cls._pomodoro["remaining"] = 0
+                                cls._pomodoro["target"] = 0.0
+                        elif cls._pomodoro.get("state") in ("work_finished", "break_finished"):
+                            cls._pomodoro["remaining"] = 0
+                            cls._pomodoro["target"] = 0.0
                 
                 # EXPORTA IMEDIATAMENTE PARA A WAYBAR ASSIM QUE CARREGA
                 cls._export_status_for_waybar()
@@ -353,11 +358,15 @@ class TimerManager:
             p_state = cls._pomodoro.get("state", "idle")
             if p_state == "work" and now >= cls._pomodoro.get("target", now):
                 cls._pomodoro["state"] = "work_finished"
+                cls._pomodoro["remaining"] = 0
+                cls._pomodoro["target"] = 0.0
                 cls._start_ringing_timer("pomodoro_work", f"Foco Ciclo {cls._pomodoro.get('cycle', 1)}")
                 cls._save_state()
                 changed = True
             elif p_state == "break" and now >= cls._pomodoro.get("target", now):
                 cls._pomodoro["state"] = "break_finished"
+                cls._pomodoro["remaining"] = 0
+                cls._pomodoro["target"] = 0.0
                 cls._start_ringing_timer("pomodoro_break", f"Pausa Ciclo {cls._pomodoro.get('cycle', 1)}")
                 cls._save_state()
                 changed = True
@@ -526,12 +535,19 @@ class TimerManager:
                     classes.append("ringing-alarm")
 
             p_state = cls._pomodoro.get("state", "idle")
+            is_active = p_state in ("work", "break", "paused", "work_finished", "break_finished")
             p_cycle = cls._pomodoro.get("cycle", 1)
-            p_left = max(0, int(cls._pomodoro.get("target", now) - now)) if p_state in ("work", "break") else cls._pomodoro.get("remaining", 0)
+            if p_state in ("work", "break"):
+                p_left = max(0, int(cls._pomodoro.get("target", now) - now))
+            elif p_state == "paused":
+                p_left = max(0, int(cls._pomodoro.get("remaining", 0)))
+            else:
+                p_left = 0
 
             pomodoro_data = {
+                "active": is_active,
                 "state": p_state,
-                "cycle": p_cycle,
+                "cycle": p_cycle if is_active else 0,
                 "left": p_left,
                 "work_duration": cls._pomodoro.get("work_duration", 1500),
                 "break_duration": cls._pomodoro.get("break_duration", 300)

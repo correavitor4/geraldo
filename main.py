@@ -1,4 +1,10 @@
 import sys
+
+if __name__ == "__main__" and any(arg in ("--tui", "tui", "-t") for arg in sys.argv[1:]):
+    from ui.tui import run_tui
+    run_tui()
+    sys.exit(0)
+
 from audio.wakeword import WakeWordDetector
 from audio.recorder import AudioRecorder
 from audio.player import AudioPlayer

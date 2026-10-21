@@ -240,6 +240,12 @@ class TestNLUIntentsAndSlots:
         assert intent == "pomodoro_control"
         assert slots["action"] == "stop"
 
+        intent, conf, slots = shared_nlu_engine.predict("iniciar pomodoro com 25 minutos de foco e 10 minutos de descanso")
+        assert intent == "pomodoro_control"
+        assert slots["action"] == "start"
+        assert slots["work_minutes"] == 25
+        assert slots["break_minutes"] == 10
+
         intent, conf, slots = shared_nlu_engine.predict("status do pomodoro")
         assert intent == "pomodoro_control"
         assert slots["action"] == "status"

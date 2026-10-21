@@ -391,9 +391,26 @@ class IntentEngine:
             else:
                 slots["action"] = "start"
 
-            m_min = re.search(num_pattern + r'\s*(?:minuto|minutos|min\b)', norm)
-            if m_min:
-                slots["work_minutes"] = self._parse_number(m_min.group(1))
+            # Extração refinada de foco e pausa
+            m_foco = re.search(num_pattern + r'\s*(?:minuto|minutos|min\b)?\s*(?:de\s+)?foco', norm)
+            m_pausa = re.search(num_pattern + r'\s*(?:minuto|minutos|min\b)?\s*(?:de\s+)?(?:pausa|descanso|intervalo)', norm)
+            
+            if m_foco:
+                slots["work_minutes"] = self._parse_number(m_foco.group(1))
+            if m_pausa:
+                slots["break_minutes"] = self._parse_number(m_pausa.group(1))
+
+            # Se não achou por palavras-chave específicas, busca ocorrências de minutos
+            if "work_minutes" not in slots:
+                matches = list(re.finditer(num_pattern + r'\s*(?:minuto|minutos|min\b)', norm))
+                if matches:
+                    slots["work_minutes"] = self._parse_number(matches[0].group(1))
+                    if len(matches) > 1 and "break_minutes" not in slots:
+                        slots["break_minutes"] = self._parse_number(matches[1].group(1))
+
+            m_ciclo = re.search(r'ciclo\s*(\d+)', norm)
+            if m_ciclo:
+                slots["cycle"] = int(m_ciclo.group(1))
 
         elif intent == "play_music":
             q = re.sub(r'^(toque\s+a\s+música|toque|tocar|reproduza|coloque|quero ouvir)\s*', '', raw_text, flags=re.IGNORECASE)

@@ -106,16 +106,47 @@
                 <div class="dashboard-card pomo-card">
                     <div class="card-header">
                         <h3>🍅 Pomodoro</h3>
-                        <span id="pomo-phase-badge" class="badge-phase">Inativo</span>
+                        <div class="card-header-actions">
+                            <button id="btn-toggle-plan-pomo" class="btn-link" title="Planejar Pomodoro">⚙️ Planejar</button>
+                            <span id="pomo-phase-badge" class="badge-phase hidden">Inativo</span>
+                        </div>
                     </div>
+
+                    <!-- FORMULÁRIO COLAPSÁVEL DE PLANEJAMENTO DO POMODORO -->
+                    <div id="pomo-plan-form" class="pomo-plan-form hidden">
+                        <div class="plan-presets-row">
+                            <button type="button" class="preset-chip active" data-work="25" data-break="5">25 / 5 min</button>
+                            <button type="button" class="preset-chip" data-work="50" data-break="10">50 / 10 min</button>
+                            <button type="button" class="preset-chip" data-work="15" data-break="3">15 / 3 min</button>
+                        </div>
+                        <div class="timer-inputs-row">
+                            <div class="input-group">
+                                <label for="pomo-input-work">Foco (min)</label>
+                                <input type="number" id="pomo-input-work" min="1" max="180" value="25">
+                            </div>
+                            <div class="input-group">
+                                <label for="pomo-input-break">Pausa (min)</label>
+                                <input type="number" id="pomo-input-break" min="1" max="60" value="5">
+                            </div>
+                            <div class="input-group">
+                                <label for="pomo-input-cycles">Ciclo</label>
+                                <input type="number" id="pomo-input-cycles" min="1" max="12" value="1">
+                            </div>
+                        </div>
+                        <button id="btn-save-plan-pomo" class="btn-action primary" style="width: 100%; margin-top: 6px;">▶ Iniciar Ciclo Planejado</button>
+                    </div>
+
                     <div class="pomo-body">
-                        <div id="pomo-countdown" class="big-timer">25:00</div>
-                        <span id="pomo-cycle-text" class="sub-label">Ciclo 1 de 4</span>
+                        <div id="pomo-empty" class="empty-state">Nenhum pomodoro ativo</div>
+                        <div id="pomo-active-display" class="hidden">
+                            <div id="pomo-countdown" class="big-timer">25:00</div>
+                            <span id="pomo-cycle-text" class="sub-label">Ciclo 1 de 4</span>
+                        </div>
                     </div>
-                    <div class="pomo-actions">
+                    <div class="pomo-actions idle" id="pomo-actions">
                         <button id="btn-pomo-toggle" class="btn-action primary">▶ Iniciar</button>
-                        <button id="btn-pomo-skip" class="btn-action">⏭ Pular</button>
-                        <button id="btn-pomo-reset" class="btn-action">🔄 Reset</button>
+                        <button id="btn-pomo-skip" class="btn-action hidden">⏭ Pular</button>
+                        <button id="btn-pomo-reset" class="btn-action hidden">🔄 Reset</button>
                     </div>
                 </div>
 

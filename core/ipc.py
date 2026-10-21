@@ -71,6 +71,11 @@ class GeraldoIPCServer:
         self.register_handler("test_audio_beep", self._handle_test_audio_beep)
         self.register_handler("get_tui_path_status", self._handle_get_tui_path_status)
         self.register_handler("export_tui_path", self._handle_export_tui_path)
+        self.register_handler("pomodoro", self._handle_pomodoro)
+        self.register_handler("timer_add", self._handle_timer_add)
+        self.register_handler("timer_cancel", self._handle_timer_cancel)
+        self.register_handler("alarm_add", self._handle_alarm_add)
+        self.register_handler("alarm_cancel", self._handle_alarm_cancel)
 
     def register_handler(self, action: str, handler: Callable) -> None:
         """Registra um manipulador para uma ação RPC."""
@@ -458,6 +463,53 @@ class GeraldoIPCServer:
     def _handle_export_tui_path(self, params: dict) -> dict:
         from core.cli_path import export_tui_path
         return export_tui_path()
+
+    def _handle_pomodoro(self, params: dict) -> dict:
+        from tools.timer import TimerManager
+        sub_act = params.get("sub_action") or params.get("action") or "toggle"
+        work_m = params.get("work_minutes")
+        break_m = params.get("break_minutes")
+        cycle = params.get("cycle")
+        kwargs = {}
+        if work_m is not None:
+            kwargs["work_minutes"] = work_m
+        if break_m is not None:
+            kwargs["break_minutes"] = break_m
+        if cycle is not None:
+            kwargs["cycle"] = cycle
+        msg = TimerManager.pomodoro_control(sub_act, **kwargs)
+        return {"status": "ok", "message": msg}
+
+    def _handle_timer_add(self, params: dict) -> dict:
+        from tools.timer import TimerManager
+        hours = int(params.get("hours", 0))
+        minutes = int(params.get("minutes", 0))
+        seconds = int(params.get("seconds", 0))
+        if "duration_sec" in params and not (hours or minutes or seconds):
+            seconds = int(params["duration_sec"])
+        label = params.get("label", "Timer")
+        msg = TimerManager.add_timer(hours=hours, minutes=minutes, seconds=seconds, label=label)
+        return {"status": "ok", "message": msg}
+
+
+    def _handle_timer_cancel(self, params: dict) -> dict:
+        from tools.timer import TimerManager
+        ident = params.get("id") or params.get("label") or ""
+        msg = TimerManager.cancel_timer(ident)
+        return {"status": "ok", "message": msg}
+
+    def _handle_alarm_add(self, params: dict) -> dict:
+        from tools.timer import TimerManager
+        time_str = params.get("time", "")
+        label = params.get("label", "Alarme")
+        msg = TimerManager.add_alarm(time_str, label)
+        return {"status": "ok", "message": msg}
+
+    def _handle_alarm_cancel(self, params: dict) -> dict:
+        from tools.timer import TimerManager
+        ident = params.get("id") or params.get("label") or ""
+        msg = TimerManager.cancel_alarm(ident)
+        return {"status": "ok", "message": msg}
 
     def _handle_check_ollama(self, params: dict) -> dict:
         from core.onboarding import OnboardingManager

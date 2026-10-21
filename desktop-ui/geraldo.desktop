@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Geraldo
+Comment=Assistente de Voz Inteligente Desktop
+Exec=/home/vitor/.local/bin/geraldo_gui
+Icon=/home/vitor/projects/geraldo/src-tauri/icons/128x128.png
+Terminal=false
+Type=Application
+Categories=Utility;AudioVideo;Audio;
+StartupWMClass=geraldo-desktop
+Keywords=assistente;voz;ia;ollama;pomodoro;timer;

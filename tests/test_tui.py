@@ -37,6 +37,7 @@ async def test_tui_layout_and_initial_widgets():
         assert app.query_one("#cmd-input", Input) is not None
         assert app.query_one("#btn-send", Button) is not None
         assert app.query_one("#btn-pomo-toggle", Button) is not None
+        assert app.query_one("#btn-pomo-plan", Button) is not None
         assert app.query_one("#btn-pomo-skip", Button) is not None
         assert app.query_one("#btn-pomo-reset", Button) is not None
 
@@ -136,18 +137,24 @@ async def test_tui_status_dashboard_pomodoro_updates():
         assert "04:50" in str(pomo_label.render())
         assert btn_toggle.label == "⏸ Pausar"
 
-        # Estado Idle (Inativo)
+        # Estado Idle (Inativo / Nenhum pomodoro ativo)
         data_idle = {
             "pomodoro": {
                 "state": "idle",
                 "cycle": 1,
-                "left": 1500,
+                "left": 0,
             }
         }
         app.update_status_dashboard(data_idle)
-        assert "Inativo" in str(pomo_label.render())
-        assert btn_toggle.label == "▶ Foco"
+        assert "Nenhum pomodoro ativo" in str(pomo_label.render())
+        assert "Iniciar" in str(btn_toggle.label)
         assert btn_toggle.variant == "success"
+        btn_plan = app.query_one("#btn-pomo-plan", Button)
+        btn_skip = app.query_one("#btn-pomo-skip", Button)
+        btn_reset = app.query_one("#btn-pomo-reset", Button)
+        assert btn_plan.display is True
+        assert btn_skip.display is False
+        assert btn_reset.display is False
 
 
 @pytest.mark.anyio
@@ -271,6 +278,10 @@ async def test_tui_button_clicks_enqueue_actions():
         msg = json.loads(await app._send_queue.get())
         assert msg["action"] == "send_prompt"
         assert msg["params"]["text"] == "pesquisar clima"
+
+        # Ativa pomodoro para exibir botões Pular e Reset
+        app.update_status_dashboard({"pomodoro": {"state": "work", "active": True, "left": 1500, "cycle": 1}})
+        await pilot.pause()
 
         # Clique no botão Pular Pomodoro
         await pilot.click("#btn-pomo-skip")
@@ -617,6 +628,215 @@ def test_cli_path_status_and_export():
     assert isinstance(res, dict)
     assert res.get("status") == "ok"
     assert res.get("installed") is True
+
+
+@pytest.mark.anyio
+async def test_tui_pomodoro_plan_modal():
+    """Testa abertura e submissão do modal de planejamento de Pomodoro."""
+    from ui.tui import PomodoroPlanModal
+    app = GeraldoTUI(auto_connect=False)
+    async with app.run_test(size=(160, 50)) as pilot:
+        # Clica no botão de planejar
+        await pilot.click("#btn-pomo-plan")
+        await pilot.pause()
+
+        assert isinstance(app.screen, PomodoroPlanModal)
+
+        # Clica no preset de 50/10 min
+        btn_50 = app.screen.query_one("#btn-preset-50", Button)
+        await pilot.click(btn_50)
+        await pilot.pause()
+
+        inp_work = app.screen.query_one("#input-pomo-work", Input)
+        inp_break = app.screen.query_one("#input-pomo-break", Input)
+        assert inp_work.value == "50"
+        assert inp_break.value == "10"
+
+        # Inicia ciclo planejado
+        btn_start = app.screen.query_one("#btn-pomo-start-plan", Button)
+        await pilot.click(btn_start)
+        await pilot.pause()
+
+        # Modal fechou
+        assert not isinstance(app.screen, PomodoroPlanModal)
+
+        # Mensagem enviada para a fila IPC
+        assert app._send_queue.qsize() == 1
+        msg = json.loads(await app._send_queue.get())
+        assert msg["action"] == "pomodoro"
+        assert msg["params"]["sub_action"] == "start"
+        assert msg["params"]["work_minutes"] == 50
+        assert msg["params"]["break_minutes"] == 10
+        assert msg["params"]["cycle"] == 1
+
+
+@pytest.mark.anyio
+async def test_tui_pomodoro_toggle_transitions():
+    """Valida cliques em btn-pomo-toggle cobrindo todos os estados: start, pause, resume e advance."""
+    app = GeraldoTUI(auto_connect=False)
+    async with app.run_test(size=(160, 50)) as pilot:
+        btn = app.query_one("#btn-pomo-toggle", Button)
+
+        # 1. Estado inicial Idle -> Clicar dispara 'start'
+        btn.press()
+        await pilot.pause()
+        assert not app._send_queue.empty()
+        msg_start = json.loads(await app._send_queue.get())
+        assert msg_start["action"] == "pomodoro"
+        assert msg_start["params"]["sub_action"] == "start"
+
+        # 2. Transição para Estado Work ativo -> Botão vira 'Pausar', Clicar dispara 'pause'
+        app.update_status_dashboard({"pomodoro": {"state": "work", "active": True, "left": 1500, "cycle": 1}})
+        await pilot.pause()
+        assert "Pausar" in str(btn.label)
+        btn.press()
+        await pilot.pause()
+        msg_pause = json.loads(await app._send_queue.get())
+        assert msg_pause["action"] == "pomodoro"
+        assert msg_pause["params"]["sub_action"] == "pause"
+
+        # 3. Transição para Work pausado -> Botão vira 'Retomar', Clicar dispara 'resume'
+        app.update_status_dashboard({"pomodoro": {"state": "paused", "active": True, "left": 1500, "cycle": 1}})
+        await pilot.pause()
+        assert "Retomar" in str(btn.label)
+        btn.press()
+        await pilot.pause()
+        msg_resume = json.loads(await app._send_queue.get())
+        assert msg_resume["action"] == "pomodoro"
+        assert msg_resume["params"]["sub_action"] == "resume"
+
+        # 4. Transição para Estado Concluído -> Botão vira Avançar/Próximo, Clicar dispara 'advance'
+        app.update_status_dashboard({"pomodoro": {"state": "work_finished", "active": True, "left": 0, "cycle": 1}})
+        await pilot.pause()
+        btn.press()
+        await pilot.pause()
+        msg_advance = json.loads(await app._send_queue.get())
+        assert msg_advance["action"] == "pomodoro"
+        assert msg_advance["params"]["sub_action"] == "advance"
+
+
+@pytest.mark.anyio
+async def test_tui_pomodoro_plan_modal_presets_and_dismiss():
+    """Valida os botões de presets (25/5, 15/3) e o botão de fechar modal sem disparar comando."""
+    from ui.tui import PomodoroPlanModal
+    app = GeraldoTUI(auto_connect=False)
+    async with app.run_test(size=(160, 50)) as pilot:
+        # Abre o modal de planejamento
+        app.action_open_pomodoro_plan()
+        await pilot.pause()
+        assert isinstance(app.screen, PomodoroPlanModal)
+
+        inp_work = app.screen.query_one("#input-pomo-work", Input)
+        inp_break = app.screen.query_one("#input-pomo-break", Input)
+
+        # Clica no preset 15/3
+        app.screen.query_one("#btn-preset-15", Button).press()
+        await pilot.pause()
+        assert inp_work.value == "15"
+        assert inp_break.value == "3"
+
+        # Clica no preset 25/5
+        app.screen.query_one("#btn-preset-25", Button).press()
+        await pilot.pause()
+        assert inp_work.value == "25"
+        assert inp_break.value == "5"
+
+        # Clica no botão Fechar sem salvar
+        app.screen.query_one("#btn-pomo-close-plan", Button).press()
+        await pilot.pause()
+
+        # Modal deve ter fechado e nenhuma mensagem de pomodoro enviada
+        assert not isinstance(app.screen, PomodoroPlanModal)
+        assert app._send_queue.empty()
+
+
+@pytest.mark.anyio
+async def test_tui_calendar_buttons(monkeypatch):
+    """Testa os botões de abrir agenda (btn-cal-open) e autenticar (btn-cal-auth)."""
+    opened_urls = []
+    monkeypatch.setattr("webbrowser.open", lambda url: opened_urls.append(url))
+
+    app = GeraldoTUI(auto_connect=False)
+    async with app.run_test(size=(160, 50)) as pilot:
+        # 1. Clique em Abrir Agenda
+        app.query_one("#btn-cal-open", Button).press()
+        await pilot.pause()
+        assert "https://calendar.google.com" in opened_urls
+        msg_cal = json.loads(await app._send_queue.get())
+        assert msg_cal["action"] == "open_calendar"
+
+        # 2. Clique em Conectar / Autenticar Google Calendar
+        app.query_one("#btn-cal-auth", Button).press()
+        await pilot.pause()
+        msg_auth = json.loads(await app._send_queue.get())
+        assert msg_auth["action"] == "auth_calendar"
+
+
+@pytest.mark.anyio
+async def test_tui_ollama_modal_buttons_test_and_close(monkeypatch):
+    """Testa os botões de testar conexão (btn-modal-test) e fechar (btn-modal-close) no modal do Ollama."""
+    from ui.tui import OllamaConfigModal
+    from core.onboarding import OnboardingManager
+
+    monkeypatch.setattr(
+        OnboardingManager,
+        "check_llm_provider",
+        lambda **kwargs: {"status": "ok", "connected": True, "message": "Ollama ativo"}
+    )
+
+    app = GeraldoTUI(auto_connect=False)
+    async with app.run_test(size=(160, 50)) as pilot:
+        await pilot.press("o")
+        await pilot.pause()
+        assert isinstance(app.screen, OllamaConfigModal)
+
+        # Clica no botão Testar
+        app.screen.query_one("#btn-modal-test", Button).press()
+        await pilot.pause()
+
+        # Clica no botão Fechar sem salvar
+        app.screen.query_one("#btn-modal-close", Button).press()
+        await pilot.pause()
+
+        assert not isinstance(app.screen, OllamaConfigModal)
+        assert app._send_queue.empty()
+
+
+@pytest.mark.anyio
+async def test_tui_audio_modal_buttons_test_refresh_close(monkeypatch):
+    """Testa os botões de som de teste, refresh e fechar no modal de áudio."""
+    from ui.tui import AudioConfigModal
+    from audio.player import AudioPlayer
+
+    beep_played = []
+    monkeypatch.setattr(AudioPlayer, "play_beep", lambda device=None: beep_played.append(device))
+
+    app = GeraldoTUI(auto_connect=False)
+    async with app.run_test(size=(160, 50)) as pilot:
+        await pilot.press("s")
+        await pilot.pause()
+        assert isinstance(app.screen, AudioConfigModal)
+
+        # 1. Clica no botão Testar Saída
+        app.screen.query_one("#btn-audio-test", Button).press()
+        await pilot.pause()
+        assert len(beep_played) == 1
+
+        # 2. Clica no botão Atualizar Dispositivos
+        app.screen.query_one("#btn-audio-refresh", Button).press()
+        await pilot.pause()
+        assert "atualizada" in str(app.screen.query_one("#audio-status", Label).render())
+
+        # 3. Clica no botão Fechar sem salvar
+        app.screen.query_one("#btn-audio-close", Button).press()
+        await pilot.pause()
+
+        assert not isinstance(app.screen, AudioConfigModal)
+        assert app._send_queue.empty()
+
+
+
+
 
 
 

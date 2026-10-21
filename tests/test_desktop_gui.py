@@ -66,12 +66,21 @@ def test_html_all_critical_dom_elements():
         "btn-send",
         "btn-cancel",
         "sidebar-section",
+        "pomo-empty",
+        "pomo-active-display",
         "pomo-countdown",
         "pomo-phase-badge",
         "pomo-cycle-text",
+        "pomo-actions",
         "btn-pomo-toggle",
         "btn-pomo-skip",
         "btn-pomo-reset",
+        "btn-toggle-plan-pomo",
+        "pomo-plan-form",
+        "pomo-input-work",
+        "pomo-input-break",
+        "pomo-input-cycles",
+        "btn-save-plan-pomo",
         "timers-list",
         "alarms-list",
         "btn-toggle-new-timer",
@@ -95,6 +104,34 @@ def test_html_all_critical_dom_elements():
     for elem_id in required_ids:
         pattern = f'id="{elem_id}"'
         assert pattern in html, f"Elemento com id '{elem_id}' não encontrado no index.html"
+
+
+def test_html_pomodoro_empty_state_initial():
+    """Valida se o estado inicial do Pomodoro no HTML reflete ausência de pomodoro ativo."""
+    with open(HTML_PATH, "r", encoding="utf-8") as f:
+        html = f.read()
+
+    assert '<div id="pomo-empty" class="empty-state">Nenhum pomodoro ativo</div>' in html
+    assert '<div id="pomo-active-display" class="hidden">' in html
+    assert 'class="badge-phase hidden"' in html
+    assert 'class="pomo-actions idle"' in html
+    assert 'id="btn-pomo-skip" class="btn-action hidden"' in html
+    assert 'id="btn-pomo-reset" class="btn-action hidden"' in html
+
+
+def test_html_pomodoro_planning_form():
+    """Valida se o formulário de planejamento de Pomodoro está presente com inputs e presets."""
+    with open(HTML_PATH, "r", encoding="utf-8") as f:
+        html = f.read()
+
+    assert 'id="btn-toggle-plan-pomo"' in html
+    assert 'id="pomo-plan-form" class="pomo-plan-form hidden"' in html
+    assert 'data-work="25"' in html
+    assert 'data-work="50"' in html
+    assert 'id="pomo-input-work"' in html
+    assert 'id="pomo-input-break"' in html
+    assert 'id="pomo-input-cycles"' in html
+    assert 'id="btn-save-plan-pomo"' in html
 
 
 def test_html_chips_suggestions():
@@ -418,4 +455,277 @@ async def test_gui_websocket_external_llm_set_and_get_config():
         config.LLM_API_KEY = orig_key
         config.LLM_MODEL = orig_model
         config.LLM_API_BASE = orig_base
+
+
+# ==========================================
+# TESTES DE COBERTURA DE TODOS OS BOTÕES DA INTERFACE DESKTOP
+# ==========================================
+
+def test_html_all_buttons_elements_and_attributes():
+    """Valida a declaração e presença de todos os botões da GUI desktop no HTML."""
+    with open(HTML_PATH, "r", encoding="utf-8") as f:
+        html = f.read()
+
+    expected_buttons = [
+        # Navbar / Cabeçalho
+        ("id=\"btn-header-calendar\"", "Botão de calendário no topo"),
+        ("id=\"btn-open-settings\"", "Botão de configurações no topo"),
+        ("id=\"btn-mic-toggle\"", "Botão de microfone/mudo no topo"),
+
+        # Chat
+        ("id=\"btn-clear-chat\"", "Botão limpar histórico de chat"),
+        ("id=\"btn-send\"", "Botão enviar comando"),
+        ("id=\"btn-cancel\"", "Botão cancelar áudio"),
+
+        # Pomodoro
+        ("id=\"btn-toggle-plan-pomo\"", "Botão abrir painel planejar pomodoro"),
+        ("id=\"btn-save-plan-pomo\"", "Botão iniciar ciclo planejado"),
+        ("id=\"btn-pomo-toggle\"", "Botão principal iniciar/pausar pomodoro"),
+        ("id=\"btn-pomo-skip\"", "Botão pular fase do pomodoro"),
+        ("id=\"btn-pomo-reset\"", "Botão resetar pomodoro"),
+
+        # Timers
+        ("id=\"btn-toggle-new-timer\"", "Botão abrir formulário de novo timer"),
+        ("id=\"btn-add-timer-submit\"", "Botão criar timer"),
+
+        # Calendário
+        ("id=\"btn-open-calendar\"", "Botão abrir agenda no navegador"),
+        ("id=\"btn-auth-calendar\"", "Botão vincular conta Google"),
+
+        # Modal de Configurações
+        ("id=\"btn-close-settings\"", "Botão fechar modal de configurações"),
+        ("id=\"btn-cancel-settings\"", "Botão cancelar modal"),
+        ("id=\"btn-save-settings\"", "Botão salvar configurações"),
+        ("id=\"btn-test-ollama\"", "Botão testar conexão LLM"),
+        ("id=\"btn-detect-container\"", "Botão detectar container docker"),
+        ("id=\"btn-toggle-key-visibility\"", "Botão alternar visibilidade da API Key"),
+        ("id=\"btn-refresh-audio\"", "Botão recarregar dispositivos de áudio"),
+        ("id=\"btn-test-audio-beep\"", "Botão reproduzir bipe de teste"),
+        ("id=\"btn-export-tui-path\"", "Botão exportar PATH do TUI"),
+        ("id=\"btn-check-updates\"", "Botão verificar atualizações"),
+    ]
+
+    for pattern, desc in expected_buttons:
+        assert pattern in html, f"{desc} ({pattern}) não encontrado no index.html"
+
+
+def test_js_all_buttons_event_listeners_bound():
+    """Valida se todos os botões da GUI possuem event listener registrado no app.js."""
+    with open(JS_PATH, "r", encoding="utf-8") as f:
+        js = f.read()
+
+    expected_bindings = [
+        ("this.dom.btnSend.addEventListener(\"click\"", "btnSend"),
+        ("this.dom.btnMicToggle.addEventListener(\"click\"", "btnMicToggle"),
+        ("this.dom.btnCancel.addEventListener(\"click\"", "btnCancel"),
+        ("this.dom.btnClearChat.addEventListener(\"click\"", "btnClearChat"),
+        ("this.dom.btnTogglePlanPomo.addEventListener(\"click\"", "btnTogglePlanPomo"),
+        ("this.dom.btnSavePlanPomo.addEventListener(\"click\"", "btnSavePlanPomo"),
+        ("this.dom.btnPomoToggle.addEventListener(\"click\"", "btnPomoToggle"),
+        ("this.dom.btnPomoSkip.addEventListener(\"click\"", "btnPomoSkip"),
+        ("this.dom.btnPomoReset.addEventListener(\"click\"", "btnPomoReset"),
+        ("this.dom.btnToggleNewTimer.addEventListener(\"click\"", "btnToggleNewTimer"),
+        ("this.dom.btnAddTimerSubmit.addEventListener(\"click\"", "btnAddTimerSubmit"),
+        ("this.dom.btnOpenSettings.addEventListener(\"click\"", "btnOpenSettings"),
+        ("this.dom.btnCloseSettings.addEventListener(\"click\"", "btnCloseSettings"),
+        ("this.dom.btnCancelSettings.addEventListener(\"click\"", "btnCancelSettings"),
+        ("this.dom.btnSaveSettings.addEventListener(\"click\"", "btnSaveSettings"),
+        ("this.dom.btnTestOllama.addEventListener(\"click\"", "btnTestOllama"),
+        ("this.dom.btnDetectContainer.addEventListener(\"click\"", "btnDetectContainer"),
+        ("this.dom.btnToggleKeyVisibility.addEventListener(\"click\"", "btnToggleKeyVisibility"),
+        ("this.dom.btnHeaderCalendar.addEventListener(\"click\"", "btnHeaderCalendar"),
+        ("this.dom.btnOpenCalendar.addEventListener(\"click\"", "btnOpenCalendar"),
+        ("this.dom.btnAuthCalendar.addEventListener(\"click\"", "btnAuthCalendar"),
+        ("this.dom.btnCheckUpdates.addEventListener(\"click\"", "btnCheckUpdates"),
+        ("this.dom.btnRefreshAudio.addEventListener(\"click\"", "btnRefreshAudio"),
+        ("this.dom.btnTestAudioBeep.addEventListener(\"click\"", "btnTestAudioBeep"),
+        ("this.dom.btnExportTuiPath.addEventListener(\"click\"", "btnExportTuiPath"),
+    ]
+
+    for binding, name in expected_bindings:
+        assert binding in js, f"Listener para {name} ('{binding}') ausente no app.js"
+
+
+def test_js_pomodoro_button_toggle_state_machine():
+    """Valida se o app.js trata os 4 estados do botão de Pomodoro (start, pause, resume, advance)."""
+    with open(JS_PATH, "r", encoding="utf-8") as f:
+        js = f.read()
+
+    assert "sub_action: \"start\"" in js or "'start'" in js
+    assert "sub_action: \"pause\"" in js or "'pause'" in js
+    assert "sub_action: \"resume\"" in js or "'resume'" in js
+    assert "sub_action: \"advance\"" in js or "'advance'" in js
+    assert "sub_action: \"skip\"" in js or "'skip'" in js
+    assert "sub_action: \"reset\"" in js or "'reset'" in js
+
+
+@pytest.mark.anyio
+async def test_desktop_gui_ipc_all_button_rpc_actions(monkeypatch):
+    """
+    Simula e valida no servidor IPC todas as chamadas RPC disparadas por cada botão da Desktop GUI.
+    """
+    from tools.calendar import CalendarTools
+    monkeypatch.setattr(CalendarTools, "authenticate", lambda: True)
+
+    server = GeraldoIPCServer(host=TEST_GUI_IPC_HOST, port=8796)
+    server.set_prompt_handler(lambda t: f"Eco: {t}")
+    server.start()
+
+    uri = f"ws://{TEST_GUI_IPC_HOST}:8796"
+    try:
+        async with connect(uri) as ws:
+            # Consome o evento connected
+            await asyncio.wait_for(ws.recv(), timeout=2.0)
+
+            # 1. Botão Enviar (#btn-send) e Sugestões (.chip-suggestion)
+            await ws.send(json.dumps({
+                "id": "btn-send-1",
+                "action": "send_prompt",
+                "params": {"text": "qual a previsão do tempo"}
+            }))
+
+            # 2. Botão Microfone (#btn-mic-toggle)
+            await ws.send(json.dumps({"id": "btn-mic-1", "action": "toggle_mute", "params": {}}))
+
+            # 3. Botão Cancelar (#btn-cancel)
+            await ws.send(json.dumps({"id": "btn-cancel-1", "action": "cancel", "params": {}}))
+
+            # 4. Botão Pomodoro Iniciar Planejado (#btn-save-plan-pomo)
+            await ws.send(json.dumps({
+                "id": "btn-pomo-plan-1",
+                "action": "pomodoro",
+                "params": {"sub_action": "start", "work_minutes": 25, "break_minutes": 5, "cycle": 1}
+            }))
+
+            # 5. Botão Pomodoro Pausar (#btn-pomo-toggle em work)
+            await ws.send(json.dumps({
+                "id": "btn-pomo-pause-1",
+                "action": "pomodoro",
+                "params": {"sub_action": "pause"}
+            }))
+
+            # 6. Botão Pomodoro Retomar (#btn-pomo-toggle em pause)
+            await ws.send(json.dumps({
+                "id": "btn-pomo-resume-1",
+                "action": "pomodoro",
+                "params": {"sub_action": "resume"}
+            }))
+
+            # 7. Botão Pomodoro Avançar (#btn-pomo-toggle em finished)
+            await ws.send(json.dumps({
+                "id": "btn-pomo-advance-1",
+                "action": "pomodoro",
+                "params": {"sub_action": "advance"}
+            }))
+
+            # 8. Botão Pomodoro Pular (#btn-pomo-skip)
+            await ws.send(json.dumps({
+                "id": "btn-pomo-skip-1",
+                "action": "pomodoro",
+                "params": {"sub_action": "skip"}
+            }))
+
+            # 9. Botão Pomodoro Reset (#btn-pomo-reset)
+            await ws.send(json.dumps({
+                "id": "btn-pomo-reset-1",
+                "action": "pomodoro",
+                "params": {"sub_action": "reset"}
+            }))
+
+            # 10. Botão Criar Timer (#btn-add-timer-submit)
+            await ws.send(json.dumps({
+                "id": "btn-timer-add-1",
+                "action": "timer_add",
+                "params": {"label": "Café", "duration_sec": 180}
+            }))
+
+            # 11. Botão Autenticar Calendário (#btn-auth-calendar)
+            await ws.send(json.dumps({
+                "id": "btn-auth-cal-1",
+                "action": "auth_calendar",
+                "params": {}
+            }))
+
+            # 12. Botão Abrir Calendário (#btn-open-calendar)
+            await ws.send(json.dumps({
+                "id": "btn-open-cal-1",
+                "action": "open_calendar",
+                "params": {"url": "https://calendar.google.com"}
+            }))
+
+            # 13. Botão Listar Dispositivos de Áudio (#btn-refresh-audio)
+            await ws.send(json.dumps({
+                "id": "btn-audio-list-1",
+                "action": "get_audio_devices",
+                "params": {}
+            }))
+
+            # 14. Botão Testar Beep de Saída (#btn-test-audio-beep)
+            await ws.send(json.dumps({
+                "id": "btn-audio-beep-1",
+                "action": "test_audio_beep",
+                "params": {"device": None}
+            }))
+
+            # 15. Botão Exportar Atalho TUI (#btn-export-tui-path)
+            await ws.send(json.dumps({
+                "id": "btn-export-tui-1",
+                "action": "export_tui_path",
+                "params": {}
+            }))
+
+            # 16. Botão Salvar Configurações (#btn-save-settings)
+            await ws.send(json.dumps({
+                "id": "btn-save-cfg-1",
+                "action": "set_config",
+                "params": {
+                    "provider": "ollama",
+                    "ollama_host": "http://localhost:11434",
+                    "llm_model": "qwen2.5:3b",
+                    "audio_input_device": None,
+                    "audio_output_device": None,
+                    "persist": False
+                }
+            }))
+
+            # Coleta todas as respostas RPC
+            expected_ids = {
+                "btn-send-1",
+                "btn-mic-1",
+                "btn-cancel-1",
+                "btn-pomo-plan-1",
+                "btn-pomo-pause-1",
+                "btn-pomo-resume-1",
+                "btn-pomo-advance-1",
+                "btn-pomo-skip-1",
+                "btn-pomo-reset-1",
+                "btn-timer-add-1",
+                "btn-auth-cal-1",
+                "btn-open-cal-1",
+                "btn-audio-list-1",
+                "btn-audio-beep-1",
+                "btn-export-tui-1",
+                "btn-save-cfg-1",
+            }
+            received_ids = set()
+
+            for _ in range(40):
+                if len(received_ids) == len(expected_ids):
+                    break
+                try:
+                    raw = await asyncio.wait_for(ws.recv(), timeout=2.0)
+                    msg = json.loads(raw)
+                    if msg.get("type") == "response":
+                        req_id = msg.get("id")
+                        if req_id in expected_ids:
+                            assert msg.get("status") == "ok", f"Erro na resposta de {req_id}: {msg.get('error')}"
+                            received_ids.add(req_id)
+                except asyncio.TimeoutError:
+                    break
+
+            missing = expected_ids - received_ids
+            assert not missing, f"Chamadas RPC pendentes ou sem resposta: {missing}"
+    finally:
+        server.stop()
+
 

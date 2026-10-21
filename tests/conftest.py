@@ -26,7 +26,7 @@ def isolated_timer_manager(tmp_path):
     yield TimerManager
     TimerManager.stop_background_loop()
     TimerManager.reset_for_tests(
-        command_dir="/tmp/geraldo_commands",
-        status_file="/tmp/geraldo_status.json",
-        state_file=os.path.expanduser("~/.config/geraldo_state.json")
+        command_dir=str(tmp_path / "dummy_commands"),
+        status_file=str(tmp_path / "dummy_status.json"),
+        state_file=str(tmp_path / "dummy_state.json")
     )

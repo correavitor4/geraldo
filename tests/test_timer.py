@@ -349,3 +349,59 @@ class TestTimerManagerWaybarAndPersistence:
         assert len(tm._timers) == 1
         assert len(tm._alarms) == 1
         assert tm._pomodoro.get("state") == "work"
+
+    def test_load_state_expired_pomodoro(self, isolated_timer_manager):
+        tm = isolated_timer_manager
+        tm.pomodoro_control("start", work_minutes=25)
+        tm._save_state()
+
+        # Simula tempo passado offline superior à duração
+        with open(tm._state_file, "r") as f:
+            data = json.load(f)
+        data["timestamp"] = time.time() - 3600  # 1 hora atrás
+        with open(tm._state_file, "w") as f:
+            json.dump(data, f)
+
+        tm._pomodoro = {}
+        tm._load_state()
+
+        assert tm._pomodoro.get("state") == "work_finished"
+        assert tm._pomodoro.get("remaining") == 0
+        assert tm._pomodoro.get("cycle") == 1
+
+        # Verifica export para status
+        with open(tm._status_file, "r") as f:
+            status_data = json.load(f)
+        pomo = status_data["pomodoro"]
+        assert pomo["active"] is True
+        assert pomo["state"] == "work_finished"
+        assert pomo["left"] == 0
+        assert pomo["cycle"] == 1
+
+    def test_load_state_finished_pomodoro_preserves_cycle(self, isolated_timer_manager):
+        tm = isolated_timer_manager
+        tm._pomodoro = {
+            "state": "work_finished",
+            "cycle": 3,
+            "work_duration": 1800,
+            "break_duration": 300,
+            "target": 0.0,
+            "remaining": 0,
+            "label": "Foco"
+        }
+        tm._save_state()
+
+        tm._pomodoro = {}
+        tm._load_state()
+
+        assert tm._pomodoro.get("state") == "work_finished"
+        assert tm._pomodoro.get("cycle") == 3
+        assert tm._pomodoro.get("remaining") == 0
+
+        with open(tm._status_file, "r") as f:
+            status_data = json.load(f)
+        pomo = status_data["pomodoro"]
+        assert pomo["active"] is True
+        assert pomo["state"] == "work_finished"
+        assert pomo["cycle"] == 3
+        assert pomo["left"] == 0

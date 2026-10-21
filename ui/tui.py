@@ -116,6 +116,7 @@ Screen {
     border: round #1f2937;
     padding: 1;
     margin-bottom: 1;
+    height: auto;
 }
 
 .card-title {
@@ -128,18 +129,20 @@ Screen {
     color: #f59e0b;
     text-style: bold;
     text-align: center;
-    height: 2;
+    height: auto;
+    margin: 1 0;
     content-align: center middle;
 }
 
 #pomo-buttons {
-    height: 3;
+    height: auto;
     align: center middle;
 }
 
 #pomo-buttons Button {
     margin: 0 1;
     min-width: 8;
+    height: 3;
 }
 
 #timers-box {
@@ -232,6 +235,48 @@ OllamaConfigModal {
 #modal-buttons Button {
     margin-left: 1;
     min-width: 12;
+}
+
+PomodoroPlanModal {
+    align: center middle;
+    background: rgba(0, 0, 0, 0.75);
+}
+
+#pomo-plan-dialog {
+    width: 62;
+    height: auto;
+    background: #111827;
+    border: round #f59e0b;
+    padding: 1 2;
+}
+
+#pomo-plan-title {
+    color: #f59e0b;
+    text-style: bold;
+    text-align: center;
+    margin-bottom: 1;
+}
+
+#pomo-presets-bar {
+    height: 3;
+    align: center middle;
+    margin-bottom: 1;
+}
+
+#pomo-presets-bar Button {
+    margin: 0 1;
+    min-width: 12;
+}
+
+#input-pomo-work, #input-pomo-break, #input-pomo-cycle {
+    background: #1e293b;
+    border: none;
+    color: #f8fafc;
+    margin-bottom: 1;
+}
+
+#input-pomo-work:focus, #input-pomo-break:focus, #input-pomo-cycle:focus {
+    border: tall #f59e0b;
 }
 
 AudioConfigModal {
@@ -458,6 +503,70 @@ class OllamaConfigModal(ModalScreen):
         await self._async_test_llm("ollama", host, "qwen2.5:3b", "")
 
 
+class PomodoroPlanModal(ModalScreen):
+    """Diálogo modal para planejar e configurar o ciclo Pomodoro."""
+
+    def __init__(self, current_work: int = 25, current_break: int = 5, current_cycle: int = 1) -> None:
+        super().__init__()
+        self.current_work = current_work
+        self.current_break = current_break
+        self.current_cycle = current_cycle
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="pomo-plan-dialog"):
+            yield Label("🍅 PLANEJAR CICLO POMODORO", id="pomo-plan-title")
+            yield Label("Defina a duração do foco, da pausa e o ciclo inicial:", classes="form-hint")
+
+            with Horizontal(id="pomo-presets-bar"):
+                yield Button("25/5 min", id="btn-preset-25", variant="default")
+                yield Button("50/10 min", id="btn-preset-50", variant="default")
+                yield Button("15/3 min", id="btn-preset-15", variant="default")
+
+            yield Label("Duração do Foco (minutos):", classes="form-label")
+            yield Input(value=str(self.current_work), placeholder="Ex: 25", id="input-pomo-work")
+
+            yield Label("Duração da Pausa Curta (minutos):", classes="form-label")
+            yield Input(value=str(self.current_break), placeholder="Ex: 5", id="input-pomo-break")
+
+            yield Label("Ciclo Inicial:", classes="form-label")
+            yield Input(value=str(self.current_cycle), placeholder="Ex: 1", id="input-pomo-cycle")
+
+            with Horizontal(id="modal-buttons"):
+                yield Button("▶ Iniciar Ciclo", id="btn-pomo-start-plan", variant="success")
+                yield Button("✕ Fechar", id="btn-pomo-close-plan", variant="error")
+
+    async def on_button_pressed(self, event: Button.Pressed) -> None:
+        button_id = event.button.id
+        if button_id == "btn-pomo-close-plan":
+            self.dismiss(False)
+        elif button_id == "btn-preset-25":
+            self.query_one("#input-pomo-work", Input).value = "25"
+            self.query_one("#input-pomo-break", Input).value = "5"
+        elif button_id == "btn-preset-50":
+            self.query_one("#input-pomo-work", Input).value = "50"
+            self.query_one("#input-pomo-break", Input).value = "10"
+        elif button_id == "btn-preset-15":
+            self.query_one("#input-pomo-work", Input).value = "15"
+            self.query_one("#input-pomo-break", Input).value = "3"
+        elif button_id == "btn-pomo-start-plan":
+            try:
+                work_val = int(self.query_one("#input-pomo-work", Input).value.strip() or "25")
+            except ValueError:
+                work_val = 25
+            try:
+                break_val = int(self.query_one("#input-pomo-break", Input).value.strip() or "5")
+            except ValueError:
+                break_val = 5
+            try:
+                cycle_val = int(self.query_one("#input-pomo-cycle", Input).value.strip() or "1")
+            except ValueError:
+                cycle_val = 1
+
+            if hasattr(self.app, "start_planned_pomodoro"):
+                self.app.start_planned_pomodoro(work_val, break_val, cycle_val)
+            self.dismiss(True)
+
+
 class GeraldoTUI(App):
     """
     Interface Rica de Terminal (TUI) para o assistente Geraldo.
@@ -470,6 +579,7 @@ class GeraldoTUI(App):
     BINDINGS = [
         Binding("m", "toggle_mute", "Mutar/Desmutar", show=True),
         Binding("p", "toggle_pomodoro", "Pomodoro Iniciar/Pausar", show=True),
+        Binding("P", "open_pomodoro_plan", "Planejar Pomodoro", show=True),
         Binding("c", "cancel_action", "Cancelar/Silenciar", show=True),
         Binding("o", "open_ollama_settings", "Configurar Ollama", show=True),
         Binding("s", "open_audio_settings", "Dispositivos Áudio", show=True),
@@ -525,9 +635,10 @@ class GeraldoTUI(App):
             with VerticalScroll(id="side-pane"):
                 with Vertical(classes="side-card"):
                     yield Label("🍅 POMODORO", classes="card-title")
-                    yield Label("Inativo (Ciclo 1) — 25:00", id="pomo-time")
+                    yield Label("[dim]Nenhum pomodoro ativo[/dim]", id="pomo-time")
                     with Horizontal(id="pomo-buttons"):
-                        yield Button("▶ Foco", id="btn-pomo-toggle", variant="success")
+                        yield Button("▶ Iniciar", id="btn-pomo-toggle", variant="success")
+                        yield Button("⚙ Plan", id="btn-pomo-plan", variant="default")
                         yield Button("⏭ Pular", id="btn-pomo-skip")
                         yield Button("🔄 Reset", id="btn-pomo-reset")
 
@@ -560,6 +671,12 @@ class GeraldoTUI(App):
         chat.write("[bold cyan]═════════════════════════════════════════════════════════════════[/]")
         chat.write("[bold cyan]  Bem-vindo à TUI do Geraldo! Conectando ao barramento IPC...   [/]")
         chat.write("[bold cyan]═════════════════════════════════════════════════════════════════[/]\n")
+
+        try:
+            self.query_one("#btn-pomo-skip", Button).display = False
+            self.query_one("#btn-pomo-reset", Button).display = False
+        except Exception:
+            pass
 
         if self.auto_connect:
             self.run_worker(self._ws_loop, exclusive=True, name="ws_worker")
@@ -611,6 +728,12 @@ class GeraldoTUI(App):
             "params": params or {},
         }
         self._send_queue.put_nowait(json.dumps(payload, ensure_ascii=False))
+        if not self._connected and self.auto_connect:
+            try:
+                chat = self.query_one("#chat-log", RichLog)
+                chat.write("[bold red]⚠️ Não conectado ao serviço Geraldo.[/bold red] [yellow]Inicie o serviço com: [bold]systemctl --user start geraldo.service[/bold] ou [bold]./run.sh[/bold][/yellow]\n")
+            except Exception:
+                pass
 
     def _handle_incoming_raw(self, raw_message: str) -> None:
         try:
@@ -771,34 +894,64 @@ class GeraldoTUI(App):
         """Atualiza os cards laterais de Pomodoro, Timers e Alarmes."""
         # 1. Pomodoro
         pomo = data.get("pomodoro", {})
-        if pomo:
+        if pomo is not None and pomo:
             p_state = pomo.get("state", "idle")
+            is_active = pomo.get("active", p_state in ("work", "break", "paused", "work_finished", "break_finished"))
             p_cycle = pomo.get("cycle", 1)
-            p_left = pomo.get("left", 1500)
+            p_left = pomo.get("left", 0)
             self._pomodoro_state = p_state
             self._pomodoro_cycle = p_cycle
 
-            m, s = divmod(p_left, 60)
-            state_pt = {
-                "work": "Foco",
-                "break": "Pausa",
-                "idle": "Inativo",
-                "paused": "Pausado",
-                "work_finished": "Foco Concluído!",
-                "break_finished": "Pausa Concluída!",
-            }.get(p_state, p_state)
+            btn_toggle = self.query_one("#btn-pomo-toggle", Button)
+            btn_plan = self.query_one("#btn-pomo-plan", Button)
+            btn_skip = self.query_one("#btn-pomo-skip", Button)
+            btn_reset = self.query_one("#btn-pomo-reset", Button)
+            pomo_label = self.query_one("#pomo-time", Label)
 
-            self.query_one("#pomo-time", Label).update(
-                f"{state_pt} (Ciclo {p_cycle}) — [bold]{m:02d}:{s:02d}[/bold]"
-            )
-
-            btn = self.query_one("#btn-pomo-toggle", Button)
-            if p_state in ("work", "break"):
-                btn.label = "⏸ Pausar"
-                btn.variant = "warning"
+            if not is_active or p_state == "idle":
+                pomo_label.update("[dim]Nenhum pomodoro ativo[/dim]")
+                btn_toggle.label = "▶ Iniciar"
+                btn_toggle.variant = "success"
+                btn_plan.display = True
+                btn_skip.display = False
+                btn_reset.display = False
             else:
-                btn.label = "▶ Foco"
-                btn.variant = "success"
+                btn_plan.display = False
+                btn_skip.display = True
+                btn_reset.display = True
+                m, s = divmod(p_left, 60)
+                state_pt = {
+                    "work": "Foco",
+                    "break": "Pausa",
+                    "paused": "Pausado",
+                    "work_finished": "Foco Concluído!",
+                    "break_finished": "Pausa Concluída!",
+                }.get(p_state, p_state)
+
+                if p_state in ("work_finished", "break_finished"):
+                    pomo_label.update(
+                        f"[bold yellow]🔔 {state_pt} (Ciclo {p_cycle})[/bold yellow]"
+                    )
+                else:
+                    pomo_label.update(
+                        f"{state_pt} (Ciclo {p_cycle}) — [bold]{m:02d}:{s:02d}[/bold]"
+                    )
+
+                if p_state in ("work", "break"):
+                    btn_toggle.label = "⏸ Pausar"
+                    btn_toggle.variant = "warning"
+                elif p_state == "paused":
+                    btn_toggle.label = "▶ Retomar"
+                    btn_toggle.variant = "success"
+                elif p_state == "work_finished":
+                    btn_toggle.label = "▶ Iniciar Pausa"
+                    btn_toggle.variant = "success"
+                elif p_state == "break_finished":
+                    btn_toggle.label = "▶ Próximo Ciclo"
+                    btn_toggle.variant = "success"
+                else:
+                    btn_toggle.label = "▶ Iniciar"
+                    btn_toggle.variant = "success"
 
         # 2. Timers
         timers = data.get("timers", [])
@@ -849,6 +1002,9 @@ class GeraldoTUI(App):
         elif button_id == "btn-pomo-toggle":
             self.action_toggle_pomodoro()
 
+        elif button_id == "btn-pomo-plan":
+            self.action_open_pomodoro_plan()
+
         elif button_id == "btn-pomo-skip":
             self.send_action("pomodoro", {"sub_action": "skip"})
 
@@ -885,8 +1041,39 @@ class GeraldoTUI(App):
     def action_toggle_pomodoro(self) -> None:
         if self._pomodoro_state in ("work", "break"):
             self.send_action("pomodoro", {"sub_action": "pause"})
+        elif self._pomodoro_state == "paused":
+            self.send_action("pomodoro", {"sub_action": "resume"})
+        elif self._pomodoro_state in ("work_finished", "break_finished"):
+            self.send_action("pomodoro", {"sub_action": "advance"})
         else:
-            self.send_action("pomodoro", {"sub_action": "start"})
+            w_m = getattr(self, "_pomo_planned_work", 25)
+            b_m = getattr(self, "_pomo_planned_break", 5)
+            c = getattr(self, "_pomo_planned_cycle", 1)
+            self.send_action("pomodoro", {
+                "sub_action": "start",
+                "work_minutes": w_m,
+                "break_minutes": b_m,
+                "cycle": c,
+            })
+
+    def action_open_pomodoro_plan(self) -> None:
+        """Abre o diálogo modal para planejar e customizar o Pomodoro."""
+        w_m = getattr(self, "_pomo_planned_work", 25)
+        b_m = getattr(self, "_pomo_planned_break", 5)
+        c = getattr(self, "_pomo_planned_cycle", 1)
+        self.push_screen(PomodoroPlanModal(current_work=w_m, current_break=b_m, current_cycle=c))
+
+    def start_planned_pomodoro(self, work_minutes: int, break_minutes: int, cycle: int = 1) -> None:
+        """Inicia um Pomodoro com os parâmetros planejados."""
+        self._pomo_planned_work = work_minutes
+        self._pomo_planned_break = break_minutes
+        self._pomo_planned_cycle = cycle
+        self.send_action("pomodoro", {
+            "sub_action": "start",
+            "work_minutes": work_minutes,
+            "break_minutes": break_minutes,
+            "cycle": cycle,
+        })
 
     def action_focus_input(self) -> None:
         self.query_one("#cmd-input", Input).focus()
