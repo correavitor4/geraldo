@@ -4,6 +4,7 @@ import subprocess
 import json
 import os
 import difflib
+from typing import Any, Dict, List, Optional, Union
 
 class TimerManager:
     _timers = {}
