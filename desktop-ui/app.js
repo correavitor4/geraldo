@@ -50,8 +50,10 @@ class GeraldoDesktopClient {
             newTimerForm: document.getElementById("new-timer-form"),
             btnAddTimerSubmit: document.getElementById("btn-add-timer-submit"),
             newTimerLabel: document.getElementById("new-timer-label"),
+            newTimerHours: document.getElementById("new-timer-hours"),
             newTimerMin: document.getElementById("new-timer-min"),
             newTimerSec: document.getElementById("new-timer-sec"),
+            btnCancelAllTimers: document.getElementById("btn-cancel-all-timers"),
             // Configurações do Ollama
             btnOpenSettings: document.getElementById("btn-open-settings"),
             settingsModal: document.getElementById("settings-modal"),
@@ -451,17 +453,42 @@ class GeraldoDesktopClient {
 
         // 2. Timers
         if (data.timers && this.dom.timersList) {
+            if (this.dom.btnCancelAllTimers) {
+                if (data.timers.length > 0) {
+                    this.dom.btnCancelAllTimers.classList.remove("hidden");
+                } else {
+                    this.dom.btnCancelAllTimers.classList.add("hidden");
+                }
+            }
+
             if (data.timers.length === 0) {
                 this.dom.timersList.innerHTML = '<div class="empty-state">Nenhum timer ativo</div>';
             } else {
                 this.dom.timersList.innerHTML = data.timers.map(t => {
-                    const m = Math.floor(t.left / 60);
-                    const s = t.left % 60;
-                    const timeStr = t.paused ? "Pausado" : `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+                    const totalSecs = Math.max(0, Math.floor(t.left || 0));
+                    const h = Math.floor(totalSecs / 3600);
+                    const m = Math.floor((totalSecs % 3600) / 60);
+                    const s = totalSecs % 60;
+                    const timeFormatted = h > 0
+                        ? `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+                        : `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+                    const isPaused = !!t.paused;
+                    const toggleAction = isPaused ? "resume" : "pause";
+                    const toggleIcon = isPaused ? "▶" : "⏸";
+                    const toggleTitle = isPaused ? "Retomar timer" : "Pausar timer";
+                    const timerId = this.escapeHtml(t.id || "");
+                    const countdownHtml = isPaused
+                        ? `<span class="timer-countdown paused">Pausado (${timeFormatted})</span>`
+                        : `<span class="timer-countdown">${timeFormatted}</span>`;
+
                     return `
-                        <div class="timer-item">
-                            <span class="timer-label">⏱ ${this.escapeHtml(t.label || "Timer")}</span>
-                            <span class="timer-countdown">${timeStr}</span>
+                        <div class="timer-item" data-id="${timerId}">
+                            <span class="timer-label" title="${this.escapeHtml(t.label || 'Timer')}">⏱ ${this.escapeHtml(t.label || "Timer")}</span>
+                            <div class="timer-item-right">
+                                ${countdownHtml}
+                                <button type="button" class="btn-timer-action btn-timer-toggle" data-id="${timerId}" data-action="${toggleAction}" title="${toggleTitle}">${toggleIcon}</button>
+                                <button type="button" class="btn-timer-action danger btn-timer-cancel" data-id="${timerId}" title="Cancelar timer">✕</button>
+                            </div>
                         </div>
                     `;
                 }).join("");
@@ -652,7 +679,21 @@ class GeraldoDesktopClient {
             });
         }
 
-        // Formulário de Novo Timer
+        // Formulário de Novo Timer & Presets
+        const timerPresetChips = document.querySelectorAll(".timer-preset");
+        timerPresetChips.forEach(chip => {
+            chip.addEventListener("click", () => {
+                timerPresetChips.forEach(c => c.classList.remove("active"));
+                chip.classList.add("active");
+                const h = chip.dataset.h || "0";
+                const m = chip.dataset.m || "0";
+                const s = chip.dataset.s || "0";
+                if (this.dom.newTimerHours) this.dom.newTimerHours.value = h;
+                if (this.dom.newTimerMin) this.dom.newTimerMin.value = m;
+                if (this.dom.newTimerSec) this.dom.newTimerSec.value = s;
+            });
+        });
+
         if (this.dom.btnToggleNewTimer && this.dom.newTimerForm) {
             this.dom.btnToggleNewTimer.addEventListener("click", () => {
                 this.dom.newTimerForm.classList.toggle("hidden");
@@ -662,16 +703,48 @@ class GeraldoDesktopClient {
         if (this.dom.btnAddTimerSubmit) {
             this.dom.btnAddTimerSubmit.addEventListener("click", () => {
                 const label = (this.dom.newTimerLabel && this.dom.newTimerLabel.value.trim()) || "Timer";
+                const hours = parseInt(this.dom.newTimerHours ? this.dom.newTimerHours.value : 0, 10) || 0;
                 const mins = parseInt(this.dom.newTimerMin ? this.dom.newTimerMin.value : 0, 10) || 0;
                 const secs = parseInt(this.dom.newTimerSec ? this.dom.newTimerSec.value : 0, 10) || 0;
 
                 this.sendAction("timer_add", {
+                    hours: hours,
                     minutes: mins,
                     seconds: secs,
                     label: label
                 });
 
                 if (this.dom.newTimerForm) this.dom.newTimerForm.classList.add("hidden");
+            });
+        }
+
+        // Ações de timers individuais e em lote
+        if (this.dom.timersList) {
+            this.dom.timersList.addEventListener("click", (e) => {
+                const toggleBtn = e.target.closest(".btn-timer-toggle");
+                if (toggleBtn) {
+                    const id = toggleBtn.dataset.id;
+                    const action = toggleBtn.dataset.action;
+                    if (action === "pause") {
+                        this.sendAction("timer_pause", { id });
+                    } else {
+                        this.sendAction("timer_resume", { id });
+                    }
+                    return;
+                }
+
+                const cancelBtn = e.target.closest(".btn-timer-cancel");
+                if (cancelBtn) {
+                    const id = cancelBtn.dataset.id;
+                    this.sendAction("timer_cancel", { id });
+                    return;
+                }
+            });
+        }
+
+        if (this.dom.btnCancelAllTimers) {
+            this.dom.btnCancelAllTimers.addEventListener("click", () => {
+                this.sendAction("timer_cancel", { query: "todos" });
             });
         }
 

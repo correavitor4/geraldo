@@ -248,6 +248,69 @@ OllamaConfigModal {
     min-width: 12;
 }
 
+TimerConfigModal {
+    align: center middle;
+    background: rgba(0, 0, 0, 0.75);
+}
+
+#timer-config-dialog {
+    width: 66;
+    height: auto;
+    background: #111827;
+    border: round #38bdf8;
+    padding: 1 2;
+}
+
+#timer-config-title {
+    color: #38bdf8;
+    text-style: bold;
+    text-align: center;
+    margin-bottom: 1;
+}
+
+#timer-presets-bar {
+    height: 3;
+    align: center middle;
+    margin-bottom: 1;
+}
+
+#timer-presets-bar Button {
+    margin: 0 1;
+    min-width: 8;
+}
+
+#timer-duration-inputs {
+    height: auto;
+    margin-bottom: 1;
+}
+
+.input-group-col {
+    width: 1fr;
+    margin: 0 1;
+}
+
+#input-timer-label, #input-timer-hours, #input-timer-min, #input-timer-sec {
+    background: #1e293b;
+    border: none;
+    color: #f8fafc;
+    margin-bottom: 1;
+}
+
+#input-timer-label:focus, #input-timer-hours:focus, #input-timer-min:focus, #input-timer-sec:focus {
+    border: tall #38bdf8;
+}
+
+#timer-buttons {
+    height: auto;
+    margin-top: 1;
+}
+
+#timer-buttons Button {
+    margin-right: 1;
+    min-width: 9;
+    height: 3;
+}
+
 PomodoroPlanModal {
     align: center middle;
     background: rgba(0, 0, 0, 0.75);
@@ -607,6 +670,102 @@ class PomodoroPlanModal(ModalScreen):
             self.dismiss(True)
 
 
+class TimerConfigModal(ModalScreen):
+    """Diálogo modal para configurar e gerenciar timers no TUI."""
+
+    def __init__(self, timers: Optional[list] = None) -> None:
+        super().__init__()
+        self.timers = timers or []
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="timer-config-dialog"):
+            yield Label("⏱️ CONFIGURAR TIMERS", id="timer-config-title")
+            yield Label("Escolha um preset ou defina a duração personalizada:", classes="form-hint")
+
+            with Horizontal(id="timer-presets-bar"):
+                yield Button("1 min", id="btn-timer-pre-1", variant="default")
+                yield Button("5 min", id="btn-timer-pre-5", variant="default")
+                yield Button("10 min", id="btn-timer-pre-10", variant="default")
+                yield Button("15 min", id="btn-timer-pre-15", variant="default")
+                yield Button("25 min", id="btn-timer-pre-25", variant="default")
+                yield Button("1h", id="btn-timer-pre-60", variant="default")
+
+            yield Label("Rótulo / Nome do Timer:", classes="form-label")
+            yield Input(value="Timer", placeholder="Ex: Café, Forno, Reunião", id="input-timer-label")
+
+            with Horizontal(id="timer-duration-inputs"):
+                with Vertical(classes="input-group-col"):
+                    yield Label("Horas:", classes="form-label")
+                    yield Input(value="0", placeholder="0", id="input-timer-hours")
+                with Vertical(classes="input-group-col"):
+                    yield Label("Minutos:", classes="form-label")
+                    yield Input(value="5", placeholder="5", id="input-timer-min")
+                with Vertical(classes="input-group-col"):
+                    yield Label("Segundos:", classes="form-label")
+                    yield Input(value="0", placeholder="0", id="input-timer-sec")
+
+            with Horizontal(id="modal-buttons"):
+                yield Button("▶ Criar Timer", id="btn-timer-create", variant="success")
+                yield Button("⏸ Pausar/Play", id="btn-timer-toggle-active")
+                yield Button("🗑 Limpar Todos", id="btn-timer-clear-all", variant="error")
+                yield Button("✕ Fechar", id="btn-timer-close", variant="default")
+
+    async def on_button_pressed(self, event: Button.Pressed) -> None:
+        button_id = event.button.id
+        if button_id == "btn-timer-close":
+            self.dismiss(False)
+        elif button_id == "btn-timer-pre-1":
+            self.query_one("#input-timer-hours", Input).value = "0"
+            self.query_one("#input-timer-min", Input).value = "1"
+            self.query_one("#input-timer-sec", Input).value = "0"
+        elif button_id == "btn-timer-pre-5":
+            self.query_one("#input-timer-hours", Input).value = "0"
+            self.query_one("#input-timer-min", Input).value = "5"
+            self.query_one("#input-timer-sec", Input).value = "0"
+        elif button_id == "btn-timer-pre-10":
+            self.query_one("#input-timer-hours", Input).value = "0"
+            self.query_one("#input-timer-min", Input).value = "10"
+            self.query_one("#input-timer-sec", Input).value = "0"
+        elif button_id == "btn-timer-pre-15":
+            self.query_one("#input-timer-hours", Input).value = "0"
+            self.query_one("#input-timer-min", Input).value = "15"
+            self.query_one("#input-timer-sec", Input).value = "0"
+        elif button_id == "btn-timer-pre-25":
+            self.query_one("#input-timer-hours", Input).value = "0"
+            self.query_one("#input-timer-min", Input).value = "25"
+            self.query_one("#input-timer-sec", Input).value = "0"
+        elif button_id == "btn-timer-pre-60":
+            self.query_one("#input-timer-hours", Input).value = "1"
+            self.query_one("#input-timer-min", Input).value = "0"
+            self.query_one("#input-timer-sec", Input).value = "0"
+        elif button_id == "btn-timer-create":
+            label = self.query_one("#input-timer-label", Input).value.strip() or "Timer"
+            try:
+                hours = int(self.query_one("#input-timer-hours", Input).value.strip() or "0")
+            except ValueError:
+                hours = 0
+            try:
+                mins = int(self.query_one("#input-timer-min", Input).value.strip() or "0")
+            except ValueError:
+                mins = 0
+            try:
+                secs = int(self.query_one("#input-timer-sec", Input).value.strip() or "0")
+            except ValueError:
+                secs = 0
+
+            if hasattr(self.app, "add_timer"):
+                self.app.add_timer(hours=hours, minutes=mins, seconds=secs, label=label)
+            self.dismiss(True)
+        elif button_id == "btn-timer-toggle-active":
+            if hasattr(self.app, "toggle_active_timers"):
+                self.app.toggle_active_timers()
+            self.dismiss(True)
+        elif button_id == "btn-timer-clear-all":
+            if hasattr(self.app, "clear_all_timers"):
+                self.app.clear_all_timers()
+            self.dismiss(True)
+
+
 class GeraldoTUI(App):
     """
     Interface Rica de Terminal (TUI) para o assistente Geraldo.
@@ -620,6 +779,7 @@ class GeraldoTUI(App):
         Binding("m", "toggle_mute", "Mutar/Desmutar", show=True),
         Binding("p", "toggle_pomodoro", "Pomodoro Iniciar/Pausar", show=True),
         Binding("P", "open_pomodoro_plan", "Planejar Pomodoro", show=True),
+        Binding("T", "open_timer_modal", "Configurar Timers", show=True),
         Binding("c", "cancel_action", "Cancelar/Silenciar", show=True),
         Binding("o", "open_ollama_settings", "Configurar Ollama", show=True),
         Binding("s", "open_audio_settings", "Dispositivos Áudio", show=True),
@@ -655,6 +815,7 @@ class GeraldoTUI(App):
         self._llm_api_base = ""
         self._audio_input_device: Optional[Any] = None
         self._audio_output_device: Optional[Any] = None
+        self._latest_status: dict = {}
 
         self._send_queue: asyncio.Queue = asyncio.Queue()
         self._ws_worker_task = None
@@ -685,6 +846,10 @@ class GeraldoTUI(App):
                 with Vertical(classes="side-card"):
                     yield Label("⏱️ TIMERS ATIVOS", classes="card-title")
                     yield Label("Nenhum timer ativo", id="timers-box")
+                    with Horizontal(id="timer-buttons"):
+                        yield Button("+ Novo", id="btn-timer-new", variant="primary")
+                        yield Button("⏸ Pausa/Play", id="btn-timer-toggle")
+                        yield Button("✕ Limpar", id="btn-timer-clear", variant="error")
 
                 with Vertical(classes="side-card"):
                     yield Label("⏰ ALARMES PROGRAMADOS", classes="card-title")
@@ -1008,6 +1173,7 @@ class GeraldoTUI(App):
                     btn_toggle.variant = "success"
 
         # 2. Timers
+        self._latest_status = data
         timers = data.get("timers", [])
         timers_box = self.query_one("#timers-box", Label)
         if not timers:
@@ -1015,9 +1181,12 @@ class GeraldoTUI(App):
         else:
             lines = []
             for t in timers:
-                left = t.get("left", 0)
-                m, s = divmod(left, 60)
-                status = "pausado" if t.get("paused") else f"{m:02d}:{s:02d}"
+                left = int(t.get("left", 0))
+                h = left // 3600
+                m = (left % 3600) // 60
+                s = left % 60
+                time_str = f"{h:02d}:{m:02d}:{s:02d}" if h > 0 else f"{m:02d}:{s:02d}"
+                status = f"[yellow bold]pausado ({time_str})[/]" if t.get("paused") else f"[cyan bold]{time_str}[/]"
                 lines.append(f"⏱ [bold cyan]{t.get('label', 'Timer')}:[/] {status}")
             timers_box.update("\n".join(lines))
 
@@ -1079,6 +1248,15 @@ class GeraldoTUI(App):
         elif button_id == "btn-audio-quick-test":
             self.run_worker(self._async_quick_beep_test(), exclusive=True)
 
+        elif button_id == "btn-timer-new":
+            self.action_open_timer_modal()
+
+        elif button_id == "btn-timer-toggle":
+            self.toggle_active_timers()
+
+        elif button_id == "btn-timer-clear":
+            self.clear_all_timers()
+
     # ==========================================
     # AÇÕES DOS ATALHOS DE TECLADO
     # ==========================================
@@ -1136,6 +1314,43 @@ class GeraldoTUI(App):
                 current_cycle=c,
             )
         )
+
+    def action_open_timer_modal(self) -> None:
+        """Abre o diálogo modal de configuração de timers."""
+        timers = self._latest_status.get("timers", []) if hasattr(self, "_latest_status") else []
+        self.push_screen(TimerConfigModal(timers=timers))
+
+    def add_timer(self, hours: int = 0, minutes: int = 0, seconds: int = 0, label: str = "Timer") -> None:
+        """Envia comando de criação de timer via WebSocket."""
+        self.send_action("timer_add", {
+            "hours": hours,
+            "minutes": minutes,
+            "seconds": seconds,
+            "label": label,
+        })
+        chat = self.query_one("#chat-log", RichLog)
+        chat.write(f"[bold cyan]⏱ Solicitado timer '{label}' ({hours:02d}:{minutes:02d}:{seconds:02d})...[/]")
+
+    def toggle_active_timers(self) -> None:
+        """Pausa ou retoma timers ativos."""
+        timers = self._latest_status.get("timers", []) if hasattr(self, "_latest_status") else []
+        chat = self.query_one("#chat-log", RichLog)
+        if not timers:
+            chat.write("[dim italic]Nenhum timer ativo para pausar ou retomar.[/]")
+            return
+        any_running = any(not t.get("paused") for t in timers)
+        if any_running:
+            self.send_action("timer_pause", {})
+            chat.write("[bold yellow]⏸ Solicitado pausar timer...[/]")
+        else:
+            self.send_action("timer_resume", {})
+            chat.write("[bold green]▶ Solicitado retomar timer...[/]")
+
+    def clear_all_timers(self) -> None:
+        """Cancela todos os timers."""
+        self.send_action("timer_cancel", {"query": "todos"})
+        chat = self.query_one("#chat-log", RichLog)
+        chat.write("[bold red]🗑 Solicitado cancelar todos os timers...[/]")
 
     def start_planned_pomodoro(
         self,

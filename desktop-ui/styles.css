@@ -677,6 +677,20 @@ body {
     gap: 8px;
 }
 
+.card-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.btn-link.danger {
+    color: var(--accent-red);
+}
+
+.btn-link.danger:hover {
+    color: #f87171;
+}
+
 .timer-item, .alarm-item {
     display: flex;
     justify-content: space-between;
@@ -686,16 +700,66 @@ body {
     padding: 8px 12px;
     border-radius: var(--radius-md);
     font-size: 13px;
+    gap: 12px;
 }
 
 .timer-item .timer-label {
     font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.timer-item-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
 }
 
 .timer-item .timer-countdown {
     font-family: var(--font-mono);
     color: var(--accent-blue);
     font-weight: 600;
+    font-size: 13px;
+}
+
+.timer-item .timer-countdown.paused {
+    color: var(--accent-yellow);
+    background: rgba(245, 158, 11, 0.15);
+    padding: 1px 6px;
+    border-radius: var(--radius-sm);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+}
+
+.btn-timer-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-color);
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 11px;
+    transition: all 0.2s ease;
+    padding: 0;
+}
+
+.btn-timer-action:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+    border-color: var(--border-highlight);
+}
+
+.btn-timer-action.danger:hover {
+    background: var(--accent-red-bg);
+    color: var(--accent-red);
+    border-color: var(--accent-red);
 }
 
 .empty-state {

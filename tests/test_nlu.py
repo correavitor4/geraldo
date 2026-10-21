@@ -275,6 +275,17 @@ class TestNLUIntentsAndSlots:
         assert slots["long_break_minutes"] == 15
         assert slots["long_break_interval"] == 4
 
+        # Frase real dos logs do usuário
+        intent, conf, slots = shared_nlu_engine.predict(
+            "Iniciem o Pomodoro com 30 minutos de foco, 5 minutos de pausas curtas, 15 minutos de pausas longas, e 3 ciclos antes das pausas longas."
+        )
+        assert intent == "pomodoro_control"
+        assert slots["action"] == "start"
+        assert slots["work_minutes"] == 30
+        assert slots["break_minutes"] == 5
+        assert slots["long_break_minutes"] == 15
+        assert slots["long_break_interval"] == 3
+
     def test_hyprland_control_slots(self, shared_nlu_engine):
         intent, conf, slots = shared_nlu_engine.predict("mude para o workspace 4")
         assert intent == "hyprland_control"

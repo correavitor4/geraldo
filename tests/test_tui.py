@@ -4,7 +4,7 @@ import pytest
 from textual.widgets import Button, Input, Label, RichLog
 
 from core.ipc import GeraldoIPCServer
-from ui.tui import GeraldoTUI
+from ui.tui import GeraldoTUI, TimerConfigModal
 
 TEST_IPC_PORT = 8795
 TEST_IPC_HOST = "127.0.0.1"
@@ -914,6 +914,85 @@ async def test_tui_audio_card_and_quick_actions(monkeypatch):
         assert msg["action"] == "set_audio_config"
         assert msg["params"]["input_device"] == "Microfone USB"
         assert msg["params"]["output_device"] == "Fone Bluetooth"
+
+
+@pytest.mark.anyio
+async def test_tui_timer_modal_presets_and_creation():
+    """Valida abertura do modal de timers, clique em preset e envio de timer_add."""
+    app = GeraldoTUI(auto_connect=False)
+    async with app.run_test(size=(160, 50)) as pilot:
+        # 1. Abre modal pelo botão "+ Novo"
+        app.query_one("#btn-timer-new", Button).press()
+        await pilot.pause()
+        assert isinstance(app.screen, TimerConfigModal)
+
+        # 2. Clica no preset de 10 min
+        app.screen.query_one("#btn-timer-pre-10", Button).press()
+        await pilot.pause()
+        assert app.screen.query_one("#input-timer-hours", Input).value == "0"
+        assert app.screen.query_one("#input-timer-min", Input).value == "10"
+        assert app.screen.query_one("#input-timer-sec", Input).value == "0"
+
+        # 3. Altera label e adiciona 30 segundos
+        app.screen.query_one("#input-timer-label", Input).value = "Massa de Pão"
+        app.screen.query_one("#input-timer-sec", Input).value = "30"
+
+        # 4. Confirma criação
+        app.screen.query_one("#btn-timer-create", Button).press()
+        await pilot.pause()
+
+        # Modal fechou
+        assert not isinstance(app.screen, TimerConfigModal)
+
+        # Ação enviada
+        assert app._send_queue.qsize() == 1
+        msg = json.loads(await app._send_queue.get())
+        assert msg["action"] == "timer_add"
+        assert msg["params"]["label"] == "Massa de Pão"
+        assert msg["params"]["hours"] == 0
+        assert msg["params"]["minutes"] == 10
+        assert msg["params"]["seconds"] == 30
+
+
+@pytest.mark.anyio
+async def test_tui_timer_card_buttons_and_actions():
+    """Valida botões de pausa/play e limpeza de timers na barra lateral."""
+    app = GeraldoTUI(auto_connect=False)
+    async with app.run_test(size=(160, 50)) as pilot:
+        # Atualiza status com 1 timer rodando
+        app.update_status_dashboard({
+            "timers": [{"id": "t1", "label": "Chá", "left": 120, "paused": False}],
+            "alarms": []
+        })
+
+        # 1. Clica no botão de pausar/retomar
+        app.query_one("#btn-timer-toggle", Button).press()
+        await pilot.pause()
+        assert app._send_queue.qsize() == 1
+        msg = json.loads(await app._send_queue.get())
+        assert msg["action"] == "timer_pause"
+
+        # Atualiza para pausado
+        app.update_status_dashboard({
+            "timers": [{"id": "t1", "label": "Chá", "left": 120, "paused": True}],
+            "alarms": []
+        })
+
+        # Clica de novo no botão de pausar/retomar -> agora envia timer_resume
+        app.query_one("#btn-timer-toggle", Button).press()
+        await pilot.pause()
+        assert app._send_queue.qsize() == 1
+        msg = json.loads(await app._send_queue.get())
+        assert msg["action"] == "timer_resume"
+
+        # 2. Clica no botão de limpar
+        app.query_one("#btn-timer-clear", Button).press()
+        await pilot.pause()
+        assert app._send_queue.qsize() == 1
+        msg = json.loads(await app._send_queue.get())
+        assert msg["action"] == "timer_cancel"
+        assert msg["params"]["query"] == "todos"
+
 
 
 

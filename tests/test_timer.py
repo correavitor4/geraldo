@@ -524,3 +524,58 @@ class TestTimerManagerWaybarAndPersistence:
         assert pomo["state"] == "work_finished"
         assert pomo["cycle"] == 3
         assert pomo["left"] == 0
+
+
+class TestTimerManagerDirectControls:
+    def test_direct_id_pause_resume_and_cancel_timer(self, isolated_timer_manager):
+        tm = isolated_timer_manager
+        tm.add_timer(minutes=5, label="Chá")
+        timers = tm.list_timers()
+        assert len(timers) == 1
+        timer_id = timers[0]["id"]
+
+        # Pause by direct ID
+        msg_pause = tm.pause_timer(timer_id)
+        assert "pausado com sucesso" in msg_pause
+        assert tm._timers[timer_id]["paused"] is True
+
+        # Resume by direct ID
+        msg_resume = tm.resume_timer(timer_id)
+        assert "retomado" in msg_resume
+        assert tm._timers[timer_id]["paused"] is False
+
+        # Cancel by direct ID
+        msg_cancel = tm.cancel_timer(timer_id)
+        assert "cancelado" in msg_cancel
+        assert len(tm._timers) == 0
+
+    def test_cancel_all_timers(self, isolated_timer_manager):
+        tm = isolated_timer_manager
+        tm.add_timer(minutes=5, label="Timer 1")
+        tm.add_timer(minutes=10, label="Timer 2")
+        assert len(tm._timers) == 2
+
+        msg = tm.cancel_timer("todos")
+        assert "cancelado" in msg
+        assert len(tm._timers) == 0
+
+    def test_direct_id_and_all_cancel_alarm(self, isolated_timer_manager):
+        tm = isolated_timer_manager
+        tm.add_alarm(hour=8, minute=0, label="Acordar")
+        alarms = tm.list_alarms()
+        assert len(alarms) == 1
+        alarm_id = alarms[0]["id"]
+
+        # Cancel by direct ID
+        msg_cancel = tm.cancel_alarm(alarm_id)
+        assert "cancelado" in msg_cancel
+        assert len(tm._alarms) == 0
+
+        # Cancel all alarms
+        tm.add_alarm(hour=9, minute=0, label="A1")
+        tm.add_alarm(hour=10, minute=0, label="A2")
+        assert len(tm._alarms) == 2
+        msg_all = tm.cancel_alarm("todos")
+        assert "cancelado" in msg_all
+        assert len(tm._alarms) == 0
+

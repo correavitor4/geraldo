@@ -377,14 +377,16 @@ class IntentEngine:
                 slots["action"] = "start"
 
         elif intent == "pomodoro_control":
-            if any(w in norm for w in ["pausa longa", "descanso longo", "long break"]) and not any(w in norm for w in ["pomodoro", "foco"]):
-                if any(w in norm for w in ["iniciar", "inicie", "comece", "ativar", "entrar", "ir para", "vamos", "vai"]):
+            if any(w in norm for w in ["pausa longa", "descanso longo", "long break", "pausas longas", "descansos longos"]) and not any(w in norm for w in ["pomodoro", "foco"]):
+                if any(w in norm for w in ["iniciar", "inicie", "iniciem", "comece", "começar", "ativar", "entrar", "ir para", "vamos", "vai"]):
                     slots["action"] = "long_break"
                 elif not any(w in norm for w in ["parar", "status", "tempo"]):
                     slots["action"] = "long_break"
 
             if "action" not in slots:
-                if any(w in norm for w in ["proxim", "próxim", "avanc", "avanç", "pul", "fase", "proxima pausa", "próxima pausa", "iniciar pausa", "ir para pausa", "proximo ciclo", "próximo ciclo"]):
+                if any(w in norm for w in ["iniciar", "inicie", "iniciem", "comece", "começar", "comece o", "ativar"]) and ("pomodoro" in norm or "foco" in norm):
+                    slots["action"] = "start"
+                elif any(w in norm for w in ["proxim", "próxim", "avanc", "avanç", "pul", "fase", "proxima pausa", "próxima pausa", "ir para pausa", "proximo ciclo", "próximo ciclo"]):
                     slots["action"] = "advance"
                 elif any(w in norm for w in ["pausar", "pause", "congel"]):
                     slots["action"] = "pause"
@@ -394,7 +396,7 @@ class IntentEngine:
                     slots["action"] = "stop"
                 elif any(w in norm for w in ["quant", "tempo", "status", "como"]):
                     slots["action"] = "status"
-                elif "pausa" in norm and any(w in norm for w in ["hora", "comece", "inicie", "vai", "vamos"]):
+                elif "pausa" in norm and any(w in norm for w in ["hora", "comece", "inicie", "vai", "vamos"]) and not any(w in norm for w in ["pomodoro", "foco"]):
                     slots["action"] = "advance"
                 else:
                     slots["action"] = "start"
@@ -404,13 +406,13 @@ class IntentEngine:
             if not m_foco:
                 m_foco = re.search(r'foco\s*(?:de\s*)?' + num_pattern + r'\s*(?:minuto|minutos|min\b)?', norm)
 
-            m_pausa_longa = re.search(num_pattern + r'\s*(?:minuto|minutos|min\b)?\s*(?:de\s+)?(?:pausa\s+longa|descanso\s+longo|intervalo\s+longo)', norm)
+            m_pausa_longa = re.search(num_pattern + r'\s*(?:minuto|minutos|min\b)?\s*(?:de\s+)?(?:pausas?\s+longas?|descansos?\s+longos?|intervalos?\s+longos?)', norm)
             if not m_pausa_longa:
-                m_pausa_longa = re.search(r'(?:pausa\s+longa|descanso\s+longo|intervalo\s+longo)\s*(?:de\s*)?' + num_pattern + r'\s*(?:minuto|minutos|min\b)?', norm)
+                m_pausa_longa = re.search(r'(?:pausas?\s+longas?|descansos?\s+longos?|intervalos?\s+longos?)\s*(?:de\s*)?' + num_pattern + r'\s*(?:minuto|minutos|min\b)?', norm)
 
-            m_pausa = re.search(num_pattern + r'\s*(?:minuto|minutos|min\b)?\s*(?:de\s+)?(?:pausa|descanso|intervalo)(?!\s+long[oa])', norm)
+            m_pausa = re.search(num_pattern + r'\s*(?:minuto|minutos|min\b)?\s*(?:de\s+)?(?:pausas?\s*(?:curtas?)?|descansos?\s*(?:curtos?)?|intervalos?\s*(?:curtos?)?)(?!\s+long[oa]s?)', norm)
             if not m_pausa:
-                m_pausa = re.search(r'(?:pausa|descanso|intervalo)(?!\s+long[oa])\s*(?:de\s*)?' + num_pattern + r'\s*(?:minuto|minutos|min\b)?', norm)
+                m_pausa = re.search(r'(?:pausas?\s*(?:curtas?)?|descansos?\s*(?:curtos?)?|intervalos?\s*(?:curtos?)?)(?!\s+long[oa]s?)\s*(?:de\s*)?' + num_pattern + r'\s*(?:minuto|minutos|min\b)?', norm)
 
             if m_foco:
                 slots["work_minutes"] = self._parse_number(m_foco.group(1))
@@ -435,9 +437,11 @@ class IntentEngine:
                     if len(matches) > 2 and "long_break_minutes" not in slots:
                         slots["long_break_minutes"] = self._parse_number(matches[2].group(1))
 
-            m_ciclos_longa = re.search(r'(?:a\s+cada|depois\s+de|apos|após)\s*(\d+)\s*ciclos?', norm)
+            m_ciclos_longa = re.search(r'(\d+|' + num_pattern + r')\s*ciclos?(?:\s*(?:antes|para|de|ate|até)?\s*(?:das?\s*)?pausas?\s*longas?)', norm)
+            if not m_ciclos_longa:
+                m_ciclos_longa = re.search(r'(?:a\s+cada|depois\s+de|apos|após)\s*(\d+|' + num_pattern + r')\s*ciclos?', norm)
             if m_ciclos_longa:
-                slots["long_break_interval"] = int(m_ciclos_longa.group(1))
+                slots["long_break_interval"] = self._parse_number(m_ciclos_longa.group(1))
 
             m_ciclo = re.search(r'ciclo\s*(\d+)', norm)
             if m_ciclo:

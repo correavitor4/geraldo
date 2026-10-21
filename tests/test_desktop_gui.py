@@ -89,8 +89,10 @@ def test_html_all_critical_dom_elements():
         "new-timer-form",
         "btn-add-timer-submit",
         "new-timer-label",
+        "new-timer-hours",
         "new-timer-min",
         "new-timer-sec",
+        "btn-cancel-all-timers",
         "btn-open-settings",
         "settings-modal",
         "btn-close-settings",
@@ -856,6 +858,95 @@ def test_desktop_gui_long_break_styling_and_state():
     assert "Pausa Longa" in js
     assert "pomoInputLongBreak" in js
     assert "pomoInputLongInterval" in js
+
+
+def test_desktop_gui_timer_configuration_and_presets():
+    """Valida presença de presets, campos de hora e classes de timer no HTML, CSS e JS."""
+    with open(HTML_PATH, "r", encoding="utf-8") as f:
+        html = f.read()
+    with open(CSS_PATH, "r", encoding="utf-8") as f:
+        css = f.read()
+    with open(JS_PATH, "r", encoding="utf-8") as f:
+        js = f.read()
+
+    # HTML
+    assert 'class="preset-chip timer-preset' in html
+    assert 'id="new-timer-hours"' in html
+    assert 'id="btn-cancel-all-timers"' in html
+
+    # CSS
+    assert ".btn-timer-action" in css
+    assert ".timer-item-right" in css
+    assert ".timer-countdown.paused" in css
+    assert ".btn-link.danger" in css
+
+    # JS
+    assert "timerPresetChips" in js
+    assert "btn-timer-toggle" in js
+    assert "btn-timer-cancel" in js
+    assert "timer_pause" in js
+    assert "timer_resume" in js
+    assert "newTimerHours" in js
+
+
+@pytest.mark.anyio
+async def test_desktop_gui_timer_ipc_integration(free_tcp_port):
+    """Valida fluxo de criação, pausa, retomada e cancelamento de timers via IPC."""
+    port = free_tcp_port
+    server = GeraldoIPCServer(host=TEST_GUI_IPC_HOST, port=port)
+    server.start()
+
+    async def recv_resp(ws, req_id):
+        while True:
+            raw = await asyncio.wait_for(ws.recv(), timeout=2.0)
+            msg = json.loads(raw)
+            if msg.get("type") == "response" and msg.get("id") == req_id:
+                return msg
+
+    try:
+        async with connect(f"ws://{TEST_GUI_IPC_HOST}:{port}") as ws:
+            # Consome handshake
+            await asyncio.wait_for(ws.recv(), timeout=2.0)
+
+            # 1. Adicionar timer
+            await ws.send(json.dumps({
+                "id": "t-add-1",
+                "action": "timer_add",
+                "params": {"hours": 0, "minutes": 10, "seconds": 30, "label": "Forno"}
+            }))
+            resp = await recv_resp(ws, "t-add-1")
+            assert resp.get("status") == "ok"
+            assert "Forno" in resp["data"]["reply"]
+
+            # 2. Pausar timer
+            await ws.send(json.dumps({
+                "id": "t-pause-1",
+                "action": "timer_pause",
+                "params": {"query": "forno"}
+            }))
+            resp = await recv_resp(ws, "t-pause-1")
+            assert resp.get("status") == "ok"
+
+            # 3. Retomar timer
+            await ws.send(json.dumps({
+                "id": "t-resume-1",
+                "action": "timer_resume",
+                "params": {"query": "forno"}
+            }))
+            resp = await recv_resp(ws, "t-resume-1")
+            assert resp.get("status") == "ok"
+
+            # 4. Cancelar timer
+            await ws.send(json.dumps({
+                "id": "t-cancel-1",
+                "action": "timer_cancel",
+                "params": {"query": "forno"}
+            }))
+            resp = await recv_resp(ws, "t-cancel-1")
+            assert resp.get("status") == "ok"
+    finally:
+        server.stop()
+
 
 
 

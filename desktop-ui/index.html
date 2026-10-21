@@ -162,17 +162,38 @@
                 <div class="dashboard-card timers-card">
                     <div class="card-header">
                         <h3>⏱️ Timers Ativos</h3>
-                        <button id="btn-toggle-new-timer" class="btn-link" title="Novo timer">+ Adicionar</button>
+                        <div class="card-header-actions">
+                            <button id="btn-toggle-new-timer" class="btn-link" title="Novo timer">+ Adicionar</button>
+                            <button id="btn-cancel-all-timers" class="btn-link danger hidden" title="Cancelar todos os timers">Limpar</button>
+                        </div>
                     </div>
 
                     <!-- FORMULÁRIO COLAPSÁVEL DE NOVO TIMER -->
                     <div id="new-timer-form" class="new-timer-form hidden">
-                        <input type="text" id="new-timer-label" placeholder="Rótulo (ex: Café)" value="Timer">
-                        <div class="timer-inputs-row">
-                            <input type="number" id="new-timer-min" placeholder="Min" min="0" max="180" value="5">
-                            <input type="number" id="new-timer-sec" placeholder="Seg" min="0" max="59" value="0">
-                            <button id="btn-add-timer-submit" class="btn-action primary">Criar</button>
+                        <div class="plan-presets-row" id="timer-presets-row">
+                            <button type="button" class="preset-chip timer-preset" data-h="0" data-m="1" data-s="0">1 min</button>
+                            <button type="button" class="preset-chip timer-preset active" data-h="0" data-m="5" data-s="0">5 min</button>
+                            <button type="button" class="preset-chip timer-preset" data-h="0" data-m="10" data-s="0">10 min</button>
+                            <button type="button" class="preset-chip timer-preset" data-h="0" data-m="15" data-s="0">15 min</button>
+                            <button type="button" class="preset-chip timer-preset" data-h="0" data-m="25" data-s="0">25 min</button>
+                            <button type="button" class="preset-chip timer-preset" data-h="1" data-m="0" data-s="0">1h</button>
                         </div>
+                        <input type="text" id="new-timer-label" placeholder="Rótulo (ex: Café, Forno, Reunião)" value="Timer">
+                        <div class="timer-inputs-row">
+                            <div class="input-group">
+                                <label for="new-timer-hours">Horas</label>
+                                <input type="number" id="new-timer-hours" placeholder="0" min="0" max="24" value="0">
+                            </div>
+                            <div class="input-group">
+                                <label for="new-timer-min">Minutos</label>
+                                <input type="number" id="new-timer-min" placeholder="5" min="0" max="180" value="5">
+                            </div>
+                            <div class="input-group">
+                                <label for="new-timer-sec">Segundos</label>
+                                <input type="number" id="new-timer-sec" placeholder="0" min="0" max="59" value="0">
+                            </div>
+                        </div>
+                        <button id="btn-add-timer-submit" class="btn-action primary" style="width: 100%; margin-top: 6px;">▶ Criar Timer</button>
                     </div>
 
                     <div id="timers-list" class="items-list">

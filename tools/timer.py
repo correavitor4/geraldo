@@ -595,6 +595,39 @@ class TimerManager:
             print(f"[Geraldo:Timer Error] Falha ao exportar status: {exc}")
 
     @classmethod
+    def list_timers(cls):
+        with cls._lock:
+            now = time.time()
+            res = []
+            for tid, item in cls._timers.items():
+                paused = item.get("paused", False)
+                if paused:
+                    left = max(0, int(item.get("remaining", 0)))
+                else:
+                    left = max(0, int(item.get("target", now) - now))
+                res.append({
+                    "id": tid,
+                    "label": str(item.get("label", "Timer")),
+                    "total": item.get("total", 0),
+                    "left": left,
+                    "paused": paused,
+                })
+            return res
+
+    @classmethod
+    def list_alarms(cls):
+        with cls._lock:
+            res = []
+            for aid, item in cls._alarms.items():
+                res.append({
+                    "id": aid,
+                    "label": str(item.get("label", "Alarme")),
+                    "time": item.get("time_str", "--:--"),
+                    "enabled": item.get("enabled", True),
+                })
+            return res
+
+    @classmethod
     def _play_sound_loop(cls, sound_file: str, stop_event: threading.Event, max_duration: float):
         start = time.time()
         while not stop_event.is_set() and (time.time() - start) < max_duration:
@@ -764,7 +797,8 @@ class TimerManager:
     @classmethod
     def pause_timer(cls, query: str = "") -> str:
         with cls._lock:
-            if not query or "todos" in query:
+            q = query.lower().strip()
+            if not q or "todos" in q:
                 paused_count = 0
                 now = time.time()
                 for tid, t in cls._timers.items():
@@ -778,7 +812,7 @@ class TimerManager:
                     return "Todos os timers foram pausados."
                 return "Nenhum timer ativo para pausar."
 
-            best_id = cls._find_best_match(query, cls._timers)
+            best_id = query if query in cls._timers else cls._find_best_match(query, cls._timers)
             if best_id:
                 t = cls._timers[best_id]
                 if not t.get("paused", False):
@@ -793,7 +827,8 @@ class TimerManager:
     @classmethod
     def resume_timer(cls, query: str = "") -> str:
         with cls._lock:
-            if not query or "todos" in query:
+            q = query.lower().strip()
+            if not q or "todos" in q:
                 resumed_count = 0
                 now = time.time()
                 for tid, t in cls._timers.items():
@@ -807,7 +842,7 @@ class TimerManager:
                     return "Todos os timers foram retomados."
                 return "Nenhum timer pausado para retomar."
 
-            best_id = cls._find_best_match(query, cls._timers)
+            best_id = query if query in cls._timers else cls._find_best_match(query, cls._timers)
             if best_id:
                 t = cls._timers[best_id]
                 if t.get("paused", False):
@@ -818,6 +853,40 @@ class TimerManager:
                     return f"Timer {t['label']} retomado."
                 return f"O timer {t['label']} já está rodando."
             return f"Não encontrei nenhum timer pausado semelhante a {query}."
+
+    @classmethod
+    def cancel_timer(cls, query: str = "") -> str:
+        with cls._lock:
+            if not query or query.lower().strip() in ("todos", "tudo", "timers"):
+                count = len(cls._timers)
+                cls._timers.clear()
+                cls._save_state()
+                cls._export_status_for_waybar()
+                return f"{count} timer(s) cancelado(s)." if count > 0 else "Você não tem nenhum timer ativo para cancelar."
+            if query in cls._timers:
+                label = cls._timers[query]["label"]
+                del cls._timers[query]
+                cls._save_state()
+                cls._export_status_for_waybar()
+                return f"Timer {label} cancelado."
+            return cls.cancel_item(query)
+
+    @classmethod
+    def cancel_alarm(cls, query: str = "") -> str:
+        with cls._lock:
+            if not query or query.lower().strip() in ("todos", "tudo", "alarmes"):
+                count = len(cls._alarms)
+                cls._alarms.clear()
+                cls._save_state()
+                cls._export_status_for_waybar()
+                return f"{count} alarme(s) cancelado(s)." if count > 0 else "Você não tem nenhum alarme ativo para cancelar."
+            if query in cls._alarms:
+                label = cls._alarms[query]["label"]
+                del cls._alarms[query]
+                cls._save_state()
+                cls._export_status_for_waybar()
+                return f"Alarme {label} cancelado."
+            return cls.cancel_item(query)
 
     @classmethod
     def add_alarm(cls, hour: int, minute: int, label: str = "Alarme") -> str:
@@ -844,6 +913,21 @@ class TimerManager:
                 if "alarme" in q:
                     return "Alarme silenciado."
                 return "Som silenciado."
+
+            # Cancelar por ID direto primeiro
+            if query in cls._timers:
+                label = cls._timers[query]["label"]
+                del cls._timers[query]
+                cls._save_state()
+                cls._export_status_for_waybar()
+                return f"Timer {label} cancelado."
+
+            if query in cls._alarms:
+                label = cls._alarms[query]["label"]
+                del cls._alarms[query]
+                cls._save_state()
+                cls._export_status_for_waybar()
+                return f"Alarme {label} cancelado."
 
             # Cancelar todos os alarmes especificamente
             if "alarme" in q and ("todo" in q or "tudo" in q):
