@@ -79,6 +79,8 @@ def test_html_all_critical_dom_elements():
         "pomo-plan-form",
         "pomo-input-work",
         "pomo-input-break",
+        "pomo-input-long-break",
+        "pomo-input-long-interval",
         "pomo-input-cycles",
         "btn-save-plan-pomo",
         "timers-list",
@@ -130,8 +132,12 @@ def test_html_pomodoro_planning_form():
     assert 'data-work="50"' in html
     assert 'id="pomo-input-work"' in html
     assert 'id="pomo-input-break"' in html
+    assert 'id="pomo-input-long-break"' in html
+    assert 'id="pomo-input-long-interval"' in html
     assert 'id="pomo-input-cycles"' in html
     assert 'id="btn-save-plan-pomo"' in html
+    assert 'data-long-break="15"' in html
+    assert 'data-long-interval="4"' in html
 
 
 def test_html_chips_suggestions():
@@ -597,7 +603,21 @@ async def test_desktop_gui_ipc_all_button_rpc_actions(monkeypatch):
             await ws.send(json.dumps({
                 "id": "btn-pomo-plan-1",
                 "action": "pomodoro",
-                "params": {"sub_action": "start", "work_minutes": 25, "break_minutes": 5, "cycle": 1}
+                "params": {
+                    "sub_action": "start",
+                    "work_minutes": 25,
+                    "break_minutes": 5,
+                    "long_break_minutes": 15,
+                    "long_break_interval": 4,
+                    "cycle": 1
+                }
+            }))
+
+            # 4.1 Pomodoro Acionamento Direto de Pausa Longa
+            await ws.send(json.dumps({
+                "id": "btn-pomo-long-break-1",
+                "action": "pomodoro",
+                "params": {"sub_action": "long_break", "long_break_minutes": 20}
             }))
 
             # 5. Botão Pomodoro Pausar (#btn-pomo-toggle em work)
@@ -822,6 +842,20 @@ async def test_desktop_gui_audio_device_selection_rpc(monkeypatch):
             assert resp["data"]["output_device"] is None
     finally:
         server.stop()
+
+
+def test_desktop_gui_long_break_styling_and_state():
+    """Valida presença de classes CSS e mapeamento JS para pausa longa."""
+    with open(CSS_PATH, "r", encoding="utf-8") as f:
+        css = f.read()
+    with open(JS_PATH, "r", encoding="utf-8") as f:
+        js = f.read()
+
+    assert ".badge-phase.long_break" in css
+    assert ".badge-phase.long_break_finished" in css
+    assert "Pausa Longa" in js
+    assert "pomoInputLongBreak" in js
+    assert "pomoInputLongInterval" in js
 
 
 

@@ -39,6 +39,8 @@ class GeraldoDesktopClient {
             pomoPlanForm: document.getElementById("pomo-plan-form"),
             pomoInputWork: document.getElementById("pomo-input-work"),
             pomoInputBreak: document.getElementById("pomo-input-break"),
+            pomoInputLongBreak: document.getElementById("pomo-input-long-break"),
+            pomoInputLongInterval: document.getElementById("pomo-input-long-interval"),
             pomoInputCycles: document.getElementById("pomo-input-cycles"),
             btnSavePlanPomo: document.getElementById("btn-save-plan-pomo"),
             // Timers & Alarms
@@ -376,7 +378,7 @@ class GeraldoDesktopClient {
             const pState = p.state || "idle";
             const isActive = p.active !== undefined 
                 ? Boolean(p.active) 
-                : ["work", "break", "paused", "work_finished", "break_finished"].includes(pState);
+                : ["work", "break", "long_break", "paused", "work_finished", "break_finished", "long_break_finished"].includes(pState);
             this.pomodoroState = pState;
 
             if (!isActive || pState === "idle") {
@@ -405,17 +407,20 @@ class GeraldoDesktopClient {
                 const timeStr = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 
                 if (this.dom.pomoCountdown) {
-                    this.dom.pomoCountdown.textContent = (p.state === "work_finished" || p.state === "break_finished") ? "00:00" : timeStr;
+                    this.dom.pomoCountdown.textContent = (p.state === "work_finished" || p.state === "break_finished" || p.state === "long_break_finished") ? "00:00" : timeStr;
                 }
-                if (this.dom.pomoCycleText) this.dom.pomoCycleText.textContent = `Ciclo ${p.cycle || 1} de 4`;
+                const maxCycle = p.long_break_interval || 4;
+                if (this.dom.pomoCycleText) this.dom.pomoCycleText.textContent = `Ciclo ${p.cycle || 1} de ${maxCycle}`;
 
                 const phaseLabels = {
                     work: "Foco",
                     break: "Pausa",
+                    long_break: "Pausa Longa",
                     idle: "Inativo",
                     paused: "Pausado",
                     work_finished: "Foco Concluído!",
-                    break_finished: "Pausa Concluída!"
+                    break_finished: "Pausa Concluída!",
+                    long_break_finished: "Pausa Longa Concluída!"
                 };
 
                 if (this.dom.pomoPhaseBadge) {
@@ -424,7 +429,7 @@ class GeraldoDesktopClient {
                 }
 
                 if (this.dom.btnPomoToggle) {
-                    if (p.state === "work" || p.state === "break") {
+                    if (p.state === "work" || p.state === "break" || p.state === "long_break") {
                         this.dom.btnPomoToggle.textContent = "⏸ Pausar";
                         this.dom.btnPomoToggle.className = "btn-action";
                     } else if (p.state === "paused") {
@@ -433,7 +438,7 @@ class GeraldoDesktopClient {
                     } else if (p.state === "work_finished") {
                         this.dom.btnPomoToggle.textContent = "▶ Iniciar Pausa";
                         this.dom.btnPomoToggle.className = "btn-action primary";
-                    } else if (p.state === "break_finished") {
+                    } else if (p.state === "break_finished" || p.state === "long_break_finished") {
                         this.dom.btnPomoToggle.textContent = "▶ Próximo Ciclo";
                         this.dom.btnPomoToggle.className = "btn-action primary";
                     } else {
@@ -579,8 +584,12 @@ class GeraldoDesktopClient {
                 chip.classList.add("active");
                 const work = chip.getAttribute("data-work");
                 const brk = chip.getAttribute("data-break");
+                const longBreak = chip.getAttribute("data-long-break");
+                const longInterval = chip.getAttribute("data-long-interval");
                 if (this.dom.pomoInputWork && work) this.dom.pomoInputWork.value = work;
                 if (this.dom.pomoInputBreak && brk) this.dom.pomoInputBreak.value = brk;
+                if (this.dom.pomoInputLongBreak && longBreak) this.dom.pomoInputLongBreak.value = longBreak;
+                if (this.dom.pomoInputLongInterval && longInterval) this.dom.pomoInputLongInterval.value = longInterval;
             });
         });
 
@@ -589,11 +598,15 @@ class GeraldoDesktopClient {
             this.dom.btnSavePlanPomo.addEventListener("click", () => {
                 const work = parseInt(this.dom.pomoInputWork?.value || "25", 10) || 25;
                 const brk = parseInt(this.dom.pomoInputBreak?.value || "5", 10) || 5;
+                const longBrk = parseInt(this.dom.pomoInputLongBreak?.value || "15", 10) || 15;
+                const longInterval = parseInt(this.dom.pomoInputLongInterval?.value || "4", 10) || 4;
                 const cycle = parseInt(this.dom.pomoInputCycles?.value || "1", 10) || 1;
                 this.sendAction("pomodoro", {
                     sub_action: "start",
                     work_minutes: work,
                     break_minutes: brk,
+                    long_break_minutes: longBrk,
+                    long_break_interval: longInterval,
                     cycle: cycle
                 });
                 if (this.dom.pomoPlanForm) this.dom.pomoPlanForm.classList.add("hidden");
@@ -603,20 +616,24 @@ class GeraldoDesktopClient {
         // Controles de Pomodoro
         if (this.dom.btnPomoToggle) {
             this.dom.btnPomoToggle.addEventListener("click", () => {
-                if (this.pomodoroState === "work" || this.pomodoroState === "break") {
+                if (this.pomodoroState === "work" || this.pomodoroState === "break" || this.pomodoroState === "long_break") {
                     this.sendAction("pomodoro", { sub_action: "pause" });
                 } else if (this.pomodoroState === "paused") {
                     this.sendAction("pomodoro", { sub_action: "resume" });
-                } else if (this.pomodoroState === "work_finished" || this.pomodoroState === "break_finished") {
+                } else if (this.pomodoroState === "work_finished" || this.pomodoroState === "break_finished" || this.pomodoroState === "long_break_finished") {
                     this.sendAction("pomodoro", { sub_action: "advance" });
                 } else {
                     const work = parseInt(this.dom.pomoInputWork?.value || "25", 10) || 25;
                     const brk = parseInt(this.dom.pomoInputBreak?.value || "5", 10) || 5;
+                    const longBrk = parseInt(this.dom.pomoInputLongBreak?.value || "15", 10) || 15;
+                    const longInterval = parseInt(this.dom.pomoInputLongInterval?.value || "4", 10) || 4;
                     const cycle = parseInt(this.dom.pomoInputCycles?.value || "1", 10) || 1;
                     this.sendAction("pomodoro", {
                         sub_action: "start",
                         work_minutes: work,
                         break_minutes: brk,
+                        long_break_minutes: longBrk,
+                        long_break_interval: longInterval,
                         cycle: cycle
                     });
                 }

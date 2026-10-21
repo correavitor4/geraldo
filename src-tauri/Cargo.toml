@@ -1,6 +1,6 @@
 [package]
 name = "geraldo-desktop"
-version = "0.2.5"
+version = "0.2.7"
 description = "Geraldo Desktop - Assistente de Voz Local"
 authors = ["Vitor Correa"]
 edition = "2021"

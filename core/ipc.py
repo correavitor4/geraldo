@@ -471,12 +471,18 @@ class GeraldoIPCServer:
         sub_act = params.get("sub_action") or params.get("action") or "toggle"
         work_m = params.get("work_minutes")
         break_m = params.get("break_minutes")
+        long_break_m = params.get("long_break_minutes")
+        long_interval = params.get("long_break_interval")
         cycle = params.get("cycle")
         kwargs = {}
         if work_m is not None:
             kwargs["work_minutes"] = work_m
         if break_m is not None:
             kwargs["break_minutes"] = break_m
+        if long_break_m is not None:
+            kwargs["long_break_minutes"] = long_break_m
+        if long_interval is not None:
+            kwargs["long_break_interval"] = long_interval
         if cycle is not None:
             kwargs["cycle"] = cycle
         msg = TimerManager.pomodoro_control(sub_act, **kwargs)

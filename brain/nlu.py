@@ -103,6 +103,7 @@ TRAINING_DATA = {
     ],
     "pomodoro_control": [
         "iniciar pomodoro", "inicie o pomodoro", "começar pomodoro", "comece o pomodoro", "inicie pomodoro de 25 minutos", "ativar pomodoro", "iniciar modo foco",
+        "iniciar pausa longa", "inicie a pausa longa", "pausa longa", "descanso longo", "iniciar descanso longo", "pausa longa de 15 minutos", "descanso longo de 20 minutos",
         "pausar pomodoro", "pause o pomodoro", "congele o pomodoro", "pausar foco", "pause o foco",
         "retomar pomodoro", "despause o pomodoro", "continue o pomodoro", "retomar foco",
         "próximo ciclo", "próxima pausa", "iniciar pausa", "ir para pausa", "pular fase", "avançar pomodoro", "próxima fase do pomodoro", "próximo pomodoro",
@@ -278,7 +279,7 @@ class IntentEngine:
             if re.search(r'\b(o\s+que\s+(?:eu\s+)?tenho\s+(?:agendado|marcado|para\s+hoje|para\s+amanhã|para\s+amanha|para\s+esta\s+semana|na\s+semana))\b', norm):
                 return "get_calendar"
 
-        if "pomodoro" in norm or "modo foco" in norm:
+        if "pomodoro" in norm or "modo foco" in norm or "pausa longa" in norm or "descanso longo" in norm:
             return "pomodoro_control"
         if norm in ["próximo ciclo", "proximo ciclo", "próxima pausa", "proxima pausa", "iniciar pausa", "ir para pausa", "próxima fase", "proxima fase"]:
             return "pomodoro_control"
@@ -376,37 +377,67 @@ class IntentEngine:
                 slots["action"] = "start"
 
         elif intent == "pomodoro_control":
-            if any(w in norm for w in ["proxim", "próxim", "avanc", "avanç", "pul", "fase", "proxima pausa", "próxima pausa", "iniciar pausa", "ir para pausa", "proximo ciclo", "próximo ciclo"]):
-                slots["action"] = "advance"
-            elif any(w in norm for w in ["pausar", "pause", "congel"]):
-                slots["action"] = "pause"
-            elif any(w in norm for w in ["retom", "despaus", "continu"]):
-                slots["action"] = "resume"
-            elif any(w in norm for w in ["par", "cancel", "desativ", "zer", "encerr"]):
-                slots["action"] = "stop"
-            elif any(w in norm for w in ["quant", "tempo", "status", "como"]):
-                slots["action"] = "status"
-            elif "pausa" in norm and any(w in norm for w in ["hora", "comece", "inicie", "vai", "vamos"]):
-                slots["action"] = "advance"
-            else:
-                slots["action"] = "start"
+            if any(w in norm for w in ["pausa longa", "descanso longo", "long break"]) and not any(w in norm for w in ["pomodoro", "foco"]):
+                if any(w in norm for w in ["iniciar", "inicie", "comece", "ativar", "entrar", "ir para", "vamos", "vai"]):
+                    slots["action"] = "long_break"
+                elif not any(w in norm for w in ["parar", "status", "tempo"]):
+                    slots["action"] = "long_break"
 
-            # Extração refinada de foco e pausa
+            if "action" not in slots:
+                if any(w in norm for w in ["proxim", "próxim", "avanc", "avanç", "pul", "fase", "proxima pausa", "próxima pausa", "iniciar pausa", "ir para pausa", "proximo ciclo", "próximo ciclo"]):
+                    slots["action"] = "advance"
+                elif any(w in norm for w in ["pausar", "pause", "congel"]):
+                    slots["action"] = "pause"
+                elif any(w in norm for w in ["retom", "despaus", "continu"]):
+                    slots["action"] = "resume"
+                elif any(w in norm for w in ["par", "cancel", "desativ", "zer", "encerr"]):
+                    slots["action"] = "stop"
+                elif any(w in norm for w in ["quant", "tempo", "status", "como"]):
+                    slots["action"] = "status"
+                elif "pausa" in norm and any(w in norm for w in ["hora", "comece", "inicie", "vai", "vamos"]):
+                    slots["action"] = "advance"
+                else:
+                    slots["action"] = "start"
+
+            # Extração refinada de foco, pausa curta e pausa longa
             m_foco = re.search(num_pattern + r'\s*(?:minuto|minutos|min\b)?\s*(?:de\s+)?foco', norm)
-            m_pausa = re.search(num_pattern + r'\s*(?:minuto|minutos|min\b)?\s*(?:de\s+)?(?:pausa|descanso|intervalo)', norm)
-            
+            if not m_foco:
+                m_foco = re.search(r'foco\s*(?:de\s*)?' + num_pattern + r'\s*(?:minuto|minutos|min\b)?', norm)
+
+            m_pausa_longa = re.search(num_pattern + r'\s*(?:minuto|minutos|min\b)?\s*(?:de\s+)?(?:pausa\s+longa|descanso\s+longo|intervalo\s+longo)', norm)
+            if not m_pausa_longa:
+                m_pausa_longa = re.search(r'(?:pausa\s+longa|descanso\s+longo|intervalo\s+longo)\s*(?:de\s*)?' + num_pattern + r'\s*(?:minuto|minutos|min\b)?', norm)
+
+            m_pausa = re.search(num_pattern + r'\s*(?:minuto|minutos|min\b)?\s*(?:de\s+)?(?:pausa|descanso|intervalo)(?!\s+long[oa])', norm)
+            if not m_pausa:
+                m_pausa = re.search(r'(?:pausa|descanso|intervalo)(?!\s+long[oa])\s*(?:de\s*)?' + num_pattern + r'\s*(?:minuto|minutos|min\b)?', norm)
+
             if m_foco:
                 slots["work_minutes"] = self._parse_number(m_foco.group(1))
+            if m_pausa_longa:
+                slots["long_break_minutes"] = self._parse_number(m_pausa_longa.group(1))
             if m_pausa:
                 slots["break_minutes"] = self._parse_number(m_pausa.group(1))
 
+            # Se for comando direto de pausa longa ("pausa longa de 15 minutos")
+            if slots.get("action") == "long_break" and "long_break_minutes" not in slots:
+                m_direct = re.search(num_pattern + r'\s*(?:minuto|minutos|min\b)?', norm)
+                if m_direct:
+                    slots["long_break_minutes"] = self._parse_number(m_direct.group(1))
+
             # Se não achou por palavras-chave específicas, busca ocorrências de minutos
-            if "work_minutes" not in slots:
+            if "work_minutes" not in slots and slots.get("action") == "start":
                 matches = list(re.finditer(num_pattern + r'\s*(?:minuto|minutos|min\b)', norm))
                 if matches:
                     slots["work_minutes"] = self._parse_number(matches[0].group(1))
                     if len(matches) > 1 and "break_minutes" not in slots:
                         slots["break_minutes"] = self._parse_number(matches[1].group(1))
+                    if len(matches) > 2 and "long_break_minutes" not in slots:
+                        slots["long_break_minutes"] = self._parse_number(matches[2].group(1))
+
+            m_ciclos_longa = re.search(r'(?:a\s+cada|depois\s+de|apos|após)\s*(\d+)\s*ciclos?', norm)
+            if m_ciclos_longa:
+                slots["long_break_interval"] = int(m_ciclos_longa.group(1))
 
             m_ciclo = re.search(r'ciclo\s*(\d+)', norm)
             if m_ciclo:

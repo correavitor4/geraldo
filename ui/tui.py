@@ -279,14 +279,14 @@ PomodoroPlanModal {
     min-width: 12;
 }
 
-#input-pomo-work, #input-pomo-break, #input-pomo-cycle {
+#input-pomo-work, #input-pomo-break, #input-pomo-long-break, #input-pomo-long-interval, #input-pomo-cycle {
     background: #1e293b;
     border: none;
     color: #f8fafc;
     margin-bottom: 1;
 }
 
-#input-pomo-work:focus, #input-pomo-break:focus, #input-pomo-cycle:focus {
+#input-pomo-work:focus, #input-pomo-break:focus, #input-pomo-long-break:focus, #input-pomo-long-interval:focus, #input-pomo-cycle:focus {
     border: tall #f59e0b;
 }
 
@@ -517,16 +517,25 @@ class OllamaConfigModal(ModalScreen):
 class PomodoroPlanModal(ModalScreen):
     """Diálogo modal para planejar e configurar o ciclo Pomodoro."""
 
-    def __init__(self, current_work: int = 25, current_break: int = 5, current_cycle: int = 1) -> None:
+    def __init__(
+        self,
+        current_work: int = 25,
+        current_break: int = 5,
+        current_long_break: int = 15,
+        current_long_interval: int = 4,
+        current_cycle: int = 1,
+    ) -> None:
         super().__init__()
         self.current_work = current_work
         self.current_break = current_break
+        self.current_long_break = current_long_break
+        self.current_long_interval = current_long_interval
         self.current_cycle = current_cycle
 
     def compose(self) -> ComposeResult:
         with Vertical(id="pomo-plan-dialog"):
             yield Label("🍅 PLANEJAR CICLO POMODORO", id="pomo-plan-title")
-            yield Label("Defina a duração do foco, da pausa e o ciclo inicial:", classes="form-hint")
+            yield Label("Defina a duração do foco, pausas e ciclo:", classes="form-hint")
 
             with Horizontal(id="pomo-presets-bar"):
                 yield Button("25/5 min", id="btn-preset-25", variant="default")
@@ -538,6 +547,12 @@ class PomodoroPlanModal(ModalScreen):
 
             yield Label("Duração da Pausa Curta (minutos):", classes="form-label")
             yield Input(value=str(self.current_break), placeholder="Ex: 5", id="input-pomo-break")
+
+            yield Label("Duração da Pausa Longa (minutos):", classes="form-label")
+            yield Input(value=str(self.current_long_break), placeholder="Ex: 15", id="input-pomo-long-break")
+
+            yield Label("Intervalo da Pausa Longa (a cada X ciclos):", classes="form-label")
+            yield Input(value=str(self.current_long_interval), placeholder="Ex: 4", id="input-pomo-long-interval")
 
             yield Label("Ciclo Inicial:", classes="form-label")
             yield Input(value=str(self.current_cycle), placeholder="Ex: 1", id="input-pomo-cycle")
@@ -553,12 +568,18 @@ class PomodoroPlanModal(ModalScreen):
         elif button_id == "btn-preset-25":
             self.query_one("#input-pomo-work", Input).value = "25"
             self.query_one("#input-pomo-break", Input).value = "5"
+            self.query_one("#input-pomo-long-break", Input).value = "15"
+            self.query_one("#input-pomo-long-interval", Input).value = "4"
         elif button_id == "btn-preset-50":
             self.query_one("#input-pomo-work", Input).value = "50"
             self.query_one("#input-pomo-break", Input).value = "10"
+            self.query_one("#input-pomo-long-break", Input).value = "30"
+            self.query_one("#input-pomo-long-interval", Input).value = "4"
         elif button_id == "btn-preset-15":
             self.query_one("#input-pomo-work", Input).value = "15"
             self.query_one("#input-pomo-break", Input).value = "3"
+            self.query_one("#input-pomo-long-break", Input).value = "10"
+            self.query_one("#input-pomo-long-interval", Input).value = "3"
         elif button_id == "btn-pomo-start-plan":
             try:
                 work_val = int(self.query_one("#input-pomo-work", Input).value.strip() or "25")
@@ -569,12 +590,20 @@ class PomodoroPlanModal(ModalScreen):
             except ValueError:
                 break_val = 5
             try:
+                long_break_val = int(self.query_one("#input-pomo-long-break", Input).value.strip() or "15")
+            except ValueError:
+                long_break_val = 15
+            try:
+                long_interval_val = int(self.query_one("#input-pomo-long-interval", Input).value.strip() or "4")
+            except ValueError:
+                long_interval_val = 4
+            try:
                 cycle_val = int(self.query_one("#input-pomo-cycle", Input).value.strip() or "1")
             except ValueError:
                 cycle_val = 1
 
             if hasattr(self.app, "start_planned_pomodoro"):
-                self.app.start_planned_pomodoro(work_val, break_val, cycle_val)
+                self.app.start_planned_pomodoro(work_val, break_val, long_break_val, long_interval_val, cycle_val)
             self.dismiss(True)
 
 
@@ -919,7 +948,7 @@ class GeraldoTUI(App):
         pomo = data.get("pomodoro", {})
         if pomo is not None and pomo:
             p_state = pomo.get("state", "idle")
-            is_active = pomo.get("active", p_state in ("work", "break", "paused", "work_finished", "break_finished"))
+            is_active = pomo.get("active", p_state in ("work", "break", "long_break", "paused", "work_finished", "break_finished", "long_break_finished"))
             p_cycle = pomo.get("cycle", 1)
             p_left = pomo.get("left", 0)
             self._pomodoro_state = p_state
@@ -946,12 +975,14 @@ class GeraldoTUI(App):
                 state_pt = {
                     "work": "Foco",
                     "break": "Pausa",
+                    "long_break": "Pausa Longa",
                     "paused": "Pausado",
                     "work_finished": "Foco Concluído!",
                     "break_finished": "Pausa Concluída!",
+                    "long_break_finished": "Pausa Longa Concluída!",
                 }.get(p_state, p_state)
 
-                if p_state in ("work_finished", "break_finished"):
+                if p_state in ("work_finished", "break_finished", "long_break_finished"):
                     pomo_label.update(
                         f"[bold yellow]🔔 {state_pt} (Ciclo {p_cycle})[/bold yellow]"
                     )
@@ -960,7 +991,7 @@ class GeraldoTUI(App):
                         f"{state_pt} (Ciclo {p_cycle}) — [bold]{m:02d}:{s:02d}[/bold]"
                     )
 
-                if p_state in ("work", "break"):
+                if p_state in ("work", "break", "long_break"):
                     btn_toggle.label = "⏸ Pausar"
                     btn_toggle.variant = "warning"
                 elif p_state == "paused":
@@ -969,7 +1000,7 @@ class GeraldoTUI(App):
                 elif p_state == "work_finished":
                     btn_toggle.label = "▶ Iniciar Pausa"
                     btn_toggle.variant = "success"
-                elif p_state == "break_finished":
+                elif p_state in ("break_finished", "long_break_finished"):
                     btn_toggle.label = "▶ Próximo Ciclo"
                     btn_toggle.variant = "success"
                 else:
@@ -1068,20 +1099,24 @@ class GeraldoTUI(App):
         self.send_action("cancel")
 
     def action_toggle_pomodoro(self) -> None:
-        if self._pomodoro_state in ("work", "break"):
+        if self._pomodoro_state in ("work", "break", "long_break"):
             self.send_action("pomodoro", {"sub_action": "pause"})
         elif self._pomodoro_state == "paused":
             self.send_action("pomodoro", {"sub_action": "resume"})
-        elif self._pomodoro_state in ("work_finished", "break_finished"):
+        elif self._pomodoro_state in ("work_finished", "break_finished", "long_break_finished"):
             self.send_action("pomodoro", {"sub_action": "advance"})
         else:
             w_m = getattr(self, "_pomo_planned_work", 25)
             b_m = getattr(self, "_pomo_planned_break", 5)
+            lb_m = getattr(self, "_pomo_planned_long_break", 15)
+            li = getattr(self, "_pomo_planned_long_interval", 4)
             c = getattr(self, "_pomo_planned_cycle", 1)
             self.send_action("pomodoro", {
                 "sub_action": "start",
                 "work_minutes": w_m,
                 "break_minutes": b_m,
+                "long_break_minutes": lb_m,
+                "long_break_interval": li,
                 "cycle": c,
             })
 
@@ -1089,18 +1124,39 @@ class GeraldoTUI(App):
         """Abre o diálogo modal para planejar e customizar o Pomodoro."""
         w_m = getattr(self, "_pomo_planned_work", 25)
         b_m = getattr(self, "_pomo_planned_break", 5)
+        lb_m = getattr(self, "_pomo_planned_long_break", 15)
+        li = getattr(self, "_pomo_planned_long_interval", 4)
         c = getattr(self, "_pomo_planned_cycle", 1)
-        self.push_screen(PomodoroPlanModal(current_work=w_m, current_break=b_m, current_cycle=c))
+        self.push_screen(
+            PomodoroPlanModal(
+                current_work=w_m,
+                current_break=b_m,
+                current_long_break=lb_m,
+                current_long_interval=li,
+                current_cycle=c,
+            )
+        )
 
-    def start_planned_pomodoro(self, work_minutes: int, break_minutes: int, cycle: int = 1) -> None:
+    def start_planned_pomodoro(
+        self,
+        work_minutes: int,
+        break_minutes: int,
+        long_break_minutes: int = 15,
+        long_break_interval: int = 4,
+        cycle: int = 1,
+    ) -> None:
         """Inicia um Pomodoro com os parâmetros planejados."""
         self._pomo_planned_work = work_minutes
         self._pomo_planned_break = break_minutes
+        self._pomo_planned_long_break = long_break_minutes
+        self._pomo_planned_long_interval = long_break_interval
         self._pomo_planned_cycle = cycle
         self.send_action("pomodoro", {
             "sub_action": "start",
             "work_minutes": work_minutes,
             "break_minutes": break_minutes,
+            "long_break_minutes": long_break_minutes,
+            "long_break_interval": long_break_interval,
             "cycle": cycle,
         })
 

@@ -115,9 +115,9 @@
                     <!-- FORMULÁRIO COLAPSÁVEL DE PLANEJAMENTO DO POMODORO -->
                     <div id="pomo-plan-form" class="pomo-plan-form hidden">
                         <div class="plan-presets-row">
-                            <button type="button" class="preset-chip active" data-work="25" data-break="5">25 / 5 min</button>
-                            <button type="button" class="preset-chip" data-work="50" data-break="10">50 / 10 min</button>
-                            <button type="button" class="preset-chip" data-work="15" data-break="3">15 / 3 min</button>
+                            <button type="button" class="preset-chip active" data-work="25" data-break="5" data-long-break="15" data-long-interval="4">25/5 min (L15m)</button>
+                            <button type="button" class="preset-chip" data-work="50" data-break="10" data-long-break="20" data-long-interval="4">50/10 min (L20m)</button>
+                            <button type="button" class="preset-chip" data-work="15" data-break="3" data-long-break="10" data-long-interval="3">15/3 min (L10m)</button>
                         </div>
                         <div class="timer-inputs-row">
                             <div class="input-group">
@@ -125,8 +125,16 @@
                                 <input type="number" id="pomo-input-work" min="1" max="180" value="25">
                             </div>
                             <div class="input-group">
-                                <label for="pomo-input-break">Pausa (min)</label>
+                                <label for="pomo-input-break">Pausa Curta</label>
                                 <input type="number" id="pomo-input-break" min="1" max="60" value="5">
+                            </div>
+                            <div class="input-group">
+                                <label for="pomo-input-long-break">Pausa Longa</label>
+                                <input type="number" id="pomo-input-long-break" min="1" max="120" value="15">
+                            </div>
+                            <div class="input-group">
+                                <label for="pomo-input-long-interval">Ciclos p/ L</label>
+                                <input type="number" id="pomo-input-long-interval" min="1" max="12" value="4">
                             </div>
                             <div class="input-group">
                                 <label for="pomo-input-cycles">Ciclo</label>

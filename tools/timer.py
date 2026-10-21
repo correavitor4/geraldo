@@ -27,6 +27,8 @@ class TimerManager:
         "cycle": 1,
         "work_duration": 25 * 60,
         "break_duration": 5 * 60,
+        "long_break_duration": 15 * 60,
+        "long_break_interval": 4,
         "target": 0.0,
         "remaining": 25 * 60,
         "label": "Foco"
@@ -65,6 +67,8 @@ class TimerManager:
                 "cycle": 1,
                 "work_duration": 25 * 60,
                 "break_duration": 5 * 60,
+                "long_break_duration": 15 * 60,
+                "long_break_interval": 4,
                 "target": 0.0,
                 "remaining": 25 * 60,
                 "label": "Foco"
@@ -104,16 +108,17 @@ class TimerManager:
                     p_data = data.get("pomodoro")
                     if isinstance(p_data, dict):
                         cls._pomodoro.update(p_data)
-                        if cls._pomodoro.get("state") in ("work", "break"):
+                        if cls._pomodoro.get("state") in ("work", "break", "long_break"):
                             rem = cls._pomodoro.get("remaining", 0) - elapsed_offline
                             if rem > 0:
                                 cls._pomodoro["target"] = now + rem
                                 cls._pomodoro["remaining"] = int(rem)
                             else:
-                                cls._pomodoro["state"] = "work_finished" if cls._pomodoro.get("state") == "work" else "break_finished"
+                                curr = cls._pomodoro.get("state")
+                                cls._pomodoro["state"] = f"{curr}_finished"
                                 cls._pomodoro["remaining"] = 0
                                 cls._pomodoro["target"] = 0.0
-                        elif cls._pomodoro.get("state") in ("work_finished", "break_finished"):
+                        elif cls._pomodoro.get("state") in ("work_finished", "break_finished", "long_break_finished"):
                             cls._pomodoro["remaining"] = 0
                             cls._pomodoro["target"] = 0.0
                 
@@ -370,6 +375,13 @@ class TimerManager:
                 cls._start_ringing_timer("pomodoro_break", f"Pausa Ciclo {cls._pomodoro.get('cycle', 1)}")
                 cls._save_state()
                 changed = True
+            elif p_state == "long_break" and now >= cls._pomodoro.get("target", now):
+                cls._pomodoro["state"] = "long_break_finished"
+                cls._pomodoro["remaining"] = 0
+                cls._pomodoro["target"] = 0.0
+                cls._start_ringing_timer("pomodoro_long_break", f"Pausa Longa Ciclo {cls._pomodoro.get('cycle', 1)}")
+                cls._save_state()
+                changed = True
 
             with cls._lock:
                 expired_timers = [
@@ -535,9 +547,9 @@ class TimerManager:
                     classes.append("ringing-alarm")
 
             p_state = cls._pomodoro.get("state", "idle")
-            is_active = p_state in ("work", "break", "paused", "work_finished", "break_finished")
+            is_active = p_state in ("work", "break", "long_break", "paused", "work_finished", "break_finished", "long_break_finished")
             p_cycle = cls._pomodoro.get("cycle", 1)
-            if p_state in ("work", "break"):
+            if p_state in ("work", "break", "long_break"):
                 p_left = max(0, int(cls._pomodoro.get("target", now) - now))
             elif p_state == "paused":
                 p_left = max(0, int(cls._pomodoro.get("remaining", 0)))
@@ -550,7 +562,9 @@ class TimerManager:
                 "cycle": p_cycle if is_active else 0,
                 "left": p_left,
                 "work_duration": cls._pomodoro.get("work_duration", 1500),
-                "break_duration": cls._pomodoro.get("break_duration", 300)
+                "break_duration": cls._pomodoro.get("break_duration", 300),
+                "long_break_duration": cls._pomodoro.get("long_break_duration", 900),
+                "long_break_interval": cls._pomodoro.get("long_break_interval", 4)
             }
 
             data = {
@@ -926,9 +940,7 @@ class TimerManager:
             act = action.lower().strip()
 
             if act in ("start", "iniciar", "comecar", "começar", "ativar"):
-                if cls._pomodoro.get("state") == "work_finished":
-                    return cls.pomodoro_control("advance")
-                if cls._pomodoro.get("state") == "break_finished":
+                if cls._pomodoro.get("state") in ("work_finished", "break_finished", "long_break_finished"):
                     return cls.pomodoro_control("advance")
 
                 if cls._pomodoro.get("state") == "paused":
@@ -936,7 +948,8 @@ class TimerManager:
                     cls._pomodoro["state"] = cls._pomodoro.get("paused_from", "work")
                     cls._save_state()
                     cls._export_status_for_waybar()
-                    fase = "foco" if cls._pomodoro["state"] == "work" else "pausa"
+                    st = cls._pomodoro["state"]
+                    fase = "foco" if st == "work" else ("pausa longa" if st == "long_break" else "pausa")
                     return f"Pomodoro retomado no modo {fase}."
 
                 work_min = kwargs.get("work_minutes")
@@ -947,6 +960,14 @@ class TimerManager:
                 if break_min and int(break_min) > 0:
                     cls._pomodoro["break_duration"] = int(break_min) * 60
 
+                long_break_min = kwargs.get("long_break_minutes")
+                if long_break_min and int(long_break_min) > 0:
+                    cls._pomodoro["long_break_duration"] = int(long_break_min) * 60
+
+                long_interval = kwargs.get("long_break_interval")
+                if long_interval and int(long_interval) > 0:
+                    cls._pomodoro["long_break_interval"] = int(long_interval)
+
                 cls._pomodoro["state"] = "work"
                 cls._pomodoro["cycle"] = kwargs.get("cycle", 1)
                 cls._pomodoro["target"] = now + cls._pomodoro["work_duration"]
@@ -956,9 +977,22 @@ class TimerManager:
                 dur_m = cls._pomodoro["work_duration"] // 60
                 return f"Pomodoro iniciado: {dur_m} minutos de foco para o ciclo {cls._pomodoro['cycle']}."
 
+            elif act in ("long_break", "pausa_longa", "descanso_longo", "pausa longa"):
+                cls.stop_all_ringing()
+                long_m = kwargs.get("long_break_minutes") or kwargs.get("duration_minutes") or kwargs.get("break_minutes")
+                if long_m and int(long_m) > 0:
+                    cls._pomodoro["long_break_duration"] = int(long_m) * 60
+                cls._pomodoro["state"] = "long_break"
+                cls._pomodoro["target"] = now + cls._pomodoro["long_break_duration"]
+                cls._pomodoro["remaining"] = cls._pomodoro["long_break_duration"]
+                cls._save_state()
+                cls._export_status_for_waybar()
+                m = cls._pomodoro["long_break_duration"] // 60
+                return f"Iniciando pausa longa de {m} minutos do ciclo {cls._pomodoro['cycle']}."
+
             elif act in ("pause", "pausar"):
                 state = cls._pomodoro.get("state", "idle")
-                if state in ("work", "break"):
+                if state in ("work", "break", "long_break"):
                     rem = max(0, int(cls._pomodoro["target"] - now))
                     cls._pomodoro["remaining"] = rem
                     cls._pomodoro["paused_from"] = state
@@ -976,34 +1010,46 @@ class TimerManager:
                     cls._pomodoro["state"] = cls._pomodoro.get("paused_from", "work")
                     cls._save_state()
                     cls._export_status_for_waybar()
-                    fase = "foco" if cls._pomodoro["state"] == "work" else "pausa"
+                    st = cls._pomodoro["state"]
+                    fase = "foco" if st == "work" else ("pausa longa" if st == "long_break" else "pausa")
                     return f"Pomodoro retomado no modo {fase}."
                 return "O pomodoro não está pausado."
 
             elif act in ("toggle", "alternar"):
                 st = cls._pomodoro.get("state", "idle")
-                if st in ("work_finished", "break_finished"):
+                if st in ("work_finished", "break_finished", "long_break_finished"):
                     return cls.pomodoro_control("advance")
-                if st in ("work", "break"):
+                if st in ("work", "break", "long_break"):
                     return cls.pomodoro_control("pause")
                 elif st == "paused":
                     return cls.pomodoro_control("resume")
                 else:
                     return cls.pomodoro_control("start")
 
-            elif act in ("advance", "next", "proximo", "proxima", "pausa", "fase", "pular"):
+            elif act in ("advance", "next", "proximo", "proxima", "pausa", "fase", "pular", "skip"):
                 cls.stop_all_ringing()
                 st = cls._pomodoro.get("state", "idle")
                 paused_from = cls._pomodoro.get("paused_from", "work")
 
                 if st in ("work", "work_finished") or (st == "paused" and paused_from == "work"):
-                    cls._pomodoro["state"] = "break"
-                    cls._pomodoro["target"] = now + cls._pomodoro["break_duration"]
-                    cls._pomodoro["remaining"] = cls._pomodoro["break_duration"]
-                    cls._save_state()
-                    cls._export_status_for_waybar()
-                    m = cls._pomodoro["break_duration"] // 60
-                    return f"Iniciando pausa curta de {m} minutos do ciclo {cls._pomodoro['cycle']}."
+                    cycle = cls._pomodoro.get("cycle", 1)
+                    interval = cls._pomodoro.get("long_break_interval", 4)
+                    if interval > 0 and cycle % interval == 0:
+                        cls._pomodoro["state"] = "long_break"
+                        cls._pomodoro["target"] = now + cls._pomodoro["long_break_duration"]
+                        cls._pomodoro["remaining"] = cls._pomodoro["long_break_duration"]
+                        cls._save_state()
+                        cls._export_status_for_waybar()
+                        m = cls._pomodoro["long_break_duration"] // 60
+                        return f"Parabéns! Você concluiu {cycle} ciclos de foco. Iniciando pausa longa de {m} minutos."
+                    else:
+                        cls._pomodoro["state"] = "break"
+                        cls._pomodoro["target"] = now + cls._pomodoro["break_duration"]
+                        cls._pomodoro["remaining"] = cls._pomodoro["break_duration"]
+                        cls._save_state()
+                        cls._export_status_for_waybar()
+                        m = cls._pomodoro["break_duration"] // 60
+                        return f"Iniciando pausa curta de {m} minutos do ciclo {cycle}."
                 else:
                     cls._pomodoro["cycle"] = cls._pomodoro.get("cycle", 1) + 1
                     cls._pomodoro["state"] = "work"
@@ -1033,13 +1079,19 @@ class TimerManager:
                 elif st == "break":
                     rem = max(0, int(cls._pomodoro["target"] - now))
                     return f"Você está na pausa do ciclo {cycle}. Restam {rem // 60} minutos e {rem % 60} segundos."
+                elif st == "long_break":
+                    rem = max(0, int(cls._pomodoro["target"] - now))
+                    return f"Você está na pausa longa do ciclo {cycle}. Restam {rem // 60} minutos e {rem % 60} segundos."
                 elif st == "work_finished":
                     return f"O ciclo {cycle} de foco terminou! Você pode iniciar a pausa quando quiser."
                 elif st == "break_finished":
                     return f"A pausa do ciclo {cycle} terminou! Pronto para o próximo ciclo de foco."
+                elif st == "long_break_finished":
+                    return f"A pausa longa do ciclo {cycle} terminou! Pronto para o próximo ciclo de foco."
                 elif st == "paused":
                     rem = cls._pomodoro.get("remaining", 0)
-                    fase = "foco" if cls._pomodoro.get("paused_from") == "work" else "pausa"
+                    p_from = cls._pomodoro.get("paused_from")
+                    fase = "foco" if p_from == "work" else ("pausa longa" if p_from == "long_break" else "pausa")
                     return f"O pomodoro está pausado no modo {fase}, restando {rem // 60} minutos e {rem % 60} segundos."
                 else:
                     return "O pomodoro está inativo. Diga 'Geraldo, iniciar pomodoro' para começar."

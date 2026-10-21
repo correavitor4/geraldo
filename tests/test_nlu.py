@@ -112,6 +112,9 @@ class TestNLUHardRules:
         ("coloque um alarme para as 7", "set_alarm"),
         ("defina um timer de 10 minutos", "set_timer"),
         ("iniciar pomodoro", "pomodoro_control"),
+        ("iniciar pausa longa", "pomodoro_control"),
+        ("pausa longa de 15 minutos", "pomodoro_control"),
+        ("descanso longo", "pomodoro_control"),
         ("próximo ciclo", "pomodoro_control"),
         ("toque uma música", "play_music"),
         ("pesquise na internet sobre cotação", "search_web"),
@@ -249,6 +252,28 @@ class TestNLUIntentsAndSlots:
         intent, conf, slots = shared_nlu_engine.predict("status do pomodoro")
         assert intent == "pomodoro_control"
         assert slots["action"] == "status"
+
+        intent, conf, slots = shared_nlu_engine.predict("iniciar pausa longa")
+        assert intent == "pomodoro_control"
+        assert slots["action"] == "long_break"
+
+        intent, conf, slots = shared_nlu_engine.predict("pausa longa de 20 minutos")
+        assert intent == "pomodoro_control"
+        assert slots["action"] == "long_break"
+        assert slots["long_break_minutes"] == 20
+
+        intent, conf, slots = shared_nlu_engine.predict("descanso longo de quinze minutos")
+        assert intent == "pomodoro_control"
+        assert slots["action"] == "long_break"
+        assert slots["long_break_minutes"] == 15
+
+        intent, conf, slots = shared_nlu_engine.predict("iniciar pomodoro com 25 minutos de foco, pausa de 5 e pausa longa de 15 minutos a cada 4 ciclos")
+        assert intent == "pomodoro_control"
+        assert slots["action"] == "start"
+        assert slots["work_minutes"] == 25
+        assert slots["break_minutes"] == 5
+        assert slots["long_break_minutes"] == 15
+        assert slots["long_break_interval"] == 4
 
     def test_hyprland_control_slots(self, shared_nlu_engine):
         intent, conf, slots = shared_nlu_engine.predict("mude para o workspace 4")

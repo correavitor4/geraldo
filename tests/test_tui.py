@@ -465,6 +465,20 @@ async def test_tui_pomodoro_all_state_translations():
         app.update_status_dashboard({"pomodoro": {"state": "break_finished", "left": 0, "cycle": 1}})
         assert "Pausa Concluída!" in str(lbl.render())
 
+        # long_break
+        app.update_status_dashboard({"pomodoro": {"state": "long_break", "left": 900, "cycle": 4}})
+        assert "Pausa Longa (Ciclo 4)" in str(lbl.render())
+        assert "15:00" in str(lbl.render())
+        btn = app.query_one("#btn-pomo-toggle", Button)
+        assert btn.label == "⏸ Pausar"
+        assert btn.variant == "warning"
+
+        # long_break_finished
+        app.update_status_dashboard({"pomodoro": {"state": "long_break_finished", "left": 0, "cycle": 4}})
+        assert "Pausa Longa Concluída!" in str(lbl.render())
+        assert btn.label == "▶ Próximo Ciclo"
+        assert btn.variant == "success"
+
         # paused
         app.update_status_dashboard({"pomodoro": {"state": "paused", "left": 300, "cycle": 2}})
         assert "Pausado" in str(lbl.render())
@@ -649,8 +663,12 @@ async def test_tui_pomodoro_plan_modal():
 
         inp_work = app.screen.query_one("#input-pomo-work", Input)
         inp_break = app.screen.query_one("#input-pomo-break", Input)
+        inp_long_break = app.screen.query_one("#input-pomo-long-break", Input)
+        inp_long_interval = app.screen.query_one("#input-pomo-long-interval", Input)
         assert inp_work.value == "50"
         assert inp_break.value == "10"
+        assert inp_long_break.value == "30"
+        assert inp_long_interval.value == "4"
 
         # Inicia ciclo planejado
         btn_start = app.screen.query_one("#btn-pomo-start-plan", Button)
@@ -667,6 +685,8 @@ async def test_tui_pomodoro_plan_modal():
         assert msg["params"]["sub_action"] == "start"
         assert msg["params"]["work_minutes"] == 50
         assert msg["params"]["break_minutes"] == 10
+        assert msg["params"]["long_break_minutes"] == 30
+        assert msg["params"]["long_break_interval"] == 4
         assert msg["params"]["cycle"] == 1
 
 
@@ -714,6 +734,16 @@ async def test_tui_pomodoro_toggle_transitions():
         assert msg_advance["action"] == "pomodoro"
         assert msg_advance["params"]["sub_action"] == "advance"
 
+        # 5. Transição para Pausa Longa Concluída -> Botão vira Próximo Ciclo, Clicar dispara 'advance'
+        app.update_status_dashboard({"pomodoro": {"state": "long_break_finished", "active": True, "left": 0, "cycle": 4}})
+        await pilot.pause()
+        assert "Próximo Ciclo" in str(btn.label)
+        btn.press()
+        await pilot.pause()
+        msg_advance2 = json.loads(await app._send_queue.get())
+        assert msg_advance2["action"] == "pomodoro"
+        assert msg_advance2["params"]["sub_action"] == "advance"
+
 
 @pytest.mark.anyio
 async def test_tui_pomodoro_plan_modal_presets_and_dismiss():
@@ -728,18 +758,24 @@ async def test_tui_pomodoro_plan_modal_presets_and_dismiss():
 
         inp_work = app.screen.query_one("#input-pomo-work", Input)
         inp_break = app.screen.query_one("#input-pomo-break", Input)
+        inp_long_break = app.screen.query_one("#input-pomo-long-break", Input)
+        inp_long_interval = app.screen.query_one("#input-pomo-long-interval", Input)
 
         # Clica no preset 15/3
         app.screen.query_one("#btn-preset-15", Button).press()
         await pilot.pause()
         assert inp_work.value == "15"
         assert inp_break.value == "3"
+        assert inp_long_break.value == "10"
+        assert inp_long_interval.value == "3"
 
         # Clica no preset 25/5
         app.screen.query_one("#btn-preset-25", Button).press()
         await pilot.pause()
         assert inp_work.value == "25"
         assert inp_break.value == "5"
+        assert inp_long_break.value == "15"
+        assert inp_long_interval.value == "4"
 
         # Clica no botão Fechar sem salvar
         app.screen.query_one("#btn-pomo-close-plan", Button).press()

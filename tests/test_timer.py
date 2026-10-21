@@ -265,6 +265,125 @@ class TestTimerManagerPomodoro:
         assert tm._pomodoro["state"] == "idle"
         assert tm._pomodoro["cycle"] == 1
 
+    def test_pomodoro_start_with_custom_long_break(self, isolated_timer_manager):
+        tm = isolated_timer_manager
+        msg = tm.pomodoro_control(
+            "start",
+            work_minutes=25,
+            break_minutes=5,
+            long_break_minutes=20,
+            long_break_interval=3,
+            cycle=1
+        )
+        assert "25 minutos de foco" in msg
+        assert tm._pomodoro["long_break_duration"] == 20 * 60
+        assert tm._pomodoro["long_break_interval"] == 3
+        assert tm._pomodoro["state"] == "work"
+
+    def test_pomodoro_automatic_long_break_on_interval(self, isolated_timer_manager):
+        tm = isolated_timer_manager
+        # Intervalo de 3 ciclos
+        tm.pomodoro_control("start", work_minutes=25, break_minutes=5, long_break_minutes=15, long_break_interval=3, cycle=1)
+        
+        # Ciclo 1: work -> pausa curta
+        msg1 = tm.pomodoro_control("advance")
+        assert "Iniciando pausa curta" in msg1
+        assert tm._pomodoro["state"] == "break"
+        
+        # Pausa curta -> ciclo 2 work
+        msg2 = tm.pomodoro_control("advance")
+        assert "ciclo 2 de foco" in msg2
+        assert tm._pomodoro["cycle"] == 2
+        assert tm._pomodoro["state"] == "work"
+
+        # Ciclo 2: work -> pausa curta
+        msg3 = tm.pomodoro_control("advance")
+        assert "Iniciando pausa curta" in msg3
+        assert tm._pomodoro["state"] == "break"
+
+        # Pausa curta -> ciclo 3 work
+        msg4 = tm.pomodoro_control("advance")
+        assert "ciclo 3 de foco" in msg4
+        assert tm._pomodoro["cycle"] == 3
+        assert tm._pomodoro["state"] == "work"
+
+        # Ciclo 3 (múltiplo do intervalo 3): work -> PAUSA LONGA!
+        msg5 = tm.pomodoro_control("advance")
+        assert "pausa longa" in msg5.lower()
+        assert tm._pomodoro["state"] == "long_break"
+        assert tm._pomodoro["long_break_duration"] == 15 * 60
+        assert tm._pomodoro["remaining"] == 15 * 60
+
+        # Pausa longa concluída -> ciclo 4 work
+        msg6 = tm.pomodoro_control("advance")
+        assert "ciclo 4 de foco" in msg6
+        assert tm._pomodoro["cycle"] == 4
+        assert tm._pomodoro["state"] == "work"
+
+    def test_pomodoro_direct_long_break_action(self, isolated_timer_manager):
+        tm = isolated_timer_manager
+        # Iniciar diretamente uma pausa longa
+        msg = tm.pomodoro_control("long_break", long_break_minutes=20)
+        assert "pausa longa de 20 minutos" in msg.lower()
+        assert tm._pomodoro["state"] == "long_break"
+        assert tm._pomodoro["long_break_duration"] == 20 * 60
+
+        # Status deve indicar pausa longa
+        msg_st = tm.pomodoro_control("status")
+        assert "pausa longa" in msg_st.lower()
+
+        # Também funciona com alias 'pausa_longa'
+        msg2 = tm.pomodoro_control("pausa_longa", long_break_minutes=10)
+        assert "pausa longa de 10 minutos" in msg2.lower()
+        assert tm._pomodoro["long_break_duration"] == 10 * 60
+
+    def test_pomodoro_long_break_pause_and_resume(self, isolated_timer_manager):
+        tm = isolated_timer_manager
+        tm.pomodoro_control("long_break", long_break_minutes=15)
+        assert tm._pomodoro["state"] == "long_break"
+
+        msg_pause = tm.pomodoro_control("pause")
+        assert "pausado" in msg_pause.lower()
+        assert tm._pomodoro["state"] == "paused"
+        assert tm._pomodoro["paused_from"] == "long_break"
+
+        msg_resume = tm.pomodoro_control("resume")
+        assert "retomado" in msg_resume.lower()
+        assert "pausa longa" in msg_resume.lower()
+        assert tm._pomodoro["state"] == "long_break"
+
+    def test_pomodoro_long_break_finished_and_skip(self, isolated_timer_manager):
+        tm = isolated_timer_manager
+        tm._pomodoro["state"] = "long_break_finished"
+        tm._pomodoro["cycle"] = 4
+        msg = tm.pomodoro_control("status")
+        assert "pausa longa" in msg.lower()
+        assert "terminou" in msg.lower()
+
+        # Avançar de long_break_finished deve iniciar o ciclo seguinte de foco
+        msg_adv = tm.pomodoro_control("advance")
+        assert "ciclo 5 de foco" in msg_adv
+        assert tm._pomodoro["state"] == "work"
+        assert tm._pomodoro["cycle"] == 5
+
+        # Pular durante pausa longa
+        tm.pomodoro_control("long_break", long_break_minutes=15)
+        msg_skip = tm.pomodoro_control("skip")
+        assert "ciclo 6 de foco" in msg_skip.lower()
+        assert tm._pomodoro["state"] == "work"
+        assert tm._pomodoro["cycle"] == 6
+
+    def test_pomodoro_persistence_with_long_break(self, isolated_timer_manager):
+        tm = isolated_timer_manager
+        tm.pomodoro_control("start", work_minutes=25, break_minutes=5, long_break_minutes=25, long_break_interval=5)
+        tm._save_state()
+
+        # Carrega em novo manager simulando reinício
+        with open(tm._state_file, "r") as f:
+            data = json.load(f)
+        assert data["pomodoro"]["long_break_duration"] == 25 * 60
+        assert data["pomodoro"]["long_break_interval"] == 5
+
 class TestTimerManagerWaybarAndPersistence:
     def test_export_status_for_waybar_structure(self, isolated_timer_manager):
         tm = isolated_timer_manager
