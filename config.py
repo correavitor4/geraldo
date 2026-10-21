@@ -234,6 +234,8 @@ AUDIO_INPUT_DEVICE = _user_settings.get("audio_input_device", None)
 AUDIO_OUTPUT_DEVICE = _user_settings.get("audio_output_device", None)
 
 
+_AUDIO_UNSET = object()
+
 def get_audio_config() -> dict:
     from audio.device_utils import list_audio_devices, resolve_audio_device
     devices = list_audio_devices()
@@ -242,32 +244,39 @@ def get_audio_config() -> dict:
         "output_device": AUDIO_OUTPUT_DEVICE,
         "resolved_input_id": resolve_audio_device(AUDIO_INPUT_DEVICE, kind="input"),
         "resolved_output_id": resolve_audio_device(AUDIO_OUTPUT_DEVICE, kind="output"),
+        "devices": devices,
         "available_inputs": devices.get("inputs", []),
         "available_outputs": devices.get("outputs", []),
     }
 
 
-def update_audio_config(input_device=None, output_device=None, persist: bool = True) -> dict:
+def update_audio_config(input_device=_AUDIO_UNSET, output_device=_AUDIO_UNSET, persist: bool = True) -> dict:
     global AUDIO_INPUT_DEVICE, AUDIO_OUTPUT_DEVICE
-    if input_device is not None:
-        val_str = str(input_device).strip().lower()
-        if val_str in ("default", "none", "", "padrão"):
+    if input_device is not _AUDIO_UNSET:
+        if input_device is None:
             AUDIO_INPUT_DEVICE = None
         else:
-            try:
-                AUDIO_INPUT_DEVICE = int(input_device)
-            except (ValueError, TypeError):
-                AUDIO_INPUT_DEVICE = str(input_device).strip()
+            val_str = str(input_device).strip().lower()
+            if val_str in ("default", "none", "", "padrão"):
+                AUDIO_INPUT_DEVICE = None
+            else:
+                try:
+                    AUDIO_INPUT_DEVICE = int(input_device)
+                except (ValueError, TypeError):
+                    AUDIO_INPUT_DEVICE = str(input_device).strip()
 
-    if output_device is not None:
-        val_str = str(output_device).strip().lower()
-        if val_str in ("default", "none", "", "padrão"):
+    if output_device is not _AUDIO_UNSET:
+        if output_device is None:
             AUDIO_OUTPUT_DEVICE = None
         else:
-            try:
-                AUDIO_OUTPUT_DEVICE = int(output_device)
-            except (ValueError, TypeError):
-                AUDIO_OUTPUT_DEVICE = str(output_device).strip()
+            val_str = str(output_device).strip().lower()
+            if val_str in ("default", "none", "", "padrão"):
+                AUDIO_OUTPUT_DEVICE = None
+            else:
+                try:
+                    AUDIO_OUTPUT_DEVICE = int(output_device)
+                except (ValueError, TypeError):
+                    AUDIO_OUTPUT_DEVICE = str(output_device).strip()
 
     try:
         from audio.device_utils import resolve_audio_device

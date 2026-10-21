@@ -835,6 +835,52 @@ async def test_tui_audio_modal_buttons_test_refresh_close(monkeypatch):
         assert app._send_queue.empty()
 
 
+@pytest.mark.anyio
+async def test_tui_audio_card_and_quick_actions(monkeypatch):
+    """Testa card de dispositivos de áudio na barra lateral e os botões de ajuste e teste rápido."""
+    from ui.tui import AudioConfigModal
+    from audio.player import AudioPlayer
+
+    beep_played = []
+    monkeypatch.setattr(AudioPlayer, "play_beep", lambda device=None: beep_played.append(device))
+
+    app = GeraldoTUI(auto_connect=False)
+    async with app.run_test(size=(160, 50)) as pilot:
+        # Card existe
+        assert app.query_one("#card-audio-devices") is not None
+        assert "Padrão" in str(app.query_one("#audio-in-label", Label).render())
+        assert "Padrão" in str(app.query_one("#audio-out-label", Label).render())
+
+        # 1. Clica no botão de teste rápido
+        app.query_one("#btn-audio-quick-test", Button).press()
+        await pilot.pause()
+        assert len(beep_played) == 1
+
+        # 2. Clica no botão de ajustar áudio para abrir o modal
+        app.query_one("#btn-audio-open", Button).press()
+        await pilot.pause()
+        assert isinstance(app.screen, AudioConfigModal)
+
+        # Preenche novos dispositivos e salva
+        app.screen.query_one("#input-audio-mic", Input).value = "Microfone USB"
+        app.screen.query_one("#input-audio-out", Input).value = "Fone Bluetooth"
+        app.screen.query_one("#btn-audio-save", Button).press()
+        await pilot.pause()
+
+        # Modal fechado e card lateral atualizado
+        assert not isinstance(app.screen, AudioConfigModal)
+        assert "Microfone USB" in str(app.query_one("#audio-in-label", Label).render())
+        assert "Fone Bluetooth" in str(app.query_one("#audio-out-label", Label).render())
+
+        # Verifica ação IPC despachada
+        assert app._send_queue.qsize() == 1
+        msg = json.loads(await app._send_queue.get())
+        assert msg["action"] == "set_audio_config"
+        assert msg["params"]["input_device"] == "Microfone USB"
+        assert msg["params"]["output_device"] == "Fone Bluetooth"
+
+
+
 
 
 

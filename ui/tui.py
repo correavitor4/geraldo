@@ -145,6 +145,17 @@ Screen {
     height: 3;
 }
 
+#audio-quick-buttons {
+    height: auto;
+    margin-top: 1;
+}
+
+#audio-quick-buttons Button {
+    margin-right: 1;
+    min-width: 10;
+    height: 3;
+}
+
 #timers-box {
     min-height: 4;
 }
@@ -657,6 +668,14 @@ class GeraldoTUI(App):
                         yield Button("🌐 Abrir", id="btn-cal-open", variant="primary")
                         yield Button("🔑 Conectar", id="btn-cal-auth")
 
+                with Vertical(classes="side-card", id="card-audio-devices"):
+                    yield Label("🎙️ DISPOSITIVOS DE ÁUDIO", classes="card-title")
+                    yield Label("Mic: [cyan]Padrão[/cyan]", id="audio-in-label")
+                    yield Label("Saída: [cyan]Padrão[/cyan]", id="audio-out-label")
+                    with Horizontal(id="audio-quick-buttons"):
+                        yield Button("🎙️ Ajustar", id="btn-audio-open", variant="default")
+                        yield Button("🔔 Testar", id="btn-audio-quick-test", variant="default")
+
         with Horizontal(id="input-bar"):
             yield Input(
                 placeholder='Digite um comando e aperte [Enter] (ex: "timer de 5 minutos", "minha agenda")...',
@@ -770,11 +789,13 @@ class GeraldoTUI(App):
             if "audio" in data and isinstance(data["audio"], dict):
                 self._audio_input_device = data["audio"].get("input_device")
                 self._audio_output_device = data["audio"].get("output_device")
+                self.update_audio_dashboard()
             chat.write(f"[bold cyan]⚙️ Configuração atualizada:[/] Ollama em {self._ollama_host} ({self._ollama_model})\n")
 
         elif event_name == "audio_config_changed":
             self._audio_input_device = data.get("input_device")
             self._audio_output_device = data.get("output_device")
+            self.update_audio_dashboard()
             in_lbl = self._audio_input_device if self._audio_input_device is not None else "Padrão"
             out_lbl = self._audio_output_device if self._audio_output_device is not None else "Padrão"
             chat.write(f"[bold cyan]🎙️ Dispositivos de Áudio alterados:[/] Mic: {in_lbl} | Saída: {out_lbl}\n")
@@ -819,9 +840,11 @@ class GeraldoTUI(App):
             if "audio" in data and isinstance(data["audio"], dict):
                 self._audio_input_device = data["audio"].get("input_device")
                 self._audio_output_device = data["audio"].get("output_device")
+                self.update_audio_dashboard()
             elif "input_device" in data or "output_device" in data:
                 self._audio_input_device = data.get("input_device")
                 self._audio_output_device = data.get("output_device")
+                self.update_audio_dashboard()
             if req_id.startswith("check_calendar") and isinstance(data, dict):
                 try:
                     lbl = self.query_one("#cal-status-label", Label)
@@ -1019,6 +1042,12 @@ class GeraldoTUI(App):
             chat = self.query_one("#chat-log", RichLog)
             chat.write("[bold yellow]🔑 Solicitando autorização da conta Google Calendar...[/]")
 
+        elif button_id == "btn-audio-open":
+            self.action_open_audio_settings()
+
+        elif button_id == "btn-audio-quick-test":
+            self.run_worker(self._async_quick_beep_test(), exclusive=True)
+
     # ==========================================
     # AÇÕES DOS ATALHOS DE TECLADO
     # ==========================================
@@ -1144,6 +1173,7 @@ class GeraldoTUI(App):
         """Salva a configuração dos dispositivos de áudio e transmite via IPC."""
         self._audio_input_device = input_device
         self._audio_output_device = output_device
+        self.update_audio_dashboard()
 
         payload = {
             "input_device": input_device,
@@ -1155,6 +1185,28 @@ class GeraldoTUI(App):
         in_lbl = input_device if input_device is not None else "Padrão"
         out_lbl = output_device if output_device is not None else "Padrão"
         chat.write(f"[bold green]🎙️ Dispositivos de áudio salvos:[/] Mic: [cyan]{in_lbl}[/] | Saída: [cyan]{out_lbl}[/]\n")
+
+    def update_audio_dashboard(self) -> None:
+        """Atualiza os rótulos de dispositivos de áudio ativos na barra lateral da TUI."""
+        try:
+            in_lbl = self._audio_input_device if self._audio_input_device is not None else "Padrão"
+            out_lbl = self._audio_output_device if self._audio_output_device is not None else "Padrão"
+            self.query_one("#audio-in-label", Label).update(f"Mic: [cyan]{in_lbl}[/cyan]")
+            self.query_one("#audio-out-label", Label).update(f"Saída: [cyan]{out_lbl}[/cyan]")
+        except Exception:
+            pass
+
+    async def _async_quick_beep_test(self) -> None:
+        from audio.player import AudioPlayer
+        import asyncio
+        chat = self.query_one("#chat-log", RichLog)
+        out_lbl = self._audio_output_device if self._audio_output_device is not None else "Padrão"
+        chat.write(f"[bold yellow]🔔 Testando som de saída ({out_lbl})...[/]\n")
+        try:
+            await asyncio.to_thread(AudioPlayer.play_beep, device=self._audio_output_device)
+            chat.write("[bold green]✅ Teste de áudio concluído com sucesso![/]\n")
+        except Exception as e:
+            chat.write(f"[bold red]❌ Falha ao reproduzir áudio: {e}[/]\n")
 
 
 def run_tui(host: str = "127.0.0.1", port: int = 8765, token: Optional[str] = None) -> None:

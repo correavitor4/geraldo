@@ -89,6 +89,8 @@ class GeraldoDesktopClient {
             cfgAudioOutput: document.getElementById("cfg-audio-output"),
             btnRefreshAudio: document.getElementById("btn-refresh-audio"),
             btnTestAudioBeep: document.getElementById("btn-test-audio-beep"),
+            specsAudioInText: document.getElementById("specs-audio-in-text"),
+            specsAudioOutText: document.getElementById("specs-audio-out-text"),
             tuiPathStatusBadge: document.getElementById("tui-path-status-badge"),
             btnExportTuiPath: document.getElementById("btn-export-tui-path")
         };
@@ -129,6 +131,7 @@ class GeraldoDesktopClient {
                 this.updateConnectionStatus(true, "Conectado");
                 this.sendAction("get_config");
                 this.sendAction("check_calendar");
+                this.loadAudioDevices();
             };
 
             this.ws.onmessage = (event) => {
@@ -808,6 +811,20 @@ class GeraldoDesktopClient {
         if (this.dom.btnTestAudioBeep) {
             this.dom.btnTestAudioBeep.addEventListener("click", () => this.testAudioOutput());
         }
+        if (this.dom.cfgAudioInput) {
+            this.dom.cfgAudioInput.addEventListener("change", () => {
+                const opt = this.dom.cfgAudioInput.selectedOptions[0];
+                const lbl = (opt && opt.value) ? opt.textContent.replace(/^\[\d+\]\s*/, "") : "Padrão";
+                if (this.dom.specsAudioInText) this.dom.specsAudioInText.textContent = lbl;
+            });
+        }
+        if (this.dom.cfgAudioOutput) {
+            this.dom.cfgAudioOutput.addEventListener("change", () => {
+                const opt = this.dom.cfgAudioOutput.selectedOptions[0];
+                const lbl = (opt && opt.value) ? opt.textContent.replace(/^\[\d+\]\s*/, "") : "Padrão";
+                if (this.dom.specsAudioOutText) this.dom.specsAudioOutText.textContent = lbl;
+            });
+        }
 
         // Atalho TUI (Terminal)
         if (this.dom.btnExportTuiPath) {
@@ -1342,24 +1359,49 @@ class GeraldoDesktopClient {
         const curIn = (data.input_device !== undefined && data.input_device !== null) ? String(data.input_device) : "";
         const curOut = (data.output_device !== undefined && data.output_device !== null) ? String(data.output_device) : "";
 
-        if (inSelect && data.devices && Array.isArray(data.devices.inputs)) {
+        const inputs = (data.devices && Array.isArray(data.devices.inputs))
+            ? data.devices.inputs
+            : (Array.isArray(data.available_inputs) ? data.available_inputs : (Array.isArray(data.inputs) ? data.inputs : null));
+        const outputs = (data.devices && Array.isArray(data.devices.outputs))
+            ? data.devices.outputs
+            : (Array.isArray(data.available_outputs) ? data.available_outputs : (Array.isArray(data.outputs) ? data.outputs : null));
+
+        let activeInLabel = "Padrão";
+        let activeOutLabel = "Padrão";
+
+        if (inSelect && inputs) {
             let html = '<option value="">Padrão do Sistema</option>';
-            data.devices.inputs.forEach(dev => {
+            inputs.forEach(dev => {
                 const isSelected = (curIn !== "" && (String(dev.id) === curIn || dev.name.toLowerCase().includes(curIn.toLowerCase())));
+                if (isSelected) {
+                    activeInLabel = dev.name;
+                }
                 const api = dev.hostapi_name ? ` (${dev.hostapi_name})` : '';
                 html += `<option value="${dev.id}" ${isSelected ? 'selected' : ''}>[${dev.id}] ${this.escapeHtml(dev.name)}${api}</option>`;
             });
             inSelect.innerHTML = html;
         }
 
-        if (outSelect && data.devices && Array.isArray(data.devices.outputs)) {
+        if (outSelect && outputs) {
             let html = '<option value="">Padrão do Sistema</option>';
-            data.devices.outputs.forEach(dev => {
+            outputs.forEach(dev => {
                 const isSelected = (curOut !== "" && (String(dev.id) === curOut || dev.name.toLowerCase().includes(curOut.toLowerCase())));
+                if (isSelected) {
+                    activeOutLabel = dev.name;
+                }
                 const api = dev.hostapi_name ? ` (${dev.hostapi_name})` : '';
                 html += `<option value="${dev.id}" ${isSelected ? 'selected' : ''}>[${dev.id}] ${this.escapeHtml(dev.name)}${api}</option>`;
             });
             outSelect.innerHTML = html;
+        }
+
+        if (this.dom.specsAudioInText) {
+            this.dom.specsAudioInText.textContent = activeInLabel;
+            this.dom.specsAudioInText.title = `Microfone ativo: ${activeInLabel}`;
+        }
+        if (this.dom.specsAudioOutText) {
+            this.dom.specsAudioOutText.textContent = activeOutLabel;
+            this.dom.specsAudioOutText.title = `Saída de áudio ativa: ${activeOutLabel}`;
         }
     }
 

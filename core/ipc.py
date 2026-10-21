@@ -413,8 +413,9 @@ class GeraldoIPCServer:
 
         # Atualiza configurações de áudio se fornecidas
         if any(k in params for k in ("input_device", "audio_input_device", "output_device", "audio_output_device")):
-            in_dev = params.get("input_device") if "input_device" in params else params.get("audio_input_device")
-            out_dev = params.get("output_device") if "output_device" in params else params.get("audio_output_device")
+            unset_marker = getattr(config, "_AUDIO_UNSET", object())
+            in_dev = params.get("input_device", params.get("audio_input_device", unset_marker))
+            out_dev = params.get("output_device", params.get("audio_output_device", unset_marker))
             audio_up = config.update_audio_config(
                 input_device=in_dev,
                 output_device=out_dev,
@@ -435,8 +436,9 @@ class GeraldoIPCServer:
 
     def _handle_set_audio_config(self, params: dict) -> dict:
         import config
-        in_dev = params.get("input_device") if "input_device" in params else params.get("audio_input_device")
-        out_dev = params.get("output_device") if "output_device" in params else params.get("audio_output_device")
+        unset_marker = getattr(config, "_AUDIO_UNSET", object())
+        in_dev = params.get("input_device", params.get("audio_input_device", unset_marker))
+        out_dev = params.get("output_device", params.get("audio_output_device", unset_marker))
         persist = bool(params.get("persist", True))
         updated = config.update_audio_config(
             input_device=in_dev,

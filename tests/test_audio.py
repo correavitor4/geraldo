@@ -208,3 +208,46 @@ class TestSoundGenerators:
             assert wav.getsampwidth() == 2
             assert wav.getframerate() == 44100
             assert wav.getnframes() > 0
+
+
+class TestAudioConfig:
+    def test_get_audio_config_structure(self):
+        import config
+        cfg = config.get_audio_config()
+        assert isinstance(cfg, dict)
+        assert "input_device" in cfg
+        assert "output_device" in cfg
+        assert "devices" in cfg
+        assert "available_inputs" in cfg
+        assert "available_outputs" in cfg
+
+    def test_update_audio_config_set_and_reset(self, monkeypatch):
+        import config
+        saved = {}
+        monkeypatch.setattr(config, "save_settings", lambda d: saved.update(d))
+        monkeypatch.setattr("sounddevice.default", MagicMock())
+
+        # 1. Configura dispositivos específicos
+        res = config.update_audio_config(input_device="Fifine K420", output_device="Realtek Speakers", persist=True)
+        assert config.AUDIO_INPUT_DEVICE == "Fifine K420"
+        assert config.AUDIO_OUTPUT_DEVICE == "Realtek Speakers"
+        assert saved["audio_input_device"] == "Fifine K420"
+        assert saved["audio_output_device"] == "Realtek Speakers"
+
+        # 2. Configura por ID numérico
+        res = config.update_audio_config(input_device="3", output_device=1, persist=False)
+        assert config.AUDIO_INPUT_DEVICE == 3
+        assert config.AUDIO_OUTPUT_DEVICE == 1
+
+        # 3. Reseta explicitamente para None (padrão)
+        res = config.update_audio_config(input_device=None, output_device=None, persist=True)
+        assert config.AUDIO_INPUT_DEVICE is None
+        assert config.AUDIO_OUTPUT_DEVICE is None
+        assert saved["audio_input_device"] is None
+        assert saved["audio_output_device"] is None
+
+        # 4. Reseta passando "padrão" ou "default"
+        config.update_audio_config(input_device="padrão", output_device="default", persist=False)
+        assert config.AUDIO_INPUT_DEVICE is None
+        assert config.AUDIO_OUTPUT_DEVICE is None
+

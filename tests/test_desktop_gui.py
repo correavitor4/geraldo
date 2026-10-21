@@ -564,8 +564,11 @@ async def test_desktop_gui_ipc_all_button_rpc_actions(monkeypatch):
     """
     Simula e valida no servidor IPC todas as chamadas RPC disparadas por cada botão da Desktop GUI.
     """
-    from tools.calendar import CalendarTools
-    monkeypatch.setattr(CalendarTools, "authenticate", lambda: True)
+    monkeypatch.setattr("tools.calendar.CalendarTools.authenticate", classmethod(lambda cls: True))
+    monkeypatch.setattr("webbrowser.open", lambda *args, **kwargs: True)
+    import sounddevice as sd
+    monkeypatch.setattr(sd, "play", lambda *args, **kwargs: None)
+    monkeypatch.setattr(sd, "wait", lambda *args, **kwargs: None)
 
     server = GeraldoIPCServer(host=TEST_GUI_IPC_HOST, port=8796)
     server.set_prompt_handler(lambda t: f"Eco: {t}")
@@ -727,5 +730,98 @@ async def test_desktop_gui_ipc_all_button_rpc_actions(monkeypatch):
             assert not missing, f"Chamadas RPC pendentes ou sem resposta: {missing}"
     finally:
         server.stop()
+
+
+def test_html_audio_devices_selectors_and_specs_exist():
+    """Valida se os seletores de microfone/saída e os indicadores visuais existem no HTML."""
+    with open(HTML_PATH, "r", encoding="utf-8") as f:
+        html = f.read()
+
+    assert 'id="cfg-audio-input"' in html, "Seletor de microfone de entrada ausente no index.html"
+    assert 'id="cfg-audio-output"' in html, "Seletor de saída de som ausente no index.html"
+    assert 'id="btn-refresh-audio"' in html, "Botão de recarregar áudio ausente no index.html"
+    assert 'id="btn-test-audio-beep"' in html, "Botão de testar bipe de áudio ausente no index.html"
+    assert 'id="specs-audio-in-text"' in html, "Indicador de microfone ativo ausente no card de motor local"
+    assert 'id="specs-audio-out-text"' in html, "Indicador de saída ativa ausente no card de motor local"
+
+
+@pytest.mark.anyio
+async def test_desktop_gui_audio_device_selection_rpc(monkeypatch):
+    """Valida fluxo completo RPC de obtenção, configuração e teste de dispositivos de áudio."""
+    import sounddevice as sd
+    monkeypatch.setattr(sd, "play", lambda *args, **kwargs: None)
+    monkeypatch.setattr(sd, "wait", lambda *args, **kwargs: None)
+
+    server = GeraldoIPCServer(host=TEST_GUI_IPC_HOST, port=8797)
+    server.start()
+    uri = f"ws://{TEST_GUI_IPC_HOST}:8797"
+
+    async def recv_response(ws, req_id):
+        while True:
+            raw = await asyncio.wait_for(ws.recv(), timeout=2.0)
+            msg = json.loads(raw)
+            if msg.get("type") == "response" and msg.get("id") == req_id:
+                return msg
+
+    try:
+        async with connect(uri) as ws:
+            # Consome handshake
+            await asyncio.wait_for(ws.recv(), timeout=2.0)
+
+            # 1. Consulta configuração e lista de dispositivos
+            await ws.send(json.dumps({
+                "id": "get-audio-test-1",
+                "action": "get_audio_config",
+                "params": {}
+            }))
+            resp = await recv_response(ws, "get-audio-test-1")
+            assert resp.get("status") == "ok"
+            data = resp.get("data", {})
+            assert "input_device" in data
+            assert "output_device" in data
+            assert "available_inputs" in data
+            assert "available_outputs" in data
+
+            # 2. Define dispositivos específicos de entrada e saída
+            await ws.send(json.dumps({
+                "id": "set-audio-test-1",
+                "action": "set_audio_config",
+                "params": {
+                    "input_device": "Microfone Teste",
+                    "output_device": "Alto-falante Teste",
+                    "persist": False
+                }
+            }))
+            resp = await recv_response(ws, "set-audio-test-1")
+            assert resp.get("status") == "ok"
+            assert resp["data"]["input_device"] == "Microfone Teste"
+            assert resp["data"]["output_device"] == "Alto-falante Teste"
+
+            # 3. Dispara teste de som de saída no dispositivo configurado
+            await ws.send(json.dumps({
+                "id": "test-beep-1",
+                "action": "test_audio_beep",
+                "params": {"device": "Alto-falante Teste"}
+            }))
+            resp = await recv_response(ws, "test-beep-1")
+            assert resp.get("status") == "ok"
+
+            # 4. Reseta para o padrão do sistema (None)
+            await ws.send(json.dumps({
+                "id": "set-audio-reset-1",
+                "action": "set_audio_config",
+                "params": {
+                    "input_device": None,
+                    "output_device": None,
+                    "persist": False
+                }
+            }))
+            resp = await recv_response(ws, "set-audio-reset-1")
+            assert resp.get("status") == "ok"
+            assert resp["data"]["input_device"] is None
+            assert resp["data"]["output_device"] is None
+    finally:
+        server.stop()
+
 
 
