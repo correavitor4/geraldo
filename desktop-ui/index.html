@@ -158,56 +158,92 @@
                     </div>
                 </div>
 
-                <!-- CARD TIMERS ATIVOS -->
-                <div class="dashboard-card timers-card">
-                    <div class="card-header">
-                        <h3>⏱️ Timers Ativos</h3>
-                        <div class="card-header-actions">
-                            <button id="btn-toggle-new-timer" class="btn-link" title="Novo timer">+ Adicionar</button>
-                            <button id="btn-cancel-all-timers" class="btn-link danger hidden" title="Cancelar todos os timers">Limpar</button>
+                <!-- CARD DE TEMPORIZADORES (ABAS: TIMERS & ALARMES) -->
+                <div class="dashboard-card time-tasks-card" id="time-tasks-card">
+                    <div class="card-tabs-header">
+                        <button type="button" class="tab-btn active" id="tab-btn-timers" data-tab="tab-timers">
+                            ⏱️ Timers <span id="timers-badge-count" class="tab-count-badge">0</span>
+                        </button>
+                        <button type="button" class="tab-btn" id="tab-btn-alarms" data-tab="tab-alarms">
+                            ⏰ Alarmes <span id="alarms-badge-count" class="tab-count-badge">0</span>
+                        </button>
+                    </div>
+
+                    <!-- PAINEL DA ABA TIMERS -->
+                    <div id="tab-content-timers" class="tab-content active">
+                        <div class="tab-sub-header">
+                            <h4>⏱️ Timers Ativos</h4>
+                            <div class="card-header-actions">
+                                <button id="btn-toggle-new-timer" class="btn-link" title="Novo timer">+ Adicionar</button>
+                                <button id="btn-cancel-all-timers" class="btn-link danger hidden" title="Cancelar todos os timers">Limpar</button>
+                            </div>
+                        </div>
+
+                        <!-- FORMULÁRIO COLAPSÁVEL DE NOVO TIMER -->
+                        <div id="new-timer-form" class="new-timer-form hidden">
+                            <div class="plan-presets-row" id="timer-presets-row">
+                                <button type="button" class="preset-chip timer-preset" data-h="0" data-m="1" data-s="0">1 min</button>
+                                <button type="button" class="preset-chip timer-preset active" data-h="0" data-m="5" data-s="0">5 min</button>
+                                <button type="button" class="preset-chip timer-preset" data-h="0" data-m="10" data-s="0">10 min</button>
+                                <button type="button" class="preset-chip timer-preset" data-h="0" data-m="15" data-s="0">15 min</button>
+                                <button type="button" class="preset-chip timer-preset" data-h="0" data-m="25" data-s="0">25 min</button>
+                                <button type="button" class="preset-chip timer-preset" data-h="1" data-m="0" data-s="0">1h</button>
+                            </div>
+                            <input type="text" id="new-timer-label" placeholder="Rótulo (ex: Café, Forno, Reunião)" value="Timer">
+                            <div class="timer-inputs-row">
+                                <div class="input-group">
+                                    <label for="new-timer-hours">Horas</label>
+                                    <input type="number" id="new-timer-hours" placeholder="0" min="0" max="24" value="0">
+                                </div>
+                                <div class="input-group">
+                                    <label for="new-timer-min">Minutos</label>
+                                    <input type="number" id="new-timer-min" placeholder="5" min="0" max="180" value="5">
+                                </div>
+                                <div class="input-group">
+                                    <label for="new-timer-sec">Segundos</label>
+                                    <input type="number" id="new-timer-sec" placeholder="0" min="0" max="59" value="0">
+                                </div>
+                            </div>
+                            <button id="btn-add-timer-submit" class="btn-action primary" style="width: 100%; margin-top: 6px;">▶ Criar Timer</button>
+                        </div>
+
+                        <div id="timers-list" class="items-list">
+                            <div class="empty-state">Nenhum timer ativo</div>
                         </div>
                     </div>
 
-                    <!-- FORMULÁRIO COLAPSÁVEL DE NOVO TIMER -->
-                    <div id="new-timer-form" class="new-timer-form hidden">
-                        <div class="plan-presets-row" id="timer-presets-row">
-                            <button type="button" class="preset-chip timer-preset" data-h="0" data-m="1" data-s="0">1 min</button>
-                            <button type="button" class="preset-chip timer-preset active" data-h="0" data-m="5" data-s="0">5 min</button>
-                            <button type="button" class="preset-chip timer-preset" data-h="0" data-m="10" data-s="0">10 min</button>
-                            <button type="button" class="preset-chip timer-preset" data-h="0" data-m="15" data-s="0">15 min</button>
-                            <button type="button" class="preset-chip timer-preset" data-h="0" data-m="25" data-s="0">25 min</button>
-                            <button type="button" class="preset-chip timer-preset" data-h="1" data-m="0" data-s="0">1h</button>
-                        </div>
-                        <input type="text" id="new-timer-label" placeholder="Rótulo (ex: Café, Forno, Reunião)" value="Timer">
-                        <div class="timer-inputs-row">
-                            <div class="input-group">
-                                <label for="new-timer-hours">Horas</label>
-                                <input type="number" id="new-timer-hours" placeholder="0" min="0" max="24" value="0">
-                            </div>
-                            <div class="input-group">
-                                <label for="new-timer-min">Minutos</label>
-                                <input type="number" id="new-timer-min" placeholder="5" min="0" max="180" value="5">
-                            </div>
-                            <div class="input-group">
-                                <label for="new-timer-sec">Segundos</label>
-                                <input type="number" id="new-timer-sec" placeholder="0" min="0" max="59" value="0">
+                    <!-- PAINEL DA ABA ALARMES -->
+                    <div id="tab-content-alarms" class="tab-content hidden">
+                        <div class="tab-sub-header">
+                            <h4>⏰ Alarmes Programados</h4>
+                            <div class="card-header-actions">
+                                <button id="btn-toggle-new-alarm" class="btn-link" title="Novo alarme">+ Adicionar</button>
+                                <button id="btn-cancel-all-alarms" class="btn-link danger hidden" title="Cancelar todos os alarmes">Limpar</button>
                             </div>
                         </div>
-                        <button id="btn-add-timer-submit" class="btn-action primary" style="width: 100%; margin-top: 6px;">▶ Criar Timer</button>
-                    </div>
 
-                    <div id="timers-list" class="items-list">
-                        <div class="empty-state">Nenhum timer ativo</div>
-                    </div>
-                </div>
+                        <!-- FORMULÁRIO COLAPSÁVEL DE NOVO ALARME -->
+                        <div id="new-alarm-form" class="new-timer-form hidden">
+                            <div class="plan-presets-row" id="alarm-presets-row">
+                                <button type="button" class="preset-chip alarm-preset" data-time="07:00">07:00</button>
+                                <button type="button" class="preset-chip alarm-preset active" data-time="08:00">08:00</button>
+                                <button type="button" class="preset-chip alarm-preset" data-time="12:00">12:00</button>
+                                <button type="button" class="preset-chip alarm-preset" data-time="18:00">18:00</button>
+                                <button type="button" class="preset-chip alarm-preset" data-time="22:00">22:00</button>
+                            </div>
+                            <input type="text" id="new-alarm-label" placeholder="Rótulo (ex: Acordar, Remédio, Reunião)" value="Alarme">
+                            <div class="timer-inputs-row">
+                                <div class="input-group" style="flex: 1;">
+                                    <label for="new-alarm-time">Horário (HH:MM)</label>
+                                    <input type="time" id="new-alarm-time" value="08:00" style="width: 100%;">
+                                </div>
+                            </div>
+                            <button id="btn-add-alarm-submit" class="btn-action primary" style="width: 100%; margin-top: 6px;">⏰ Criar Alarme</button>
+                        </div>
 
-                <!-- CARD ALARMES -->
-                <div class="dashboard-card alarms-card">
-                    <div class="card-header">
-                        <h3>⏰ Alarmes</h3>
-                    </div>
-                    <div id="alarms-list" class="items-list">
-                        <div class="empty-state">Nenhum alarme programado</div>
+                        <div id="alarms-list" class="items-list">
+                            <div class="empty-state">Nenhum alarme programado</div>
+                        </div>
                     </div>
                 </div>
 

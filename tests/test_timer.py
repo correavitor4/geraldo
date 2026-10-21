@@ -579,3 +579,24 @@ class TestTimerManagerDirectControls:
         assert "cancelado" in msg_all
         assert len(tm._alarms) == 0
 
+    def test_add_alarm_string_and_toggle(self, isolated_timer_manager):
+        tm = isolated_timer_manager
+        msg = tm.add_alarm("08:45", "Reunião Matinal")
+        assert "8 horas e 45 minutos" in msg
+        alarms = tm.list_alarms()
+        assert len(alarms) == 1
+        aid = alarms[0]["id"]
+        assert alarms[0]["time"] == "08:45"
+        assert alarms[0]["enabled"] is True
+
+        # Toggle para desativar
+        msg_toggle = tm.toggle_alarm(aid)
+        assert "desativado" in msg_toggle
+        assert tm._alarms[aid]["enabled"] is False
+
+        # Toggle para reativar
+        msg_toggle2 = tm.toggle_alarm(aid)
+        assert "ativado" in msg_toggle2
+        assert tm._alarms[aid]["enabled"] is True
+
+

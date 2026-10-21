@@ -7,7 +7,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Button, Footer, Header, Input, Label, RichLog, Static
+from textual.widgets import Button, Footer, Header, Input, Label, RichLog, Static, TabbedContent, TabPane
 
 CSS = """
 Screen {
@@ -309,6 +309,65 @@ TimerConfigModal {
     margin-right: 1;
     min-width: 9;
     height: 3;
+}
+
+#time-tasks-tabs {
+    height: auto;
+    margin: 0;
+    padding: 0;
+}
+
+#alarm-buttons {
+    height: auto;
+    margin-top: 1;
+}
+
+#alarm-buttons Button {
+    margin-right: 1;
+    min-width: 9;
+    height: 3;
+}
+
+AlarmConfigModal {
+    align: center middle;
+    background: rgba(0, 0, 0, 0.75);
+}
+
+#alarm-config-dialog {
+    width: 66;
+    height: auto;
+    background: #111827;
+    border: round #facc15;
+    padding: 1 2;
+}
+
+#alarm-config-title {
+    color: #facc15;
+    text-style: bold;
+    text-align: center;
+    margin-bottom: 1;
+}
+
+#alarm-presets-bar {
+    height: 3;
+    align: center middle;
+    margin-bottom: 1;
+}
+
+#alarm-presets-bar Button {
+    margin: 0 1;
+    min-width: 8;
+}
+
+#input-alarm-label, #input-alarm-time {
+    background: #1e293b;
+    border: none;
+    color: #f8fafc;
+    margin-bottom: 1;
+}
+
+#input-alarm-label:focus, #input-alarm-time:focus {
+    border: tall #facc15;
 }
 
 PomodoroPlanModal {
@@ -766,6 +825,67 @@ class TimerConfigModal(ModalScreen):
             self.dismiss(True)
 
 
+class AlarmConfigModal(ModalScreen):
+    """Diálogo modal para configurar e gerenciar alarmes no TUI."""
+
+    def __init__(self, alarms: Optional[list] = None) -> None:
+        super().__init__()
+        self.alarms = alarms or []
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="alarm-config-dialog"):
+            yield Label("⏰ CONFIGURAR ALARMES", id="alarm-config-title")
+            yield Label("Escolha um horário sugerido ou defina um horário personalizado:", classes="form-hint")
+
+            with Horizontal(id="alarm-presets-bar"):
+                yield Button("07:00", id="btn-alarm-pre-7", variant="default")
+                yield Button("08:00", id="btn-alarm-pre-8", variant="default")
+                yield Button("12:00", id="btn-alarm-pre-12", variant="default")
+                yield Button("18:00", id="btn-alarm-pre-18", variant="default")
+                yield Button("22:00", id="btn-alarm-pre-22", variant="default")
+
+            yield Label("Rótulo / Nome do Alarme:", classes="form-label")
+            yield Input(value="Alarme", placeholder="Ex: Acordar, Remédio, Reunião", id="input-alarm-label")
+
+            yield Label("Horário (HH:MM):", classes="form-label")
+            yield Input(value="08:00", placeholder="Ex: 08:00", id="input-alarm-time")
+
+            with Horizontal(id="modal-buttons"):
+                yield Button("⏰ Criar Alarme", id="btn-alarm-create", variant="success")
+                yield Button("🔔 Alternar Ativo", id="btn-alarm-toggle-active")
+                yield Button("🗑 Limpar Todos", id="btn-alarm-clear-all", variant="error")
+                yield Button("✕ Fechar", id="btn-alarm-close", variant="default")
+
+    async def on_button_pressed(self, event: Button.Pressed) -> None:
+        button_id = event.button.id
+        if button_id == "btn-alarm-close":
+            self.dismiss(False)
+        elif button_id == "btn-alarm-pre-7":
+            self.query_one("#input-alarm-time", Input).value = "07:00"
+        elif button_id == "btn-alarm-pre-8":
+            self.query_one("#input-alarm-time", Input).value = "08:00"
+        elif button_id == "btn-alarm-pre-12":
+            self.query_one("#input-alarm-time", Input).value = "12:00"
+        elif button_id == "btn-alarm-pre-18":
+            self.query_one("#input-alarm-time", Input).value = "18:00"
+        elif button_id == "btn-alarm-pre-22":
+            self.query_one("#input-alarm-time", Input).value = "22:00"
+        elif button_id == "btn-alarm-create":
+            label = self.query_one("#input-alarm-label", Input).value.strip() or "Alarme"
+            time_val = self.query_one("#input-alarm-time", Input).value.strip() or "08:00"
+            if hasattr(self.app, "add_alarm"):
+                self.app.add_alarm(time_str=time_val, label=label)
+            self.dismiss(True)
+        elif button_id == "btn-alarm-toggle-active":
+            if hasattr(self.app, "toggle_alarm"):
+                self.app.toggle_alarm()
+            self.dismiss(True)
+        elif button_id == "btn-alarm-clear-all":
+            if hasattr(self.app, "clear_all_alarms"):
+                self.app.clear_all_alarms()
+            self.dismiss(True)
+
+
 class GeraldoTUI(App):
     """
     Interface Rica de Terminal (TUI) para o assistente Geraldo.
@@ -780,6 +900,7 @@ class GeraldoTUI(App):
         Binding("p", "toggle_pomodoro", "Pomodoro Iniciar/Pausar", show=True),
         Binding("P", "open_pomodoro_plan", "Planejar Pomodoro", show=True),
         Binding("T", "open_timer_modal", "Configurar Timers", show=True),
+        Binding("A", "open_alarm_modal", "Configurar Alarmes", show=True),
         Binding("c", "cancel_action", "Cancelar/Silenciar", show=True),
         Binding("o", "open_ollama_settings", "Configurar Ollama", show=True),
         Binding("s", "open_audio_settings", "Dispositivos Áudio", show=True),
@@ -843,17 +964,21 @@ class GeraldoTUI(App):
                         yield Button("⏭ Pular", id="btn-pomo-skip")
                         yield Button("🔄 Reset", id="btn-pomo-reset")
 
-                with Vertical(classes="side-card"):
-                    yield Label("⏱️ TIMERS ATIVOS", classes="card-title")
-                    yield Label("Nenhum timer ativo", id="timers-box")
-                    with Horizontal(id="timer-buttons"):
-                        yield Button("+ Novo", id="btn-timer-new", variant="primary")
-                        yield Button("⏸ Pausa/Play", id="btn-timer-toggle")
-                        yield Button("✕ Limpar", id="btn-timer-clear", variant="error")
+                with Vertical(classes="side-card", id="card-time-tasks"):
+                    with TabbedContent(id="time-tasks-tabs"):
+                        with TabPane("⏱️ Timers", id="tab-pane-timers"):
+                            yield Label("Nenhum timer ativo", id="timers-box")
+                            with Horizontal(id="timer-buttons"):
+                                yield Button("+ Novo", id="btn-timer-new", variant="primary")
+                                yield Button("⏸ Pausa/Play", id="btn-timer-toggle")
+                                yield Button("✕ Limpar", id="btn-timer-clear", variant="error")
 
-                with Vertical(classes="side-card"):
-                    yield Label("⏰ ALARMES PROGRAMADOS", classes="card-title")
-                    yield Label("Nenhum alarme programado", id="alarms-box")
+                        with TabPane("⏰ Alarmes", id="tab-pane-alarms"):
+                            yield Label("Nenhum alarme programado", id="alarms-box")
+                            with Horizontal(id="alarm-buttons"):
+                                yield Button("+ Novo", id="btn-alarm-new", variant="primary")
+                                yield Button("🔔 Alternar", id="btn-alarm-toggle-btn")
+                                yield Button("✕ Limpar", id="btn-alarm-clear", variant="error")
 
                 with Vertical(classes="side-card"):
                     yield Label("📅 AGENDA DO GOOGLE", classes="card-title")
@@ -1257,6 +1382,15 @@ class GeraldoTUI(App):
         elif button_id == "btn-timer-clear":
             self.clear_all_timers()
 
+        elif button_id == "btn-alarm-new":
+            self.action_open_alarm_modal()
+
+        elif button_id == "btn-alarm-toggle-btn":
+            self.toggle_alarm()
+
+        elif button_id == "btn-alarm-clear":
+            self.clear_all_alarms()
+
     # ==========================================
     # AÇÕES DOS ATALHOS DE TECLADO
     # ==========================================
@@ -1351,6 +1485,37 @@ class GeraldoTUI(App):
         self.send_action("timer_cancel", {"query": "todos"})
         chat = self.query_one("#chat-log", RichLog)
         chat.write("[bold red]🗑 Solicitado cancelar todos os timers...[/]")
+
+    def action_open_alarm_modal(self) -> None:
+        """Abre o diálogo modal de configuração de alarmes."""
+        alarms = self._latest_status.get("alarms", []) if hasattr(self, "_latest_status") else []
+        self.push_screen(AlarmConfigModal(alarms=alarms))
+
+    def add_alarm(self, time_str: str = "08:00", label: str = "Alarme") -> None:
+        """Envia comando de criação de alarme via WebSocket."""
+        self.send_action("alarm_add", {
+            "time": time_str,
+            "label": label,
+        })
+        chat = self.query_one("#chat-log", RichLog)
+        chat.write(f"[bold yellow]⏰ Solicitado alarme '{label}' para às {time_str}...[/]")
+
+    def toggle_alarm(self, ident: str = "") -> None:
+        """Alterna o estado de ativação do alarme."""
+        alarms = self._latest_status.get("alarms", []) if hasattr(self, "_latest_status") else []
+        chat = self.query_one("#chat-log", RichLog)
+        if not alarms:
+            chat.write("[dim italic]Nenhum alarme para alternar.[/]")
+            return
+        target = ident or alarms[0].get("id") or alarms[0].get("label") or ""
+        self.send_action("alarm_toggle", {"id": target})
+        chat.write(f"[bold yellow]🔔 Solicitado alternar alarme...[/]")
+
+    def clear_all_alarms(self) -> None:
+        """Cancela todos os alarmes."""
+        self.send_action("alarm_clear_all", {})
+        chat = self.query_one("#chat-log", RichLog)
+        chat.write("[bold red]🗑 Solicitado cancelar todos os alarmes...[/]")
 
     def start_planned_pomodoro(
         self,

@@ -4,7 +4,7 @@ import pytest
 from textual.widgets import Button, Input, Label, RichLog
 
 from core.ipc import GeraldoIPCServer
-from ui.tui import GeraldoTUI, TimerConfigModal
+from ui.tui import GeraldoTUI, TimerConfigModal, AlarmConfigModal
 
 TEST_IPC_PORT = 8795
 TEST_IPC_HOST = "127.0.0.1"
@@ -992,6 +992,80 @@ async def test_tui_timer_card_buttons_and_actions():
         msg = json.loads(await app._send_queue.get())
         assert msg["action"] == "timer_cancel"
         assert msg["params"]["query"] == "todos"
+
+
+@pytest.mark.anyio
+async def test_tui_tabs_structure():
+    """Valida presença das abas separadas de Timers e Alarmes no TUI."""
+    app = GeraldoTUI(auto_connect=False)
+    async with app.run_test(size=(160, 50)) as pilot:
+        assert app.query_one("#time-tasks-tabs") is not None
+        assert app.query_one("#tab-pane-timers") is not None
+        assert app.query_one("#tab-pane-alarms") is not None
+        assert app.query_one("#timers-box") is not None
+        assert app.query_one("#alarms-box") is not None
+
+
+@pytest.mark.anyio
+async def test_tui_alarm_modal_presets_and_creation():
+    """Valida abertura do modal de alarmes, clique em preset e envio de alarm_add."""
+    app = GeraldoTUI(auto_connect=False)
+    async with app.run_test(size=(160, 50)) as pilot:
+        # 1. Abre modal pelo botão "+ Novo" na aba de alarmes
+        app.query_one("#btn-alarm-new", Button).press()
+        await pilot.pause()
+        assert isinstance(app.screen, AlarmConfigModal)
+
+        # 2. Clica no preset de 07:00
+        app.screen.query_one("#btn-alarm-pre-7", Button).press()
+        await pilot.pause()
+        assert app.screen.query_one("#input-alarm-time", Input).value == "07:00"
+
+        # 3. Altera label e customiza horário
+        app.screen.query_one("#input-alarm-label", Input).value = "Tomar Remédio"
+        app.screen.query_one("#input-alarm-time", Input).value = "07:15"
+
+        # 4. Confirma criação
+        app.screen.query_one("#btn-alarm-create", Button).press()
+        await pilot.pause()
+
+        # Modal fechou
+        assert not isinstance(app.screen, AlarmConfigModal)
+
+        # Ação enviada
+        assert app._send_queue.qsize() == 1
+        msg = json.loads(await app._send_queue.get())
+        assert msg["action"] == "alarm_add"
+        assert msg["params"]["label"] == "Tomar Remédio"
+        assert msg["params"]["time"] == "07:15"
+
+
+@pytest.mark.anyio
+async def test_tui_alarm_card_buttons_and_actions():
+    """Valida botões de alternar e limpar alarmes na barra lateral."""
+    app = GeraldoTUI(auto_connect=False)
+    async with app.run_test(size=(160, 50)) as pilot:
+        # Atualiza status com 1 alarme ativo
+        app.update_status_dashboard({
+            "timers": [],
+            "alarms": [{"id": "a1", "label": "Café", "time": "06:30", "enabled": True}]
+        })
+
+        # 1. Clica no botão de alternar
+        app.query_one("#btn-alarm-toggle-btn", Button).press()
+        await pilot.pause()
+        assert app._send_queue.qsize() == 1
+        msg = json.loads(await app._send_queue.get())
+        assert msg["action"] == "alarm_toggle"
+        assert msg["params"]["id"] == "a1"
+
+        # 2. Clica no botão de limpar alarmes
+        app.query_one("#btn-alarm-clear", Button).press()
+        await pilot.pause()
+        assert app._send_queue.qsize() == 1
+        msg = json.loads(await app._send_queue.get())
+        assert msg["action"] == "alarm_clear_all"
+
 
 
 

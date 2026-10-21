@@ -93,6 +93,18 @@ def test_html_all_critical_dom_elements():
         "new-timer-min",
         "new-timer-sec",
         "btn-cancel-all-timers",
+        "tab-btn-timers",
+        "tab-btn-alarms",
+        "tab-content-timers",
+        "tab-content-alarms",
+        "timers-badge-count",
+        "alarms-badge-count",
+        "btn-toggle-new-alarm",
+        "new-alarm-form",
+        "btn-add-alarm-submit",
+        "new-alarm-label",
+        "new-alarm-time",
+        "btn-cancel-all-alarms",
         "btn-open-settings",
         "settings-modal",
         "btn-close-settings",
@@ -946,6 +958,104 @@ async def test_desktop_gui_timer_ipc_integration(free_tcp_port):
             assert resp.get("status") == "ok"
     finally:
         server.stop()
+
+
+def test_desktop_gui_tabs_and_alarms_dom_and_js():
+    """Valida abas separadas para timers e alarmes no HTML, CSS e JS."""
+    with open(HTML_PATH, "r", encoding="utf-8") as f:
+        html = f.read()
+    with open(CSS_PATH, "r", encoding="utf-8") as f:
+        css = f.read()
+    with open(JS_PATH, "r", encoding="utf-8") as f:
+        js = f.read()
+
+    # HTML: Abas e Alarmes
+    assert 'id="tab-btn-timers"' in html
+    assert 'id="tab-btn-alarms"' in html
+    assert 'id="tab-content-timers"' in html
+    assert 'id="tab-content-alarms"' in html
+    assert 'class="preset-chip alarm-preset' in html
+    assert 'id="new-alarm-time"' in html
+    assert 'id="btn-cancel-all-alarms"' in html
+
+    # CSS
+    assert ".card-tabs-header" in css
+    assert ".tab-btn" in css
+    assert ".tab-count-badge" in css
+    assert ".alarm-item" in css
+    assert ".alarm-status-tag" in css
+
+    # JS
+    assert "tabBtnTimers" in js
+    assert "tabBtnAlarms" in js
+    assert "alarmPresetChips" in js
+    assert "btn-alarm-toggle" in js
+    assert "btn-alarm-cancel" in js
+    assert "alarm_add" in js
+    assert "alarm_toggle" in js
+    assert "alarm_clear_all" in js
+
+
+@pytest.mark.anyio
+async def test_desktop_gui_alarm_ipc_integration(free_tcp_port):
+    """Valida fluxo de criação, toggle e cancelamento de múltiplos alarmes via IPC."""
+    port = free_tcp_port
+    server = GeraldoIPCServer(host=TEST_GUI_IPC_HOST, port=port)
+    server.start()
+
+    async def recv_resp(ws, req_id):
+        while True:
+            raw = await asyncio.wait_for(ws.recv(), timeout=2.0)
+            msg = json.loads(raw)
+            if msg.get("type") == "response" and msg.get("id") == req_id:
+                return msg
+
+    try:
+        async with connect(f"ws://{TEST_GUI_IPC_HOST}:{port}") as ws:
+            await asyncio.wait_for(ws.recv(), timeout=2.0)
+
+            # 1. Adicionar primeiro alarme (07:30 - Café)
+            await ws.send(json.dumps({
+                "id": "a-add-1",
+                "action": "alarm_add",
+                "params": {"time": "07:30", "label": "Café"}
+            }))
+            resp = await recv_resp(ws, "a-add-1")
+            assert resp.get("status") == "ok"
+            assert "7 horas e 30 minutos" in resp["data"]["reply"]
+
+            # 2. Adicionar segundo alarme (08:00 - Remédio)
+            await ws.send(json.dumps({
+                "id": "a-add-2",
+                "action": "alarm_add",
+                "params": {"hour": 8, "minute": 0, "label": "Remédio"}
+            }))
+            resp = await recv_resp(ws, "a-add-2")
+            assert resp.get("status") == "ok"
+            assert "8 horas" in resp["data"]["reply"]
+
+            # 3. Alternar status do alarme
+            await ws.send(json.dumps({
+                "id": "a-toggle-1",
+                "action": "alarm_toggle",
+                "params": {"query": "café"}
+            }))
+            resp = await recv_resp(ws, "a-toggle-1")
+            assert resp.get("status") == "ok"
+            assert "desativado" in resp["data"]["reply"]
+
+            # 4. Cancelar todos os alarmes
+            await ws.send(json.dumps({
+                "id": "a-clear-all",
+                "action": "alarm_clear_all",
+                "params": {}
+            }))
+            resp = await recv_resp(ws, "a-clear-all")
+            assert resp.get("status") == "ok"
+            assert "removido" in resp["data"]["reply"] or "cancelado" in resp["data"]["reply"]
+    finally:
+        server.stop()
+
 
 
 

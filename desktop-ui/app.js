@@ -54,6 +54,20 @@ class GeraldoDesktopClient {
             newTimerMin: document.getElementById("new-timer-min"),
             newTimerSec: document.getElementById("new-timer-sec"),
             btnCancelAllTimers: document.getElementById("btn-cancel-all-timers"),
+            // Tabs & Temporizadores
+            tabBtnTimers: document.getElementById("tab-btn-timers"),
+            tabBtnAlarms: document.getElementById("tab-btn-alarms"),
+            tabContentTimers: document.getElementById("tab-content-timers"),
+            tabContentAlarms: document.getElementById("tab-content-alarms"),
+            timersBadgeCount: document.getElementById("timers-badge-count"),
+            alarmsBadgeCount: document.getElementById("alarms-badge-count"),
+            // Alarmes
+            btnToggleNewAlarm: document.getElementById("btn-toggle-new-alarm"),
+            newAlarmForm: document.getElementById("new-alarm-form"),
+            btnAddAlarmSubmit: document.getElementById("btn-add-alarm-submit"),
+            newAlarmLabel: document.getElementById("new-alarm-label"),
+            newAlarmTime: document.getElementById("new-alarm-time"),
+            btnCancelAllAlarms: document.getElementById("btn-cancel-all-alarms"),
             // Configurações do Ollama
             btnOpenSettings: document.getElementById("btn-open-settings"),
             settingsModal: document.getElementById("settings-modal"),
@@ -452,6 +466,9 @@ class GeraldoDesktopClient {
         }
 
         // 2. Timers
+        if (this.dom.timersBadgeCount) this.dom.timersBadgeCount.textContent = (data.timers || []).length;
+        if (this.dom.alarmsBadgeCount) this.dom.alarmsBadgeCount.textContent = (data.alarms || []).length;
+
         if (data.timers && this.dom.timersList) {
             if (this.dom.btnCancelAllTimers) {
                 if (data.timers.length > 0) {
@@ -497,15 +514,36 @@ class GeraldoDesktopClient {
 
         // 3. Alarmes
         if (data.alarms && this.dom.alarmsList) {
+            if (this.dom.btnCancelAllAlarms) {
+                if (data.alarms.length > 0) {
+                    this.dom.btnCancelAllAlarms.classList.remove("hidden");
+                } else {
+                    this.dom.btnCancelAllAlarms.classList.add("hidden");
+                }
+            }
+
             if (data.alarms.length === 0) {
                 this.dom.alarmsList.innerHTML = '<div class="empty-state">Nenhum alarme programado</div>';
             } else {
                 this.dom.alarmsList.innerHTML = data.alarms.map(a => {
-                    const statusClass = a.enabled ? "enabled" : "disabled";
+                    const isEnabled = a.enabled !== false;
+                    const statusClass = isEnabled ? "enabled" : "disabled";
+                    const statusText = isEnabled ? "Ativo" : "Desativado";
+                    const toggleIcon = isEnabled ? "🔔" : "🔕";
+                    const toggleTitle = isEnabled ? "Desativar alarme" : "Ativar alarme";
+                    const alarmId = this.escapeHtml(a.id || "");
+                    const alarmTime = this.escapeHtml(a.time || "--:--");
+                    const alarmLabel = this.escapeHtml(a.label || "Alarme");
+
                     return `
-                        <div class="alarm-item">
-                            <span class="alarm-label">⏰ ${this.escapeHtml(a.label || "Alarme")}</span>
-                            <span class="alarm-time ${statusClass}">${a.time || "--:--"}</span>
+                        <div class="alarm-item ${statusClass}" data-id="${alarmId}">
+                            <span class="alarm-label" title="${alarmLabel}">⏰ ${alarmLabel}</span>
+                            <div class="alarm-item-right">
+                                <span class="alarm-time">${alarmTime}</span>
+                                <span class="alarm-status-tag ${statusClass}">${statusText}</span>
+                                <button type="button" class="btn-timer-action btn-alarm-toggle" data-id="${alarmId}" title="${toggleTitle}">${toggleIcon}</button>
+                                <button type="button" class="btn-timer-action danger btn-alarm-cancel" data-id="${alarmId}" title="Excluir alarme">✕</button>
+                            </div>
                         </div>
                     `;
                 }).join("");
@@ -745,6 +783,81 @@ class GeraldoDesktopClient {
         if (this.dom.btnCancelAllTimers) {
             this.dom.btnCancelAllTimers.addEventListener("click", () => {
                 this.sendAction("timer_cancel", { query: "todos" });
+            });
+        }
+
+        // Alternância de Abas (Timers vs Alarmes)
+        if (this.dom.tabBtnTimers && this.dom.tabBtnAlarms) {
+            this.dom.tabBtnTimers.addEventListener("click", () => {
+                this.dom.tabBtnTimers.classList.add("active");
+                this.dom.tabBtnAlarms.classList.remove("active");
+                if (this.dom.tabContentTimers) this.dom.tabContentTimers.classList.remove("hidden");
+                if (this.dom.tabContentAlarms) this.dom.tabContentAlarms.classList.add("hidden");
+            });
+
+            this.dom.tabBtnAlarms.addEventListener("click", () => {
+                this.dom.tabBtnAlarms.classList.add("active");
+                this.dom.tabBtnTimers.classList.remove("active");
+                if (this.dom.tabContentAlarms) this.dom.tabContentAlarms.classList.remove("hidden");
+                if (this.dom.tabContentTimers) this.dom.tabContentTimers.classList.add("hidden");
+            });
+        }
+
+        // Formulário de Novo Alarme & Presets
+        const alarmPresetChips = document.querySelectorAll(".alarm-preset");
+        alarmPresetChips.forEach(chip => {
+            chip.addEventListener("click", () => {
+                alarmPresetChips.forEach(c => c.classList.remove("active"));
+                chip.classList.add("active");
+                const timeVal = chip.dataset.time;
+                if (timeVal && this.dom.newAlarmTime) {
+                    this.dom.newAlarmTime.value = timeVal;
+                }
+            });
+        });
+
+        if (this.dom.btnToggleNewAlarm && this.dom.newAlarmForm) {
+            this.dom.btnToggleNewAlarm.addEventListener("click", () => {
+                this.dom.newAlarmForm.classList.toggle("hidden");
+            });
+        }
+
+        if (this.dom.btnAddAlarmSubmit) {
+            this.dom.btnAddAlarmSubmit.addEventListener("click", () => {
+                const label = (this.dom.newAlarmLabel && this.dom.newAlarmLabel.value.trim()) || "Alarme";
+                const timeVal = (this.dom.newAlarmTime && this.dom.newAlarmTime.value) || "08:00";
+
+                this.sendAction("alarm_add", {
+                    time: timeVal,
+                    label: label
+                });
+
+                if (this.dom.newAlarmForm) this.dom.newAlarmForm.classList.add("hidden");
+            });
+        }
+
+        // Ações de alarmes individuais e em lote
+        if (this.dom.alarmsList) {
+            this.dom.alarmsList.addEventListener("click", (e) => {
+                const toggleBtn = e.target.closest(".btn-alarm-toggle");
+                if (toggleBtn) {
+                    const id = toggleBtn.dataset.id;
+                    this.sendAction("alarm_toggle", { id });
+                    return;
+                }
+
+                const cancelBtn = e.target.closest(".btn-alarm-cancel");
+                if (cancelBtn) {
+                    const id = cancelBtn.dataset.id;
+                    this.sendAction("alarm_cancel", { id });
+                    return;
+                }
+            });
+        }
+
+        if (this.dom.btnCancelAllAlarms) {
+            this.dom.btnCancelAllAlarms.addEventListener("click", () => {
+                this.sendAction("alarm_clear_all", {});
             });
         }
 

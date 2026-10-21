@@ -78,6 +78,8 @@ class GeraldoIPCServer:
         self.register_handler("timer_resume", self._handle_timer_resume)
         self.register_handler("alarm_add", self._handle_alarm_add)
         self.register_handler("alarm_cancel", self._handle_alarm_cancel)
+        self.register_handler("alarm_toggle", self._handle_alarm_toggle)
+        self.register_handler("alarm_clear_all", self._handle_alarm_clear_all)
 
     def register_handler(self, action: str, handler: Callable) -> None:
         """Registra um manipulador para uma ação RPC."""
@@ -521,15 +523,33 @@ class GeraldoIPCServer:
 
     def _handle_alarm_add(self, params: dict) -> dict:
         from tools.timer import TimerManager
-        time_str = params.get("time", "")
+        time_str = params.get("time") or params.get("time_str") or ""
+        hour = params.get("hour")
+        minute = params.get("minute", 0)
         label = params.get("label", "Alarme")
-        msg = TimerManager.add_alarm(time_str, label)
+        if hour is not None:
+            msg = TimerManager.add_alarm(hour=int(hour), minute=int(minute or 0), label=label)
+        elif time_str:
+            msg = TimerManager.add_alarm(time_str, label)
+        else:
+            msg = "Informe o horário para o alarme."
         return {"status": "ok", "message": msg, "reply": msg}
 
     def _handle_alarm_cancel(self, params: dict) -> dict:
         from tools.timer import TimerManager
-        ident = params.get("id") or params.get("label") or ""
+        ident = params.get("id") or params.get("label") or params.get("query") or ""
         msg = TimerManager.cancel_alarm(ident)
+        return {"status": "ok", "message": msg, "reply": msg}
+
+    def _handle_alarm_toggle(self, params: dict) -> dict:
+        from tools.timer import TimerManager
+        ident = params.get("id") or params.get("label") or params.get("query") or ""
+        msg = TimerManager.toggle_alarm(ident)
+        return {"status": "ok", "message": msg, "reply": msg}
+
+    def _handle_alarm_clear_all(self, params: dict) -> dict:
+        from tools.timer import TimerManager
+        msg = TimerManager.cancel_alarm("todos")
         return {"status": "ok", "message": msg, "reply": msg}
 
     def _handle_check_ollama(self, params: dict) -> dict:

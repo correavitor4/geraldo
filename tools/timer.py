@@ -889,7 +889,24 @@ class TimerManager:
             return cls.cancel_item(query)
 
     @classmethod
-    def add_alarm(cls, hour: int, minute: int, label: str = "Alarme") -> str:
+    def add_alarm(cls, hour: Any, minute: Any = 0, label: str = "Alarme") -> str:
+        if isinstance(hour, str) and ":" in hour:
+            parts = hour.split(":")
+            try:
+                h = int(parts[0])
+                m = int(parts[1]) if len(parts) > 1 else 0
+                if isinstance(minute, str) and label == "Alarme":
+                    label = minute
+                hour, minute = h, m
+            except (ValueError, IndexError):
+                return "Horário inválido para o alarme."
+        else:
+            try:
+                hour = int(hour)
+                minute = int(minute)
+            except (ValueError, TypeError):
+                return "Horário inválido para o alarme."
+
         time_str = f"{hour:02d}:{minute:02d}"
         with cls._lock:
             aid = f"alarm_{time.time_ns()}"
@@ -899,6 +916,27 @@ class TimerManager:
         if minute == 0:
             return f"Alarme definido para às {hour} horas."
         return f"Alarme definido para às {hour} horas e {minute} minutos."
+
+    @classmethod
+    def toggle_alarm(cls, ident: str = "") -> str:
+        with cls._lock:
+            target = None
+            if ident in cls._alarms:
+                target = ident
+            else:
+                ident_lower = ident.lower().strip()
+                for aid, a in cls._alarms.items():
+                    if a.get("label", "").lower() == ident_lower or a.get("time_str", "") == ident_lower:
+                        target = aid
+                        break
+            if not target:
+                return "Esse alarme não foi encontrado."
+            item = cls._alarms[target]
+            item["enabled"] = not item.get("enabled", True)
+            state = "ativado" if item["enabled"] else "desativado"
+            cls._save_state()
+            cls._export_status_for_waybar()
+            return f"Alarme {item['label']} {state}."
 
     @classmethod
     def cancel_item(cls, query: str = "") -> str:
