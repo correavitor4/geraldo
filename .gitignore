@@ -13,3 +13,6 @@ dist/
 _bundled_defaults.json
 settings.json
 .actrc
+*.spec
+src-tauri/binaries/geraldo-core*
+src-tauri/binaries/*.exe

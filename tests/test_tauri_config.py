@@ -174,6 +174,8 @@ def test_tauri_updater_plugin_config():
         conf = json.load(f)
 
     updater = conf.get("plugins", {}).get("updater", {})
+    assert "pubkey" in updater, "Chave pública (pubkey) não encontrada em plugins.updater"
+    assert updater.get("pubkey"), "pubkey não pode ser vazia"
     assert "endpoints" in updater, "Endpoint do updater não encontrado em plugins.updater"
     endpoints = updater.get("endpoints", [])
     assert len(endpoints) >= 1

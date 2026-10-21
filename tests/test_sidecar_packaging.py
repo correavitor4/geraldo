@@ -60,6 +60,7 @@ class TestSidecarPackaging:
         dest = build_sidecar(target_triple="x86_64-unknown-linux-gnu", dry_run=False)
         assert dest.exists()
         assert os.access(dest, os.X_OK)
+        dest.unlink(missing_ok=True)
 
     @pytest.mark.parametrize("target,expected_ext,expected_name", [
         ("x86_64-unknown-linux-gnu", "", "geraldo-core-x86_64-unknown-linux-gnu"),
@@ -80,8 +81,7 @@ class TestSidecarPackaging:
             cmd_dest.unlink(missing_ok=True)
         else:
             assert os.access(dest, os.X_OK)
-        if dest.name != "geraldo-core-x86_64-unknown-linux-gnu":
-            dest.unlink(missing_ok=True)
+        dest.unlink(missing_ok=True)
 
     def test_package_dist_build_installer_dry_run_all_targets(self):
         from scripts.package_dist import build_installer

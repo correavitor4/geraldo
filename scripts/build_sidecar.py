@@ -91,7 +91,7 @@ def build_sidecar(target_triple: str = None, dry_run: bool = False) -> Path:
     target_arch = "aarch64" if ("aarch64" in triple or "arm64" in triple) else "x86_64"
 
     can_use_pyinstaller = False
-    if has_pyinstaller and host_system == target_system:
+    if has_pyinstaller and host_system == target_system and not os.getenv("PYTEST_CURRENT_TEST"):
         if host_system == "darwin":
             can_use_pyinstaller = True
         elif host_arch == target_arch:
@@ -154,8 +154,13 @@ def build_sidecar(target_triple: str = None, dry_run: bool = False) -> Path:
                 print(f"[Build Sidecar] Sucesso! Binário congelado copiado para: {dest_path}")
                 return dest_path
         except Exception as e:
+            if os.getenv("CI") == "true" or os.getenv("GITHUB_ACTIONS") == "true":
+                print(f"[Build Sidecar] ERRO CRÍTICO no CI: compilação com PyInstaller falhou ({e}). Abortando build para evitar gerar instalador incompleto.")
+                raise e
             print(f"[Build Sidecar] Aviso: compilação com PyInstaller falhou ({e}). Gerando runner nativo...")
     else:
+        if os.getenv("CI") == "true" or os.getenv("GITHUB_ACTIONS") == "true":
+            raise RuntimeError(f"[Build Sidecar] ERRO CRÍTICO no CI: PyInstaller indisponível ou arquitetura incompatível ('{triple}' a partir de '{host_system}-{host_arch}').")
         print(f"[Build Sidecar] Compilando para alvo '{triple}' a partir de host '{host_system}-{host_arch}'. Gerando runner nativo...")
 
     # Fallback / Modo Desenvolvimento: Gera um launcher executável padrão
@@ -164,7 +169,20 @@ def build_sidecar(target_triple: str = None, dry_run: bool = False) -> Path:
         # Script batch/cmd executável no Windows
         launcher_content = f"""@echo off
 set REPO_DIR=%~dp0..\\..
-call "%REPO_DIR%\\venv\\Scripts\\python.exe" "%REPO_DIR%\\main.py" %*
+if exist "%REPO_DIR%\\main.py" (
+    set TARGET_DIR=%REPO_DIR%
+) else if exist "%USERPROFILE%\\projects\\geraldo\\main.py" (
+    set TARGET_DIR=%USERPROFILE%\\projects\\geraldo
+) else if exist "%USERPROFILE%\\geraldo\\main.py" (
+    set TARGET_DIR=%USERPROFILE%\\geraldo
+) else (
+    set TARGET_DIR=%REPO_DIR%
+)
+if exist "%TARGET_DIR%\\venv\\Scripts\\python.exe" (
+    call "%TARGET_DIR%\\venv\\Scripts\\python.exe" "%TARGET_DIR%\\main.py" %*
+) else (
+    python "%TARGET_DIR%\\main.py" %*
+)
 """
         cmd_path = dest_path.with_suffix(".cmd")
         with open(cmd_path, "w", encoding="utf-8") as f:
@@ -177,8 +195,26 @@ call "%REPO_DIR%\\venv\\Scripts\\python.exe" "%REPO_DIR%\\main.py" %*
         launcher_content = f"""#!/usr/bin/env bash
 set -e
 DIR="$(cd "$(dirname "${{BASH_SOURCE[0]}}")/../.." >/dev/null 2>&1 && pwd)"
-PYTHON_EXEC="$DIR/venv/bin/python"
-if [ ! -f "$PYTHON_EXEC" ]; then
+CANDIDATES=("$DIR" "$HOME/projects/geraldo" "$HOME/geraldo" "$HOME/.local/share/geraldo")
+TARGET_DIR=""
+for c in "${{CANDIDATES[@]}}"; do
+    if [ -f "$c/main.py" ]; then
+        TARGET_DIR="$c"
+        break
+    fi
+done
+
+if [ -n "$TARGET_DIR" ]; then
+    PYTHON_EXEC="$TARGET_DIR/venv/bin/python"
+    if [ ! -f "$PYTHON_EXEC" ]; then
+        PYTHON_EXEC="python3"
+    fi
+    exec "$PYTHON_EXEC" -u "$TARGET_DIR/main.py" "$@"
+fi
+
+if [ -f "$DIR/venv/bin/python" ]; then
+    PYTHON_EXEC="$DIR/venv/bin/python"
+else
     PYTHON_EXEC="python3"
 fi
 exec "$PYTHON_EXEC" -u "$DIR/main.py" "$@"

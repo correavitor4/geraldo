@@ -66,6 +66,25 @@ fn try_spawn_sidecar() {
 
     println!("[Tauri] Geraldo daemon não detectado. Procurando executável sidecar...");
 
+    // 1. Procura executável geraldo-core no mesmo diretório do executável (ex: /Applications/Geraldo.app/Contents/MacOS/geraldo-core)
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(parent) = exe_path.parent() {
+            for name in &["geraldo-core", "geraldo-core.exe"] {
+                let adjacent = parent.join(name);
+                if adjacent.exists() {
+                    println!("[Tauri] Iniciando sidecar adjacente ao executável: {:?}", adjacent);
+                    if let Ok(child) = Command::new(&adjacent).spawn() {
+                        if let Ok(mut lock) = SIDECAR_PROCESS.lock() {
+                            *lock = Some(child);
+                        }
+                        println!("[Tauri] Processo sidecar iniciado com sucesso.");
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
     let candidates = [
         "binaries/geraldo-core-x86_64-unknown-linux-gnu",
         "src-tauri/binaries/geraldo-core-x86_64-unknown-linux-gnu",
@@ -89,6 +108,33 @@ fn try_spawn_sidecar() {
                 }
                 println!("[Tauri] Processo sidecar iniciado com sucesso.");
                 return;
+            }
+        }
+    }
+
+    // Procura em diretórios padrão do Geraldo
+    if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
+        let home_p = std::path::PathBuf::from(home);
+        for sub in &["projects/geraldo", "geraldo", ".local/share/geraldo"] {
+            let dir = home_p.join(sub);
+            let main_py = dir.join("main.py");
+            if main_py.exists() {
+                let venv_py = dir.join("venv/bin/python");
+                let venv_py_win = dir.join("venv/Scripts/python.exe");
+                let exec_candidate = if venv_py.exists() {
+                    venv_py
+                } else if venv_py_win.exists() {
+                    venv_py_win
+                } else {
+                    std::path::PathBuf::from("python3")
+                };
+                if let Ok(child) = Command::new(&exec_candidate).arg(&main_py).current_dir(&dir).spawn() {
+                    if let Ok(mut lock) = SIDECAR_PROCESS.lock() {
+                        *lock = Some(child);
+                    }
+                    println!("[Tauri] Processo daemon iniciado via '{:?} {:?}'.", exec_candidate, main_py);
+                    return;
+                }
             }
         }
     }
