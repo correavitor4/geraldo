@@ -1057,6 +1057,115 @@ async def test_desktop_gui_alarm_ipc_integration(free_tcp_port):
         server.stop()
 
 
+def test_desktop_gui_tabs_elements_and_calendar_view():
+    """Valida se a navegação de abas e a view completa de agenda estão no HTML."""
+    with open(HTML_PATH, "r", encoding="utf-8") as f:
+        html = f.read()
+
+    # Abas principais
+    assert 'id="main-nav-tabs"' in html
+    assert 'id="tab-nav-chat"' in html
+    assert 'id="tab-nav-calendar"' in html
+    assert 'id="tab-nav-pomodoro"' in html
+    assert 'id="tab-nav-timers"' in html
+    assert 'id="tab-nav-settings"' in html
+
+    # Painéis de cada aba
+    assert 'id="view-chat"' in html
+    assert 'id="view-calendar"' in html
+    assert 'id="view-pomodoro"' in html
+    assert 'id="view-timers"' in html
+    assert 'id="view-settings"' in html
+
+    # Elementos do Calendário Interativo
+    assert 'id="calendar-month-year-label"' in html
+    assert 'id="calendar-days-grid"' in html
+    assert 'id="selected-day-full-label"' in html
+    assert 'id="selected-day-events-count"' in html
+    assert 'id="selected-day-events-list"' in html
+    assert 'id="calendar-create-event-form"' in html
+    assert 'id="btn-cal-refresh"' in html
+    assert 'id="btn-cal-toggle-new"' in html
+    assert 'id="btn-cal-today"' in html
+    assert 'id="btn-cal-prev-month"' in html
+    assert 'id="btn-cal-next-month"' in html
+    assert 'id="event-input-summary"' in html
+    assert 'id="event-input-date"' in html
+    assert 'id="event-input-time"' in html
+    assert 'id="btn-submit-create-event"' in html
+
+
+def test_desktop_gui_js_tab_switching_and_calendar_methods():
+    """Valida se o app.js contém a lógica de troca de abas e renderização do calendário."""
+    with open(JS_PATH, "r", encoding="utf-8") as f:
+        js = f.read()
+
+    assert "switchMainTab" in js
+    assert "loadCalendarEvents" in js
+    assert "renderCalendarMonthGrid" in js
+    assert "selectCalendarDate" in js
+    assert "renderSelectedDayEvents" in js
+    assert "createCalendarEvent" in js
+    assert "deleteCalendarEvent" in js
+    assert "calendar_updated" in js
+
+
+@pytest.mark.anyio
+async def test_desktop_gui_calendar_ipc_integration(monkeypatch):
+    """Valida troca de mensagens IPC para obter, criar e excluir eventos de calendário."""
+    from tools.calendar import CalendarTools
+
+    mock_events = [
+        {
+            "id": "mock-ev-1",
+            "summary": "Reunião de Teste",
+            "start": "2026-10-22T10:00:00-03:00",
+            "end": "2026-10-22T11:00:00-03:00",
+            "all_day": False
+        }
+    ]
+    monkeypatch.setattr(CalendarTools, "get_events_raw", classmethod(lambda cls, **kw: mock_events))
+
+    server = GeraldoIPCServer(host=TEST_GUI_IPC_HOST, port=8801)
+    server.start()
+    await asyncio.sleep(0.1)
+
+    async def recv_resp(ws, req_id, timeout=3.0):
+        t0 = asyncio.get_event_loop().time()
+        while asyncio.get_event_loop().time() - t0 < timeout:
+            msg_raw = await asyncio.wait_for(ws.recv(), timeout=1.5)
+            data = json.loads(msg_raw)
+            if data.get("type") == "response" and data.get("id") == req_id:
+                return data
+        return {}
+
+    try:
+        async with connect(f"ws://{TEST_GUI_IPC_HOST}:8801") as ws:
+            # 1. get_calendar_events
+            await ws.send(json.dumps({
+                "id": "cal-get-1",
+                "action": "get_calendar_events",
+                "params": {"days_ahead": 30, "days_behind": 7}
+            }))
+            resp = await recv_resp(ws, "cal-get-1")
+            assert resp.get("status") == "ok"
+            assert "events" in resp.get("data", {})
+            assert isinstance(resp["data"]["events"], list)
+            assert len(resp["data"]["events"]) == 1
+            assert resp["data"]["events"][0]["summary"] == "Reunião de Teste"
+
+            # 2. create_calendar_event com título vazio (validação de erro amigável)
+            await ws.send(json.dumps({
+                "id": "cal-create-empty",
+                "action": "create_calendar_event",
+                "params": {"summary": ""}
+            }))
+            resp = await recv_resp(ws, "cal-create-empty")
+            assert resp.get("data", {}).get("status") == "error"
+    finally:
+        server.stop()
+
+
 
 
 

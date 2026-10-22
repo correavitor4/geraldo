@@ -1,10 +1,10 @@
 import asyncio
 import json
 import pytest
-from textual.widgets import Button, Input, Label, RichLog
+from textual.widgets import Button, Input, Label, RichLog, TabbedContent
 
 from core.ipc import GeraldoIPCServer
-from ui.tui import GeraldoTUI, TimerConfigModal, AlarmConfigModal
+from ui.tui import GeraldoTUI, TimerConfigModal, AlarmConfigModal, CalendarNewEventModal
 
 TEST_IPC_PORT = 8795
 TEST_IPC_HOST = "127.0.0.1"
@@ -281,6 +281,7 @@ async def test_tui_button_clicks_enqueue_actions():
 
         # Ativa pomodoro para exibir botões Pular e Reset
         app.update_status_dashboard({"pomodoro": {"state": "work", "active": True, "left": 1500, "cycle": 1}})
+        app.query_one("#main-app-tabs", TabbedContent).active = "tab-pane-pomodoro"
         await pilot.pause()
 
         # Clique no botão Pular Pomodoro
@@ -651,6 +652,8 @@ async def test_tui_pomodoro_plan_modal():
     app = GeraldoTUI(auto_connect=False)
     async with app.run_test(size=(160, 50)) as pilot:
         # Clica no botão de planejar
+        app.query_one("#main-app-tabs", TabbedContent).active = "tab-pane-pomodoro"
+        await pilot.pause()
         await pilot.click("#btn-pomo-plan")
         await pilot.pause()
 
@@ -1065,6 +1068,141 @@ async def test_tui_alarm_card_buttons_and_actions():
         assert app._send_queue.qsize() == 1
         msg = json.loads(await app._send_queue.get())
         assert msg["action"] == "alarm_clear_all"
+
+
+@pytest.mark.anyio
+async def test_tui_main_tabbed_content_structure():
+    """Valida presença das 5 abas principais do Textual (Chat, Agenda, Pomodoro, Timers, Sistema)."""
+    app = GeraldoTUI(auto_connect=False)
+    async with app.run_test(size=(160, 50)) as pilot:
+        main_tabs = app.query_one("#main-app-tabs")
+        assert main_tabs is not None
+        assert app.query_one("#tab-pane-chat") is not None
+        assert app.query_one("#tab-pane-agenda") is not None
+        assert app.query_one("#tab-pane-pomodoro") is not None
+        assert app.query_one("#tab-pane-time-tasks") is not None
+        assert app.query_one("#tab-pane-system") is not None
+
+        # Valida elementos da aba Agenda
+        assert app.query_one("#cal-top-bar") is not None
+        assert app.query_one("#btn-cal-prev-month", Button) is not None
+        assert app.query_one("#btn-cal-next-month", Button) is not None
+        assert app.query_one("#btn-cal-today", Button) is not None
+        assert app.query_one("#btn-cal-new", Button) is not None
+        assert app.query_one("#btn-cal-refresh-btn", Button) is not None
+        assert app.query_one("#btn-cal-open", Button) is not None
+        assert app.query_one("#btn-cal-auth", Button) is not None
+        assert app.query_one("#calendar-grid-view") is not None
+        assert app.query_one("#cal-events-log") is not None
+
+
+@pytest.mark.anyio
+async def test_tui_calendar_navigation_and_rendering():
+    """Valida navegação de meses (anterior, próximo, hoje) no calendário da TUI."""
+    app = GeraldoTUI(auto_connect=False)
+    async with app.run_test(size=(160, 50)) as pilot:
+        import datetime
+        today = datetime.date.today()
+        assert app._cal_year == today.year
+        assert app._cal_month == today.month
+
+        # Navega para o próximo mês
+        app.query_one("#btn-cal-next-month", Button).press()
+        await pilot.pause()
+        expected_month = today.month + 1 if today.month < 12 else 1
+        expected_year = today.year if today.month < 12 else today.year + 1
+        assert app._cal_month == expected_month
+        assert app._cal_year == expected_year
+
+        # Navega para o mês anterior duas vezes
+        app.query_one("#btn-cal-prev-month", Button).press()
+        await pilot.pause()
+        assert app._cal_month == today.month
+        assert app._cal_year == today.year
+
+        app.query_one("#btn-cal-prev-month", Button).press()
+        await pilot.pause()
+        prev_month = today.month - 1 if today.month > 1 else 12
+        assert app._cal_month == prev_month
+
+        # Clica em Hoje
+        app.query_one("#btn-cal-today", Button).press()
+        await pilot.pause()
+        assert app._cal_month == today.month
+        assert app._cal_year == today.year
+
+
+@pytest.mark.anyio
+async def test_tui_calendar_events_display_and_response():
+    """Valida renderização de eventos recebidos via IPC na agenda da TUI."""
+    app = GeraldoTUI(auto_connect=False)
+    async with app.run_test(size=(160, 50)) as pilot:
+        sample_events = [
+            {
+                "id": "ev1",
+                "summary": "Reunião Geral",
+                "start": "2026-10-22T10:00:00-03:00",
+                "end": "2026-10-22T11:00:00-03:00",
+                "all_day": False,
+                "location": "Google Meet",
+                "description": "Alinhamento semanal de metas"
+            },
+            {
+                "id": "ev2",
+                "summary": "Feriado Municipal",
+                "start": "2026-10-25",
+                "end": "2026-10-25",
+                "all_day": True,
+                "location": "",
+                "description": ""
+            }
+        ]
+
+        app.handle_response(
+            req_id="get_calendar_events-123",
+            status="ok",
+            data={"events": sample_events, "count": 2},
+            error=None
+        )
+        await pilot.pause()
+
+        assert len(app._cal_events) == 2
+        cal_log = app.query_one("#cal-events-log", RichLog)
+        assert cal_log is not None
+
+
+@pytest.mark.anyio
+async def test_tui_calendar_new_event_modal_flow():
+    """Valida abertura do modal de novo evento, preenchimento e despacho de create_calendar_event."""
+    app = GeraldoTUI(auto_connect=False)
+    async with app.run_test(size=(160, 50)) as pilot:
+        # 1. Abre modal pelo botão "+ Novo"
+        app.query_one("#btn-cal-new", Button).press()
+        await pilot.pause()
+
+        assert isinstance(app.screen, CalendarNewEventModal)
+
+        # 2. Preenche os dados do evento
+        app.screen.query_one("#input-event-summary", Input).value = "Alinhamento com Cliente"
+        app.screen.query_one("#input-event-date", Input).value = "amanhã"
+        app.screen.query_one("#input-event-time", Input).value = "14:30"
+        app.screen.query_one("#input-event-duration", Input).value = "45"
+
+        # 3. Clica em Criar Evento
+        app.screen.query_one("#btn-modal-event-save", Button).press()
+        await pilot.pause()
+
+        # Modal fechou
+        assert not isinstance(app.screen, CalendarNewEventModal)
+
+        # Ação create_calendar_event enfileirada
+        assert app._send_queue.qsize() == 1
+        msg = json.loads(await app._send_queue.get())
+        assert msg["action"] == "create_calendar_event"
+        assert msg["params"]["summary"] == "Alinhamento com Cliente"
+        assert msg["params"]["date_query"] == "amanhã"
+        assert msg["params"]["time_str"] == "14:30"
+        assert msg["params"]["duration_minutes"] == 45
 
 
 

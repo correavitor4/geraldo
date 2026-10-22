@@ -17,7 +17,7 @@
                 <div class="brand-icon">🎙️</div>
                 <div class="brand-text">
                     <h1>GERALDO</h1>
-                    <span class="version-tag">Desktop v0.2.0</span>
+                    <span class="version-tag">Desktop v0.4.1</span>
                 </div>
             </div>
 
@@ -53,235 +53,595 @@
             </div>
         </header>
 
-        <!-- CORPO PRINCIPAL EM 2 COLUNAS -->
+        <!-- BARRA DE NAVEGAÇÃO DE ABAS PRINCIPAIS -->
+        <nav id="main-nav-tabs" class="main-nav-tabs" role="tablist">
+            <button class="main-nav-tab active" data-view="view-chat" id="tab-nav-chat" role="tab" aria-selected="true">
+                <span class="tab-icon">💬</span>
+                <span class="tab-title">Assistente</span>
+            </button>
+            <button class="main-nav-tab" data-view="view-calendar" id="tab-nav-calendar" role="tab" aria-selected="false">
+                <span class="tab-icon">📅</span>
+                <span class="tab-title">Agenda</span>
+                <span id="nav-calendar-badge" class="nav-tab-badge hidden">0</span>
+            </button>
+            <button class="main-nav-tab" data-view="view-pomodoro" id="tab-nav-pomodoro" role="tab" aria-selected="false">
+                <span class="tab-icon">🍅</span>
+                <span class="tab-title">Pomodoro</span>
+                <span id="nav-pomodoro-status" class="nav-tab-pill hidden">25:00</span>
+            </button>
+            <button class="main-nav-tab" data-view="view-timers" id="tab-nav-timers" role="tab" aria-selected="false">
+                <span class="tab-icon">⏱️</span>
+                <span class="tab-title">Temporizadores</span>
+                <span id="nav-timers-badge" class="nav-tab-badge hidden">0</span>
+            </button>
+            <button class="main-nav-tab" data-view="view-settings" id="tab-nav-settings" role="tab" aria-selected="false">
+                <span class="tab-icon">⚙️</span>
+                <span class="tab-title">Configurações</span>
+            </button>
+        </nav>
+
+        <!-- CORPO PRINCIPAL MULTI-VIEW -->
         <main id="main-content" class="main-content">
-            <!-- COLUNA ESQUERDA: FEED DE MENSAGENS -->
-            <section id="chat-section" class="chat-section">
-                <div class="section-header">
-                    <h2>Histórico de Interação</h2>
-                    <button id="btn-clear-chat" class="btn-link" title="Limpar mensagens">Limpar</button>
-                </div>
 
-                <div id="chat-stream" class="chat-stream">
-                    <div class="system-message">
-                        <span class="msg-time">Sistema</span>
-                        <p>Bem-vindo ao Geraldo Desktop! O assistente está conectado ao motor local em segundo plano.</p>
-                    </div>
-                </div>
-
-                <!-- SUGESTÕES RÁPIDAS -->
-                <div class="suggestions-bar">
-                    <button class="chip-suggestion" data-prompt="Como está minha agenda para amanhã?">📅 Agenda de amanhã</button>
-                    <button class="chip-suggestion" data-prompt="Timer de 5 minutos">⏱️ Timer 5 min</button>
-                    <button class="chip-suggestion" data-prompt="Que horas são?">🕒 Que horas são?</button>
-                    <button class="chip-suggestion" data-prompt="Notícias de tecnologia">📰 Notícias</button>
-                </div>
-
-                <!-- BARRA DE ENTRADA DE COMANDOS -->
-                <div id="input-bar" class="input-bar">
-                    <div class="input-wrapper">
-                        <input 
-                            type="text" 
-                            id="prompt-input" 
-                            placeholder="Digite uma instrução ou pergunta ao Geraldo..." 
-                            autocomplete="off"
-                        >
-                    </div>
-                    <button id="btn-send" class="btn-primary" title="Enviar comando">
-                        <span>Enviar</span>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <line x1="22" y1="2" x2="11" y2="13"></line>
-                            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-                        </svg>
-                    </button>
-                    <button id="btn-cancel" class="btn-secondary" title="Cancelar fala ou sons ativos">
-                        ⏹
-                    </button>
-                </div>
-            </section>
-
-            <!-- COLUNA DIREITA: PAINEL LATERAL DE WIDGETS -->
-            <aside id="sidebar-section" class="sidebar-section">
-                <!-- CARD POMODORO -->
-                <div class="dashboard-card pomo-card">
-                    <div class="card-header">
-                        <h3>🍅 Pomodoro</h3>
-                        <div class="card-header-actions">
-                            <button id="btn-toggle-plan-pomo" class="btn-link" title="Planejar Pomodoro">⚙️ Planejar</button>
-                            <span id="pomo-phase-badge" class="badge-phase hidden">Inativo</span>
+            <!-- ========================================================
+                 ABA 1: ASSISTENTE (CHAT & COMANDOS DE VOZ)
+                 ======================================================== -->
+            <div id="view-chat" class="main-view-panel active">
+                <div class="chat-layout-grid">
+                    <!-- COLUNA ESQUERDA: FEED DE MENSAGENS -->
+                    <section id="chat-section" class="chat-section">
+                        <div class="section-header">
+                            <h2>Histórico de Interação</h2>
+                            <button id="btn-clear-chat" class="btn-link" title="Limpar mensagens">Limpar</button>
                         </div>
-                    </div>
 
-                    <!-- FORMULÁRIO COLAPSÁVEL DE PLANEJAMENTO DO POMODORO -->
-                    <div id="pomo-plan-form" class="pomo-plan-form hidden">
-                        <div class="plan-presets-row">
-                            <button type="button" class="preset-chip active" data-work="25" data-break="5" data-long-break="15" data-long-interval="4">25/5 min (L15m)</button>
-                            <button type="button" class="preset-chip" data-work="50" data-break="10" data-long-break="20" data-long-interval="4">50/10 min (L20m)</button>
-                            <button type="button" class="preset-chip" data-work="15" data-break="3" data-long-break="10" data-long-interval="3">15/3 min (L10m)</button>
-                        </div>
-                        <div class="timer-inputs-row">
-                            <div class="input-group">
-                                <label for="pomo-input-work">Foco (min)</label>
-                                <input type="number" id="pomo-input-work" min="1" max="180" value="25">
-                            </div>
-                            <div class="input-group">
-                                <label for="pomo-input-break">Pausa Curta</label>
-                                <input type="number" id="pomo-input-break" min="1" max="60" value="5">
-                            </div>
-                            <div class="input-group">
-                                <label for="pomo-input-long-break">Pausa Longa</label>
-                                <input type="number" id="pomo-input-long-break" min="1" max="120" value="15">
-                            </div>
-                            <div class="input-group">
-                                <label for="pomo-input-long-interval">Ciclos p/ L</label>
-                                <input type="number" id="pomo-input-long-interval" min="1" max="12" value="4">
-                            </div>
-                            <div class="input-group">
-                                <label for="pomo-input-cycles">Ciclo</label>
-                                <input type="number" id="pomo-input-cycles" min="1" max="12" value="1">
-                            </div>
-                        </div>
-                        <button id="btn-save-plan-pomo" class="btn-action primary" style="width: 100%; margin-top: 6px;">▶ Iniciar Ciclo Planejado</button>
-                    </div>
-
-                    <div class="pomo-body">
-                        <div id="pomo-empty" class="empty-state">Nenhum pomodoro ativo</div>
-                        <div id="pomo-active-display" class="hidden">
-                            <div id="pomo-countdown" class="big-timer">25:00</div>
-                            <span id="pomo-cycle-text" class="sub-label">Ciclo 1 de 4</span>
-                        </div>
-                    </div>
-                    <div class="pomo-actions idle" id="pomo-actions">
-                        <button id="btn-pomo-toggle" class="btn-action primary">▶ Iniciar</button>
-                        <button id="btn-pomo-skip" class="btn-action hidden">⏭ Pular</button>
-                        <button id="btn-pomo-reset" class="btn-action hidden">🔄 Reset</button>
-                    </div>
-                </div>
-
-                <!-- CARD DE TEMPORIZADORES (ABAS: TIMERS & ALARMES) -->
-                <div class="dashboard-card time-tasks-card" id="time-tasks-card">
-                    <div class="card-tabs-header">
-                        <button type="button" class="tab-btn active" id="tab-btn-timers" data-tab="tab-timers">
-                            ⏱️ Timers <span id="timers-badge-count" class="tab-count-badge">0</span>
-                        </button>
-                        <button type="button" class="tab-btn" id="tab-btn-alarms" data-tab="tab-alarms">
-                            ⏰ Alarmes <span id="alarms-badge-count" class="tab-count-badge">0</span>
-                        </button>
-                    </div>
-
-                    <!-- PAINEL DA ABA TIMERS -->
-                    <div id="tab-content-timers" class="tab-content active">
-                        <div class="tab-sub-header">
-                            <h4>⏱️ Timers Ativos</h4>
-                            <div class="card-header-actions">
-                                <button id="btn-toggle-new-timer" class="btn-link" title="Novo timer">+ Adicionar</button>
-                                <button id="btn-cancel-all-timers" class="btn-link danger hidden" title="Cancelar todos os timers">Limpar</button>
+                        <div id="chat-stream" class="chat-stream">
+                            <div class="system-message">
+                                <span class="msg-time">Sistema</span>
+                                <p>Bem-vindo ao Geraldo Desktop! O assistente está conectado ao motor local em segundo plano.</p>
                             </div>
                         </div>
 
-                        <!-- FORMULÁRIO COLAPSÁVEL DE NOVO TIMER -->
-                        <div id="new-timer-form" class="new-timer-form hidden">
-                            <div class="plan-presets-row" id="timer-presets-row">
-                                <button type="button" class="preset-chip timer-preset" data-h="0" data-m="1" data-s="0">1 min</button>
-                                <button type="button" class="preset-chip timer-preset active" data-h="0" data-m="5" data-s="0">5 min</button>
-                                <button type="button" class="preset-chip timer-preset" data-h="0" data-m="10" data-s="0">10 min</button>
-                                <button type="button" class="preset-chip timer-preset" data-h="0" data-m="15" data-s="0">15 min</button>
-                                <button type="button" class="preset-chip timer-preset" data-h="0" data-m="25" data-s="0">25 min</button>
-                                <button type="button" class="preset-chip timer-preset" data-h="1" data-m="0" data-s="0">1h</button>
-                            </div>
-                            <input type="text" id="new-timer-label" placeholder="Rótulo (ex: Café, Forno, Reunião)" value="Timer">
-                            <div class="timer-inputs-row">
-                                <div class="input-group">
-                                    <label for="new-timer-hours">Horas</label>
-                                    <input type="number" id="new-timer-hours" placeholder="0" min="0" max="24" value="0">
-                                </div>
-                                <div class="input-group">
-                                    <label for="new-timer-min">Minutos</label>
-                                    <input type="number" id="new-timer-min" placeholder="5" min="0" max="180" value="5">
-                                </div>
-                                <div class="input-group">
-                                    <label for="new-timer-sec">Segundos</label>
-                                    <input type="number" id="new-timer-sec" placeholder="0" min="0" max="59" value="0">
-                                </div>
-                            </div>
-                            <button id="btn-add-timer-submit" class="btn-action primary" style="width: 100%; margin-top: 6px;">▶ Criar Timer</button>
+                        <!-- SUGESTÕES RÁPIDAS -->
+                        <div class="suggestions-bar">
+                            <button class="chip-suggestion" data-prompt="Como está minha agenda para amanhã?">📅 Agenda de amanhã</button>
+                            <button class="chip-suggestion" data-prompt="Timer de 5 minutos">⏱️ Timer 5 min</button>
+                            <button class="chip-suggestion" data-prompt="Que horas são?">🕒 Que horas são?</button>
+                            <button class="chip-suggestion" data-prompt="Notícias de tecnologia">📰 Notícias</button>
                         </div>
 
-                        <div id="timers-list" class="items-list">
-                            <div class="empty-state">Nenhum timer ativo</div>
-                        </div>
-                    </div>
-
-                    <!-- PAINEL DA ABA ALARMES -->
-                    <div id="tab-content-alarms" class="tab-content hidden">
-                        <div class="tab-sub-header">
-                            <h4>⏰ Alarmes Programados</h4>
-                            <div class="card-header-actions">
-                                <button id="btn-toggle-new-alarm" class="btn-link" title="Novo alarme">+ Adicionar</button>
-                                <button id="btn-cancel-all-alarms" class="btn-link danger hidden" title="Cancelar todos os alarmes">Limpar</button>
+                        <!-- BARRA DE ENTRADA DE COMANDOS -->
+                        <div id="input-bar" class="input-bar">
+                            <div class="input-wrapper">
+                                <input 
+                                    type="text" 
+                                    id="prompt-input" 
+                                    placeholder="Digite uma instrução ou pergunta ao Geraldo..." 
+                                    autocomplete="off"
+                                >
                             </div>
-                        </div>
-
-                        <!-- FORMULÁRIO COLAPSÁVEL DE NOVO ALARME -->
-                        <div id="new-alarm-form" class="new-timer-form hidden">
-                            <div class="plan-presets-row" id="alarm-presets-row">
-                                <button type="button" class="preset-chip alarm-preset" data-time="07:00">07:00</button>
-                                <button type="button" class="preset-chip alarm-preset active" data-time="08:00">08:00</button>
-                                <button type="button" class="preset-chip alarm-preset" data-time="12:00">12:00</button>
-                                <button type="button" class="preset-chip alarm-preset" data-time="18:00">18:00</button>
-                                <button type="button" class="preset-chip alarm-preset" data-time="22:00">22:00</button>
-                            </div>
-                            <input type="text" id="new-alarm-label" placeholder="Rótulo (ex: Acordar, Remédio, Reunião)" value="Alarme">
-                            <div class="timer-inputs-row">
-                                <div class="input-group" style="flex: 1;">
-                                    <label for="new-alarm-time">Horário (HH:MM)</label>
-                                    <input type="time" id="new-alarm-time" value="08:00" style="width: 100%;">
-                                </div>
-                            </div>
-                            <button id="btn-add-alarm-submit" class="btn-action primary" style="width: 100%; margin-top: 6px;">⏰ Criar Alarme</button>
-                        </div>
-
-                        <div id="alarms-list" class="items-list">
-                            <div class="empty-state">Nenhum alarme programado</div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- CARD GOOGLE CALENDAR -->
-                <div class="dashboard-card calendar-card">
-                    <div class="card-header">
-                        <h3>📅 Agenda do Google</h3>
-                        <span id="cal-status-badge" class="badge-tag">Verificando...</span>
-                    </div>
-                    <div class="calendar-card-body">
-                        <p id="cal-status-desc" class="sub-label">Acesse seus compromissos ou conecte sua conta Google.</p>
-                        <div class="calendar-actions-row">
-                            <button id="btn-open-calendar" class="btn-action primary" title="Abrir Agenda do Google no navegador">
-                                🌐 Abrir Agenda
+                            <button id="btn-send" class="btn-primary" title="Enviar comando">
+                                <span>Enviar</span>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                                </svg>
                             </button>
-                            <button id="btn-auth-calendar" class="btn-action" title="Vincular ou autorizar conta Google">
-                                🔑 Conectar
+                            <button id="btn-cancel" class="btn-secondary" title="Cancelar fala ou sons ativos">
+                                ⏹
                             </button>
                         </div>
-                    </div>
-                </div>
+                    </section>
 
-                <!-- CARD STATUS DO MOTOR LOCAL -->
-                <div class="dashboard-card info-card">
-                    <div class="card-header">
-                        <h3>⚡ Motor Local</h3>
-                        <span class="badge-tag">Zero Cloud</span>
-                    </div>
-                    <ul class="engine-specs">
-                        <li><strong>STT:</strong> Faster-Whisper (CPU int8)</li>
-                        <li><strong>NLU:</strong> Scikit-Learn TF-IDF (&lt;1ms)</li>
-                        <li><strong>TTS:</strong> Piper Neural ONNX</li>
-                        <li><strong>LLM:</strong> <span id="specs-llm-text">Ollama (qwen2.5:3b)</span></li>
-                        <li><strong>Mic:</strong> <span id="specs-audio-in-text">Padrão</span></li>
-                        <li><strong>Saída:</strong> <span id="specs-audio-out-text">Padrão</span></li>
-                    </ul>
+                    <!-- COLUNA DIREITA: RESUMO RÁPIDO & WIDGETS -->
+                    <aside id="sidebar-section" class="sidebar-section">
+                        <!-- CARD POMODORO RESUMO -->
+                        <div class="dashboard-card pomo-card">
+                            <div class="card-header">
+                                <h3>🍅 Pomodoro</h3>
+                                <div class="card-header-actions">
+                                    <button id="btn-toggle-plan-pomo" class="btn-link" title="Planejar Pomodoro">⚙️ Planejar</button>
+                                    <span id="pomo-phase-badge" class="badge-phase hidden">Inativo</span>
+                                </div>
+                            </div>
+
+                            <!-- FORMULÁRIO COLAPSÁVEL DE PLANEJAMENTO DO POMODORO -->
+                            <div id="pomo-plan-form" class="pomo-plan-form hidden">
+                                <div class="plan-presets-row">
+                                    <button type="button" class="preset-chip active" data-work="25" data-break="5" data-long-break="15" data-long-interval="4">25/5 min (L15m)</button>
+                                    <button type="button" class="preset-chip" data-work="50" data-break="10" data-long-break="20" data-long-interval="4">50/10 min (L20m)</button>
+                                    <button type="button" class="preset-chip" data-work="15" data-break="3" data-long-break="10" data-long-interval="3">15/3 min (L10m)</button>
+                                </div>
+                                <div class="timer-inputs-row">
+                                    <div class="input-group">
+                                        <label for="pomo-input-work">Foco (min)</label>
+                                        <input type="number" id="pomo-input-work" min="1" max="180" value="25">
+                                    </div>
+                                    <div class="input-group">
+                                        <label for="pomo-input-break">Pausa Curta</label>
+                                        <input type="number" id="pomo-input-break" min="1" max="60" value="5">
+                                    </div>
+                                    <div class="input-group">
+                                        <label for="pomo-input-long-break">Pausa Longa</label>
+                                        <input type="number" id="pomo-input-long-break" min="1" max="120" value="15">
+                                    </div>
+                                    <div class="input-group">
+                                        <label for="pomo-input-long-interval">Ciclos p/ L</label>
+                                        <input type="number" id="pomo-input-long-interval" min="1" max="12" value="4">
+                                    </div>
+                                    <div class="input-group">
+                                        <label for="pomo-input-cycles">Ciclo</label>
+                                        <input type="number" id="pomo-input-cycles" min="1" max="12" value="1">
+                                    </div>
+                                </div>
+                                <button id="btn-save-plan-pomo" class="btn-action primary" style="width: 100%; margin-top: 6px;">▶ Iniciar Ciclo Planejado</button>
+                            </div>
+
+                            <div class="pomo-body">
+                                <div id="pomo-empty" class="empty-state">Nenhum pomodoro ativo</div>
+                                <div id="pomo-active-display" class="hidden">
+                                    <div id="pomo-countdown" class="big-timer">25:00</div>
+                                    <span id="pomo-cycle-text" class="sub-label">Ciclo 1 de 4</span>
+                                </div>
+                            </div>
+                            <div class="pomo-actions idle" id="pomo-actions">
+                                <button id="btn-pomo-toggle" class="btn-action primary">▶ Iniciar</button>
+                                <button id="btn-pomo-skip" class="btn-action hidden">⏭ Pular</button>
+                                <button id="btn-pomo-reset" class="btn-action hidden">🔄 Reset</button>
+                            </div>
+                        </div>
+
+                        <!-- CARD DE TEMPORIZADORES (ABAS: TIMERS & ALARMES) -->
+                        <div class="dashboard-card time-tasks-card" id="time-tasks-card">
+                            <div class="card-tabs-header">
+                                <button type="button" class="tab-btn active" id="tab-btn-timers" data-tab="tab-timers">
+                                    ⏱️ Timers <span id="timers-badge-count" class="tab-count-badge">0</span>
+                                </button>
+                                <button type="button" class="tab-btn" id="tab-btn-alarms" data-tab="tab-alarms">
+                                    ⏰ Alarmes <span id="alarms-badge-count" class="tab-count-badge">0</span>
+                                </button>
+                            </div>
+
+                            <!-- PAINEL DA ABA TIMERS -->
+                            <div id="tab-content-timers" class="tab-content active">
+                                <div class="tab-sub-header">
+                                    <h4>⏱️ Timers Ativos</h4>
+                                    <div class="card-header-actions">
+                                        <button id="btn-toggle-new-timer" class="btn-link" title="Novo timer">+ Adicionar</button>
+                                        <button id="btn-cancel-all-timers" class="btn-link danger hidden" title="Cancelar todos os timers">Limpar</button>
+                                    </div>
+                                </div>
+
+                                <!-- FORMULÁRIO COLAPSÁVEL DE NOVO TIMER -->
+                                <div id="new-timer-form" class="new-timer-form hidden">
+                                    <div class="plan-presets-row" id="timer-presets-row">
+                                        <button type="button" class="preset-chip timer-preset" data-h="0" data-m="1" data-s="0">1 min</button>
+                                        <button type="button" class="preset-chip timer-preset active" data-h="0" data-m="5" data-s="0">5 min</button>
+                                        <button type="button" class="preset-chip timer-preset" data-h="0" data-m="10" data-s="0">10 min</button>
+                                        <button type="button" class="preset-chip timer-preset" data-h="0" data-m="15" data-s="0">15 min</button>
+                                        <button type="button" class="preset-chip timer-preset" data-h="0" data-m="25" data-s="0">25 min</button>
+                                        <button type="button" class="preset-chip timer-preset" data-h="1" data-m="0" data-s="0">1h</button>
+                                    </div>
+                                    <input type="text" id="new-timer-label" placeholder="Rótulo (ex: Café, Forno, Reunião)" value="Timer">
+                                    <div class="timer-inputs-row">
+                                        <div class="input-group">
+                                            <label for="new-timer-hours">Horas</label>
+                                            <input type="number" id="new-timer-hours" placeholder="0" min="0" max="24" value="0">
+                                        </div>
+                                        <div class="input-group">
+                                            <label for="new-timer-min">Minutos</label>
+                                            <input type="number" id="new-timer-min" placeholder="5" min="0" max="180" value="5">
+                                        </div>
+                                        <div class="input-group">
+                                            <label for="new-timer-sec">Segundos</label>
+                                            <input type="number" id="new-timer-sec" placeholder="0" min="0" max="59" value="0">
+                                        </div>
+                                    </div>
+                                    <button id="btn-add-timer-submit" class="btn-action primary" style="width: 100%; margin-top: 6px;">▶ Criar Timer</button>
+                                </div>
+
+                                <div id="timers-list" class="items-list">
+                                    <div class="empty-state">Nenhum timer ativo</div>
+                                </div>
+                            </div>
+
+                            <!-- PAINEL DA ABA ALARMES -->
+                            <div id="tab-content-alarms" class="tab-content hidden">
+                                <div class="tab-sub-header">
+                                    <h4>⏰ Alarmes Programados</h4>
+                                    <div class="card-header-actions">
+                                        <button id="btn-toggle-new-alarm" class="btn-link" title="Novo alarme">+ Adicionar</button>
+                                        <button id="btn-cancel-all-alarms" class="btn-link danger hidden" title="Cancelar todos os alarmes">Limpar</button>
+                                    </div>
+                                </div>
+
+                                <!-- FORMULÁRIO COLAPSÁVEL DE NOVO ALARME -->
+                                <div id="new-alarm-form" class="new-timer-form hidden">
+                                    <div class="plan-presets-row" id="alarm-presets-row">
+                                        <button type="button" class="preset-chip alarm-preset" data-time="07:00">07:00</button>
+                                        <button type="button" class="preset-chip alarm-preset active" data-time="08:00">08:00</button>
+                                        <button type="button" class="preset-chip alarm-preset" data-time="12:00">12:00</button>
+                                        <button type="button" class="preset-chip alarm-preset" data-time="18:00">18:00</button>
+                                        <button type="button" class="preset-chip alarm-preset" data-time="22:00">22:00</button>
+                                    </div>
+                                    <input type="text" id="new-alarm-label" placeholder="Rótulo (ex: Acordar, Remédio, Reunião)" value="Alarme">
+                                    <div class="timer-inputs-row">
+                                        <div class="input-group" style="flex: 1;">
+                                            <label for="new-alarm-time">Horário (HH:MM)</label>
+                                            <input type="time" id="new-alarm-time" value="08:00" style="width: 100%;">
+                                        </div>
+                                    </div>
+                                    <button id="btn-add-alarm-submit" class="btn-action primary" style="width: 100%; margin-top: 6px;">⏰ Criar Alarme</button>
+                                </div>
+
+                                <div id="alarms-list" class="items-list">
+                                    <div class="empty-state">Nenhum alarme programado</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- CARD GOOGLE CALENDAR (ATALHO RÁPIDO) -->
+                        <div class="dashboard-card calendar-card">
+                            <div class="card-header">
+                                <h3>📅 Agenda do Google</h3>
+                                <span id="cal-status-badge" class="badge-tag">Verificando...</span>
+                            </div>
+                            <div class="calendar-card-body">
+                                <p id="cal-status-desc" class="sub-label">Acesse seus compromissos ou conecte sua conta Google.</p>
+                                <div class="calendar-actions-row">
+                                    <button id="btn-open-calendar" class="btn-action primary" title="Abrir Agenda do Google no navegador">
+                                        🌐 Abrir Agenda
+                                    </button>
+                                    <button id="btn-auth-calendar" class="btn-action" title="Vincular ou autorizar conta Google">
+                                        🔑 Conectar
+                                    </button>
+                                </div>
+                                <button id="btn-jump-to-calendar-tab" class="btn-link" style="margin-top: 8px; width: 100%; text-align: center;">
+                                    🗓️ Ver Calendário & Compromissos Completos →
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- CARD STATUS DO MOTOR LOCAL -->
+                        <div class="dashboard-card info-card">
+                            <div class="card-header">
+                                <h3>⚡ Motor Local</h3>
+                                <span class="badge-tag">Zero Cloud</span>
+                            </div>
+                            <ul class="engine-specs">
+                                <li><strong>STT:</strong> Faster-Whisper (CPU int8)</li>
+                                <li><strong>NLU:</strong> Scikit-Learn TF-IDF (&lt;1ms)</li>
+                                <li><strong>TTS:</strong> Piper Neural ONNX</li>
+                                <li><strong>LLM:</strong> <span id="specs-llm-text">Ollama (qwen2.5:3b)</span></li>
+                                <li><strong>Mic:</strong> <span id="specs-audio-in-text">Padrão</span></li>
+                                <li><strong>Saída:</strong> <span id="specs-audio-out-text">Padrão</span></li>
+                            </ul>
+                        </div>
+                    </aside>
                 </div>
-            </aside>
+            </div>
+
+            <!-- ========================================================
+                 ABA 2: AGENDA COMPLETA COM CALENDÁRIO INTERATIVO
+                 ======================================================== -->
+            <div id="view-calendar" class="main-view-panel hidden">
+                <div class="calendar-view-container">
+                    <!-- BARRA SUPERIOR DA AGENDA -->
+                    <div class="calendar-top-bar">
+                        <div class="calendar-header-title">
+                            <div class="calendar-title-badge">
+                                <h2>📅 Agenda do Google</h2>
+                                <span id="cal-view-status-pill" class="status-pill-badge connected">Verificando...</span>
+                            </div>
+                            <p id="cal-view-subtitle" class="calendar-subtitle">Compromissos sincronizados em cache local e em tempo real com sua conta.</p>
+                        </div>
+                        <div class="calendar-toolbar-actions">
+                            <button id="btn-cal-refresh" class="btn-action" title="Sincronizar eventos agora">
+                                <span>🔄</span>
+                                <span>Sincronizar</span>
+                            </button>
+                            <button id="btn-cal-toggle-new" class="btn-action primary" title="Agendar novo compromisso">
+                                <span>➕</span>
+                                <span>Novo Compromisso</span>
+                            </button>
+                            <button id="btn-cal-web-link" class="btn-action secondary" title="Abrir Google Agenda no navegador">
+                                <span>🌐</span>
+                                <span>Google Calendar</span>
+                            </button>
+                            <button id="btn-cal-manage-auth" class="btn-action" title="Gerenciar conexão da conta">
+                                <span>🔑</span>
+                                <span id="cal-auth-btn-label">Conectar Conta</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- CORPO DA AGENDA: 2 COLUNAS (CALENDÁRIO MENSAL + LISTA DO DIA) -->
+                    <div class="calendar-split-layout">
+                        <!-- COLUNA ESQUERDA: CALENDÁRIO MENSAL -->
+                        <div class="calendar-month-card">
+                            <div class="month-controls-row">
+                                <div class="month-nav-group">
+                                    <button id="btn-cal-prev-month" class="btn-circle-nav" title="Mês anterior">◀</button>
+                                    <h3 id="calendar-month-year-label">Outubro 2026</h3>
+                                    <button id="btn-cal-next-month" class="btn-circle-nav" title="Próximo mês">▶</button>
+                                </div>
+                                <button id="btn-cal-today" class="btn-action mini" title="Ir para o dia de hoje">Hoje</button>
+                            </div>
+
+                            <!-- DIAS DA SEMANA -->
+                            <div class="calendar-weekdays-header">
+                                <span>Dom</span>
+                                <span>Seg</span>
+                                <span>Ter</span>
+                                <span>Qua</span>
+                                <span>Qui</span>
+                                <span>Sex</span>
+                                <span>Sáb</span>
+                            </div>
+
+                            <!-- GRID DE CÉLULAS DOS DIAS -->
+                            <div id="calendar-days-grid" class="calendar-days-grid">
+                                <!-- Preenchido dinamicamente via JS -->
+                            </div>
+
+                            <!-- LEGENDA DO CALENDÁRIO -->
+                            <div class="calendar-legend-bar">
+                                <div class="legend-item"><span class="legend-dot today"></span> Hoje</div>
+                                <div class="legend-item"><span class="legend-dot selected"></span> Selecionado</div>
+                                <div class="legend-item"><span class="legend-dot has-events"></span> Com compromisso</div>
+                            </div>
+                        </div>
+
+                        <!-- COLUNA DIREITA: COMPROMISSOS DO DIA SELECIONADO & FORMULÁRIO -->
+                        <div class="calendar-day-card">
+                            <div class="day-details-header">
+                                <div>
+                                    <h3 id="selected-day-full-label">Quinta-feira, 22 de Outubro de 2026</h3>
+                                    <span id="selected-day-events-count" class="day-count-badge">Carregando compromissos...</span>
+                                </div>
+                            </div>
+
+                            <!-- FORMULÁRIO COLAPSÁVEL DE NOVO COMPROMISSO -->
+                            <div id="calendar-create-event-form" class="calendar-create-form hidden">
+                                <h4>➕ Agendar Novo Compromisso</h4>
+                                <div class="form-row">
+                                    <label for="event-input-summary">Título do Evento</label>
+                                    <input type="text" id="event-input-summary" placeholder="Ex: Reunião de Alinhamento, Consulta Médica..." autocomplete="off">
+                                </div>
+                                <div class="form-grid-2">
+                                    <div class="form-row">
+                                        <label for="event-input-date">Data</label>
+                                        <input type="date" id="event-input-date">
+                                    </div>
+                                    <div class="form-row">
+                                        <label for="event-input-time">Horário de Início</label>
+                                        <input type="time" id="event-input-time" value="09:00">
+                                    </div>
+                                </div>
+                                <div class="form-grid-2">
+                                    <div class="form-row">
+                                        <label for="event-input-duration">Duração (minutos)</label>
+                                        <select id="event-input-duration">
+                                            <option value="30">30 minutos</option>
+                                            <option value="60" selected>1 hora</option>
+                                            <option value="90">1 hora e meia</option>
+                                            <option value="120">2 horas</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-row checkbox-row">
+                                        <label>
+                                            <input type="checkbox" id="event-input-allday">
+                                            <span>Compromisso o dia todo</span>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="form-buttons-row">
+                                    <button type="button" id="btn-cancel-create-event" class="btn-action">Cancelar</button>
+                                    <button type="button" id="btn-submit-create-event" class="btn-action primary">Salvar no Google Agenda</button>
+                                </div>
+                            </div>
+
+                            <!-- LISTA DE EVENTOS DO DIA -->
+                            <div id="selected-day-events-list" class="calendar-events-stream">
+                                <div class="empty-state">Selecione uma data para ver os compromissos.</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ========================================================
+                 ABA 3: POMODORO COMPLETO (MODO FOCO TOTAL)
+                 ======================================================== -->
+            <div id="view-pomodoro" class="main-view-panel hidden">
+                <div class="pomodoro-full-container">
+                    <div class="pomo-hero-card">
+                        <div class="pomo-hero-header">
+                            <span id="pomo-hero-badge" class="badge-phase">Tempo de Foco</span>
+                            <span id="pomo-hero-cycle" class="sub-label">Ciclo 1 de 4</span>
+                        </div>
+
+                        <!-- MOSTRADOR CIRCULAR GIGANTE -->
+                        <div class="pomo-hero-timer-display">
+                            <div id="pomo-hero-countdown" class="giant-timer">25:00</div>
+                            <p id="pomo-hero-subtitle" class="pomo-hero-subtitle">Mantenha a concentração na tarefa atual.</p>
+                        </div>
+
+                        <!-- CONTROLES PRINCIPAIS EM DESTAQUE -->
+                        <div class="pomo-hero-controls">
+                            <button id="btn-pomo-hero-toggle" class="btn-hero-action primary">▶ Iniciar Sessão</button>
+                            <button id="btn-pomo-hero-skip" class="btn-hero-action secondary">⏭ Pular Fase</button>
+                            <button id="btn-pomo-hero-reset" class="btn-hero-action danger">🔄 Reiniciar</button>
+                        </div>
+                    </div>
+
+                    <!-- PRESETS & CONFIGURAÇÃO DO POMODORO -->
+                    <div class="pomo-bottom-grid">
+                        <div class="dashboard-card">
+                            <div class="card-header">
+                                <h3>⚡ Presets de Foco</h3>
+                            </div>
+                            <div class="presets-selection-grid">
+                                <button type="button" class="pomo-mode-card active" data-work="25" data-break="5" data-long-break="15" data-long-interval="4">
+                                    <span class="mode-icon">🍅</span>
+                                    <strong>Clássico</strong>
+                                    <span>25m Foco / 5m Pausa</span>
+                                </button>
+                                <button type="button" class="pomo-mode-card" data-work="50" data-break="10" data-long-break="20" data-long-interval="4">
+                                    <span class="mode-icon">🚀</span>
+                                    <strong>Intenso</strong>
+                                    <span>50m Foco / 10m Pausa</span>
+                                </button>
+                                <button type="button" class="pomo-mode-card" data-work="15" data-break="3" data-long-break="10" data-long-interval="3">
+                                    <span class="mode-icon">⚡</span>
+                                    <strong>Sprint Ágil</strong>
+                                    <span>15m Foco / 3m Pausa</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="dashboard-card">
+                            <div class="card-header">
+                                <h3>💡 Técnica Pomodoro</h3>
+                            </div>
+                            <ul class="pomo-tips-list">
+                                <li>Trabalhe sem distrações por um bloco de foco.</li>
+                                <li>Ao soar o sino, levante-se, tome água e descanse a mente.</li>
+                                <li>Após 4 blocos de foco, aproveite uma pausa longa de 15 a 20 minutos.</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ========================================================
+                 ABA 4: TEMPORIZADORES (TIMERS & ALARMES COMPLETOS)
+                 ======================================================== -->
+            <div id="view-timers" class="main-view-panel hidden">
+                <div class="timers-full-container">
+                    <div class="timers-split-grid">
+                        <!-- COLUNA 1: TIMERS -->
+                        <div class="dashboard-card timer-column-card">
+                            <div class="card-header">
+                                <div>
+                                    <h3>⏱️ Gerenciador de Timers</h3>
+                                    <span class="sub-label">Contagens regressivas simultâneas</span>
+                                </div>
+                                <span id="timers-full-count-badge" class="badge-tag">0 ativos</span>
+                            </div>
+
+                            <div class="timer-creator-box">
+                                <span class="creator-title">Adicionar Novo Timer</span>
+                                <div class="plan-presets-row">
+                                    <button type="button" class="preset-chip timer-preset-full" data-h="0" data-m="1" data-s="0">1 min</button>
+                                    <button type="button" class="preset-chip timer-preset-full active" data-h="0" data-m="5" data-s="0">5 min</button>
+                                    <button type="button" class="preset-chip timer-preset-full" data-h="0" data-m="10" data-s="0">10 min</button>
+                                    <button type="button" class="preset-chip timer-preset-full" data-h="0" data-m="15" data-s="0">15 min</button>
+                                    <button type="button" class="preset-chip timer-preset-full" data-h="0" data-m="25" data-s="0">25 min</button>
+                                    <button type="button" class="preset-chip timer-preset-full" data-h="1" data-m="0" data-s="0">1h</button>
+                                </div>
+                                <input type="text" id="full-timer-label" placeholder="Rótulo do Timer (ex: Café, Reunião, Forno)" value="Timer">
+                                <div class="timer-inputs-row">
+                                    <div class="input-group">
+                                        <label for="full-timer-h">Horas</label>
+                                        <input type="number" id="full-timer-h" min="0" max="24" value="0">
+                                    </div>
+                                    <div class="input-group">
+                                        <label for="full-timer-m">Minutos</label>
+                                        <input type="number" id="full-timer-m" min="0" max="180" value="5">
+                                    </div>
+                                    <div class="input-group">
+                                        <label for="full-timer-s">Segundos</label>
+                                        <input type="number" id="full-timer-s" min="0" max="59" value="0">
+                                    </div>
+                                </div>
+                                <button type="button" id="btn-full-timer-submit" class="btn-action primary" style="width: 100%;">▶ Iniciar Novo Timer</button>
+                            </div>
+
+                            <div id="full-timers-stream" class="items-list wide-list">
+                                <div class="empty-state">Nenhum timer em execução no momento.</div>
+                            </div>
+                        </div>
+
+                        <!-- COLUNA 2: ALARMES -->
+                        <div class="dashboard-card timer-column-card">
+                            <div class="card-header">
+                                <div>
+                                    <h3>⏰ Alarmes Programados</h3>
+                                    <span class="sub-label">Disparo sonoro e por voz em horário exato</span>
+                                </div>
+                                <span id="alarms-full-count-badge" class="badge-tag">0 programados</span>
+                            </div>
+
+                            <div class="timer-creator-box">
+                                <span class="creator-title">Programar Alarme</span>
+                                <div class="plan-presets-row">
+                                    <button type="button" class="preset-chip alarm-preset-full" data-time="07:00">07:00</button>
+                                    <button type="button" class="preset-chip alarm-preset-full active" data-time="08:00">08:00</button>
+                                    <button type="button" class="preset-chip alarm-preset-full" data-time="12:00">12:00</button>
+                                    <button type="button" class="preset-chip alarm-preset-full" data-time="18:00">18:00</button>
+                                    <button type="button" class="preset-chip alarm-preset-full" data-time="22:00">22:00</button>
+                                </div>
+                                <input type="text" id="full-alarm-label" placeholder="Rótulo (ex: Acordar, Remédio, Reunião)" value="Alarme">
+                                <div class="timer-inputs-row">
+                                    <div class="input-group" style="flex: 1;">
+                                        <label for="full-alarm-time">Horário (HH:MM)</label>
+                                        <input type="time" id="full-alarm-time" value="08:00" style="width: 100%;">
+                                    </div>
+                                </div>
+                                <button type="button" id="btn-full-alarm-submit" class="btn-action primary" style="width: 100%;">⏰ Programar Alarme</button>
+                            </div>
+
+                            <div id="full-alarms-stream" class="items-list wide-list">
+                                <div class="empty-state">Nenhum alarme configurado.</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ========================================================
+                 ABA 5: CONFIGURAÇÕES DO SISTEMA (PAINEL COMPLETO)
+                 ======================================================== -->
+            <div id="view-settings" class="main-view-panel hidden">
+                <div class="settings-full-container">
+                    <div class="dashboard-card settings-column-card">
+                        <div class="card-header">
+                            <div>
+                                <h3>⚙️ Configurações Gerais do Geraldo</h3>
+                                <span class="sub-label">Ajuste os modelos de IA, dispositivos e ferramentas</span>
+                            </div>
+                            <button id="btn-quick-open-settings-modal" class="btn-action primary">
+                                🔧 Abrir Assistente de Configuração
+                            </button>
+                        </div>
+
+                        <div class="settings-overview-grid">
+                            <div class="settings-info-box">
+                                <h4>🧠 Inteligência Artificial (LLM)</h4>
+                                <p id="settings-view-llm-desc">Ollama com modelo <code>qwen2.5:3b</code></p>
+                                <span class="badge-tag status-ok">Motor Ativo</span>
+                            </div>
+                            <div class="settings-info-box">
+                                <h4>🎙️ Microfone de Entrada</h4>
+                                <p id="settings-view-mic-desc">Dispositivo padrão do sistema</p>
+                                <span class="badge-tag status-ok">Entrada Ativa</span>
+                            </div>
+                            <div class="settings-info-box">
+                                <h4>🔊 Saída de Áudio</h4>
+                                <p id="settings-view-speaker-desc">Dispositivo padrão do sistema</p>
+                                <span class="badge-tag status-ok">Piper Neural TTS</span>
+                            </div>
+                            <div class="settings-info-box">
+                                <h4>📅 Google Calendar</h4>
+                                <p id="settings-view-cal-desc">Google Agenda vinculada com cache local</p>
+                                <span id="settings-view-cal-badge" class="badge-tag status-ok">Conectado</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
         </main>
     </div>
 

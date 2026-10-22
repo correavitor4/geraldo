@@ -53,17 +53,18 @@ class SpeechToText:
             beam_size=1,
             best_of=1,
             temperature=0.0,
+            initial_prompt="Geraldo.",
             condition_on_previous_text=False,
             vad_filter=True,
-            vad_parameters=dict(min_silence_duration_ms=300, threshold=0.7)
+            vad_parameters=dict(min_silence_duration_ms=250, threshold=0.5)
         )
         for seg in segments:
             no_speech = getattr(seg, "no_speech_prob", None)
-            if isinstance(no_speech, (int, float)) and no_speech > 0.45:
+            if isinstance(no_speech, (int, float)) and no_speech > 0.65:
                 continue
 
             avg_logprob = getattr(seg, "avg_logprob", None)
-            if isinstance(avg_logprob, (int, float)) and avg_logprob < -0.85:
+            if isinstance(avg_logprob, (int, float)) and avg_logprob < -1.3:
                 continue
             text = seg.text.strip().lower()
             if "geraldo" in text:

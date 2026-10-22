@@ -1,4 +1,6 @@
 import asyncio
+import calendar
+import datetime
 import json
 import time
 from typing import Any, Dict, Optional
@@ -7,7 +9,9 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Button, Footer, Header, Input, Label, RichLog, Static, TabbedContent, TabPane
+from textual.widgets import (
+    Button, Footer, Header, Input, Label, RichLog, Static, TabbedContent, TabPane, Tabs, Tab
+)
 
 CSS = """
 Screen {
@@ -84,10 +88,40 @@ Screen {
     height: 1fr;
 }
 
+#main-app-tabs {
+    height: 1fr;
+}
+
+#main-app-tabs > Tabs {
+    background: #111827;
+    border-bottom: solid #1f2937;
+    height: 3;
+}
+
+#main-app-tabs Tab {
+    padding: 0 2;
+    text-style: bold;
+    color: #94a3b8;
+}
+
+#main-app-tabs Tab:hover {
+    color: #f8fafc;
+}
+
+#main-app-tabs Tab.-active {
+    color: #38bdf8;
+    background: #1e293b;
+    text-style: bold;
+}
+
+#tab-pane-chat, #tab-pane-agenda, #tab-pane-pomodoro, #tab-pane-time-tasks, #tab-pane-system {
+    padding: 1;
+    height: 1fr;
+}
+
 #chat-pane {
-    width: 65%;
+    width: 1fr;
     height: 100%;
-    border-right: solid #1f2937;
     padding: 0 1;
 }
 
@@ -105,10 +139,81 @@ Screen {
     padding: 1;
 }
 
-#side-pane {
-    width: 35%;
+#agenda-pane {
     height: 100%;
-    padding: 0 1;
+}
+
+#cal-top-bar {
+    height: 3;
+    align: center middle;
+    margin-bottom: 1;
+}
+
+#cal-top-bar Button {
+    margin: 0 1;
+    min-width: 10;
+    height: 3;
+}
+
+#cal-month-title {
+    width: 20;
+    text-style: bold;
+    color: #38bdf8;
+    text-align: center;
+    content-align: center middle;
+}
+
+#cal-status-label {
+    height: 1;
+    margin-bottom: 1;
+    color: #94a3b8;
+}
+
+#cal-content-container {
+    height: 1fr;
+}
+
+#cal-grid-pane {
+    width: 45%;
+    height: 100%;
+    border-right: solid #1f2937;
+    padding-right: 1;
+}
+
+#calendar-grid-view {
+    height: 1fr;
+    background: #0f172a;
+    border: round #1e293b;
+    padding: 1;
+    content-align: center middle;
+}
+
+#cal-events-pane {
+    width: 55%;
+    height: 100%;
+    padding-left: 1;
+}
+
+#cal-events-log {
+    height: 1fr;
+    background: #0f172a;
+    border: round #1e293b;
+    padding: 1;
+}
+
+#pomo-pane {
+    height: 100%;
+    align: center middle;
+}
+
+.pomo-hint {
+    margin-top: 1;
+    color: #64748b;
+    text-align: center;
+}
+
+#system-pane {
+    height: 100%;
 }
 
 .side-card {
@@ -368,6 +473,37 @@ AlarmConfigModal {
 
 #input-alarm-label:focus, #input-alarm-time:focus {
     border: tall #facc15;
+}
+
+CalendarNewEventModal {
+    align: center middle;
+    background: rgba(0, 0, 0, 0.75);
+}
+
+#cal-new-event-dialog {
+    width: 66;
+    height: auto;
+    background: #111827;
+    border: round #38bdf8;
+    padding: 1 2;
+}
+
+#cal-new-event-title {
+    color: #38bdf8;
+    text-style: bold;
+    text-align: center;
+    margin-bottom: 1;
+}
+
+#input-event-summary, #input-event-date, #input-event-time, #input-event-duration {
+    background: #1e293b;
+    border: none;
+    color: #f8fafc;
+    margin-bottom: 1;
+}
+
+#input-event-summary:focus, #input-event-date:focus, #input-event-time:focus, #input-event-duration:focus {
+    border: tall #38bdf8;
 }
 
 PomodoroPlanModal {
@@ -886,6 +1022,60 @@ class AlarmConfigModal(ModalScreen):
             self.dismiss(True)
 
 
+class CalendarNewEventModal(ModalScreen):
+    """Diálogo modal para adicionar um novo compromisso na Agenda do Google."""
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="cal-new-event-dialog"):
+            yield Label("📅 NOVO EVENTO NO GOOGLE CALENDAR", id="cal-new-event-title")
+
+            yield Label("Título / Assunto do Evento:", classes="form-label")
+            yield Input(placeholder="Ex: Reunião de Trabalho / Consulta Médica", id="input-event-summary")
+
+            yield Label("Data (AAAA-MM-DD ou 'hoje' / 'amanhã'):", classes="form-label")
+            today_str = datetime.date.today().strftime("%Y-%m-%d")
+            yield Input(value=today_str, placeholder="AAAA-MM-DD", id="input-event-date")
+
+            with Horizontal():
+                with Vertical(classes="input-group-col"):
+                    yield Label("Horário (HH:MM):", classes="form-label")
+                    yield Input(value="09:00", placeholder="09:00", id="input-event-time")
+                with Vertical(classes="input-group-col"):
+                    yield Label("Duração (minutos):", classes="form-label")
+                    yield Input(value="60", placeholder="60", id="input-event-duration")
+
+            with Horizontal(id="modal-buttons"):
+                yield Button("➕ Criar Evento", variant="primary", id="btn-modal-event-save")
+                yield Button("✕ Cancelar", id="btn-modal-event-cancel")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        button_id = event.button.id
+        if button_id == "btn-modal-event-cancel":
+            self.dismiss(False)
+        elif button_id == "btn-modal-event-save":
+            summary = self.query_one("#input-event-summary", Input).value.strip()
+            date_query = self.query_one("#input-event-date", Input).value.strip() or "hoje"
+            time_str = self.query_one("#input-event-time", Input).value.strip() or "09:00"
+            try:
+                dur = int(self.query_one("#input-event-duration", Input).value.strip() or "60")
+            except ValueError:
+                dur = 60
+
+            if not summary:
+                if hasattr(self.app, "notify"):
+                    self.app.notify("Por favor, informe o título do compromisso.", severity="warning")
+                return
+
+            if hasattr(self.app, "create_calendar_event"):
+                self.app.create_calendar_event(
+                    summary=summary,
+                    date_query=date_query,
+                    time_str=time_str,
+                    duration_minutes=dur,
+                )
+            self.dismiss(True)
+
+
 class GeraldoTUI(App):
     """
     Interface Rica de Terminal (TUI) para o assistente Geraldo.
@@ -937,12 +1127,20 @@ class GeraldoTUI(App):
         self._audio_input_device: Optional[Any] = None
         self._audio_output_device: Optional[Any] = None
         self._latest_status: dict = {}
+        today = datetime.date.today()
+        self._cal_year = today.year
+        self._cal_month = today.month
+        self._cal_events: list = []
 
         self._send_queue: asyncio.Queue = asyncio.Queue()
         self._ws_worker_task = None
         self._last_user_prompt = None
 
     def compose(self) -> ComposeResult:
+        from core.paths import get_token_path
+        has_token = get_token_path().exists()
+        cal_status_initial = "Status: [bold green]Vinculada (Google Calendar)[/]" if has_token else "Status: [dim]Não Vinculada[/]"
+
         with Horizontal(id="top-bar"):
             yield Label("🎙️ GERALDO ASSISTANT", id="title-label")
             yield Label("🔴 Desconectado", id="conn-badge")
@@ -950,50 +1148,79 @@ class GeraldoTUI(App):
             yield Label("🎤 ATIVO", id="mic-badge")
 
         with Horizontal(id="main-container"):
-            with Vertical(id="chat-pane"):
-                yield Label("HISTÓRICO DE COMANDOS & RESPOSTAS", id="chat-title")
-                yield RichLog(id="chat-log", highlight=True, markup=True, wrap=True)
+            with TabbedContent(id="main-app-tabs", initial="tab-pane-chat"):
+                with TabPane("💬 Chat / Assistente", id="tab-pane-chat"):
+                    with Vertical(id="chat-pane"):
+                        yield Label("HISTÓRICO DE COMANDOS & RESPOSTAS", id="chat-title")
+                        yield RichLog(id="chat-log", highlight=True, markup=True, wrap=True)
 
-            with VerticalScroll(id="side-pane"):
-                with Vertical(classes="side-card"):
-                    yield Label("🍅 POMODORO", classes="card-title")
-                    yield Label("[dim]Nenhum pomodoro ativo[/dim]", id="pomo-time")
-                    with Horizontal(id="pomo-buttons"):
-                        yield Button("▶ Iniciar", id="btn-pomo-toggle", variant="success")
-                        yield Button("⚙ Plan", id="btn-pomo-plan", variant="default")
-                        yield Button("⏭ Pular", id="btn-pomo-skip")
-                        yield Button("🔄 Reset", id="btn-pomo-reset")
+                with TabPane("📅 Agenda", id="tab-pane-agenda"):
+                    with Vertical(id="agenda-pane"):
+                        with Horizontal(id="cal-top-bar"):
+                            yield Button("◀ Mês Ant.", id="btn-cal-prev-month", variant="default")
+                            yield Label(f"Mês {self._cal_month:02d}/{self._cal_year}", id="cal-month-title")
+                            yield Button("Próx. Mês ▶", id="btn-cal-next-month", variant="default")
+                            yield Button("📅 Hoje", id="btn-cal-today", variant="default")
+                            yield Button("➕ Novo", id="btn-cal-new", variant="primary")
+                            yield Button("🔄 Sincronizar", id="btn-cal-refresh-btn", variant="default")
+                            yield Button("🌐 Abrir", id="btn-cal-open", variant="default")
+                            yield Button("🔑 Conectar", id="btn-cal-auth", variant="default")
 
-                with Vertical(classes="side-card", id="card-time-tasks"):
-                    with TabbedContent(id="time-tasks-tabs"):
-                        with TabPane("⏱️ Timers", id="tab-pane-timers"):
-                            yield Label("Nenhum timer ativo", id="timers-box")
-                            with Horizontal(id="timer-buttons"):
-                                yield Button("+ Novo", id="btn-timer-new", variant="primary")
-                                yield Button("⏸ Pausa/Play", id="btn-timer-toggle")
-                                yield Button("✕ Limpar", id="btn-timer-clear", variant="error")
+                        yield Label(cal_status_initial, id="cal-status-label")
 
-                        with TabPane("⏰ Alarmes", id="tab-pane-alarms"):
-                            yield Label("Nenhum alarme programado", id="alarms-box")
-                            with Horizontal(id="alarm-buttons"):
-                                yield Button("+ Novo", id="btn-alarm-new", variant="primary")
-                                yield Button("🔔 Alternar", id="btn-alarm-toggle-btn")
-                                yield Button("✕ Limpar", id="btn-alarm-clear", variant="error")
+                        with Horizontal(id="cal-content-container"):
+                            with Vertical(id="cal-grid-pane"):
+                                yield Label("🗓️ CALENDÁRIO MENSAL", classes="card-title")
+                                yield Static(id="calendar-grid-view")
+                            with Vertical(id="cal-events-pane"):
+                                yield Label("📋 PRÓXIMOS COMPROMISSOS", classes="card-title")
+                                yield RichLog(id="cal-events-log", highlight=True, markup=True, wrap=True)
 
-                with Vertical(classes="side-card"):
-                    yield Label("📅 AGENDA DO GOOGLE", classes="card-title")
-                    yield Label("Status: [dim]Não Vinculada[/dim]", id="cal-status-label")
-                    with Horizontal(id="cal-buttons"):
-                        yield Button("🌐 Abrir", id="btn-cal-open", variant="primary")
-                        yield Button("🔑 Conectar", id="btn-cal-auth")
+                with TabPane("🍅 Pomodoro", id="tab-pane-pomodoro"):
+                    with Vertical(classes="side-card", id="pomo-pane"):
+                        yield Label("🍅 TEMPORIZADOR POMODORO", classes="card-title")
+                        yield Label("[dim]Nenhum pomodoro ativo[/dim]", id="pomo-time")
+                        with Horizontal(id="pomo-buttons"):
+                            yield Button("▶ Iniciar", id="btn-pomo-toggle", variant="success")
+                            yield Button("⚙ Plan", id="btn-pomo-plan", variant="default")
+                            yield Button("⏭ Pular", id="btn-pomo-skip")
+                            yield Button("🔄 Reset", id="btn-pomo-reset")
+                        yield Label(
+                            "[dim]Dica: Foque em uma tarefa por 25min. O Geraldo emitirá notificações sonoras e transitará automaticamente para a pausa.[/dim]",
+                            classes="pomo-hint"
+                        )
 
-                with Vertical(classes="side-card", id="card-audio-devices"):
-                    yield Label("🎙️ DISPOSITIVOS DE ÁUDIO", classes="card-title")
-                    yield Label("Mic: [cyan]Padrão[/cyan]", id="audio-in-label")
-                    yield Label("Saída: [cyan]Padrão[/cyan]", id="audio-out-label")
-                    with Horizontal(id="audio-quick-buttons"):
-                        yield Button("🎙️ Ajustar", id="btn-audio-open", variant="default")
-                        yield Button("🔔 Testar", id="btn-audio-quick-test", variant="default")
+                with TabPane("⏱️ Temporizadores", id="tab-pane-time-tasks"):
+                    with Vertical(classes="side-card", id="card-time-tasks"):
+                        with TabbedContent(id="time-tasks-tabs"):
+                            with TabPane("⏱️ Timers", id="tab-pane-timers"):
+                                yield Label("Nenhum timer ativo", id="timers-box")
+                                with Horizontal(id="timer-buttons"):
+                                    yield Button("+ Novo", id="btn-timer-new", variant="primary")
+                                    yield Button("⏸ Pausa/Play", id="btn-timer-toggle")
+                                    yield Button("✕ Limpar", id="btn-timer-clear", variant="error")
+
+                            with TabPane("⏰ Alarmes", id="tab-pane-alarms"):
+                                yield Label("Nenhum alarme programado", id="alarms-box")
+                                with Horizontal(id="alarm-buttons"):
+                                    yield Button("+ Novo", id="btn-alarm-new", variant="primary")
+                                    yield Button("🔔 Alternar", id="btn-alarm-toggle-btn")
+                                    yield Button("✕ Limpar", id="btn-alarm-clear", variant="error")
+
+                with TabPane("⚙️ Sistema & Áudio", id="tab-pane-system"):
+                    with VerticalScroll(id="system-pane"):
+                        with Vertical(classes="side-card", id="card-audio-devices"):
+                            yield Label("🎙️ DISPOSITIVOS DE ÁUDIO", classes="card-title")
+                            yield Label("Mic: [cyan]Padrão[/cyan]", id="audio-in-label")
+                            yield Label("Saída: [cyan]Padrão[/cyan]", id="audio-out-label")
+                            with Horizontal(id="audio-quick-buttons"):
+                                yield Button("🎙️ Ajustar", id="btn-audio-open", variant="default")
+                                yield Button("🔔 Testar", id="btn-audio-quick-test", variant="default")
+
+                        with Vertical(classes="side-card", id="card-llm-settings"):
+                            yield Label("🤖 MODELO & INTELIGÊNCIA ARTIFICIAL", classes="card-title")
+                            yield Label("Provedor: Ollama | Modelo: qwen2.5:3b", id="llm-info-label")
+                            yield Button("⚙ Configurar LLM / Ollama", id="btn-system-ollama-cfg", variant="primary")
 
         with Horizontal(id="input-bar"):
             yield Input(
@@ -1016,6 +1243,13 @@ class GeraldoTUI(App):
         except Exception:
             pass
 
+        self.update_calendar_grid()
+        self.update_calendar_events_display()
+
+        from core.paths import get_token_path
+        if self.auto_connect and get_token_path().exists():
+            self.run_worker(self._async_load_local_calendar_events, exclusive=False)
+
         if self.auto_connect:
             self.run_worker(self._ws_loop, exclusive=True, name="ws_worker")
 
@@ -1030,6 +1264,8 @@ class GeraldoTUI(App):
                 async with connect(uri) as ws:
                     self.update_connection_status(True, f"🟢 Conectado ({self.host}:{self.port})")
                     self.send_action("get_config")
+                    self.send_action("check_calendar")
+                    self.send_action("get_calendar_events")
 
                     # Autenticação se houver token
                     if self.token:
@@ -1049,6 +1285,18 @@ class GeraldoTUI(App):
                 self.update_connection_status(False, f"🔴 Desconectado ({e.__class__.__name__})")
                 await asyncio.sleep(2.0)
 
+    async def _async_load_local_calendar_events(self) -> None:
+        """Carrega eventos em cache ou diretamente da API em background."""
+        try:
+            from tools.calendar import CalendarTools
+            events = await asyncio.to_thread(CalendarTools.get_events_raw, 35, 7)
+            if events:
+                self._cal_events = events
+                self.update_calendar_grid()
+                self.update_calendar_events_display()
+        except Exception:
+            pass
+
     async def _send_loop(self, ws) -> None:
         """Consome a fila de envio e despacha mensagens para o WebSocket."""
         while True:
@@ -1061,7 +1309,7 @@ class GeraldoTUI(App):
     def send_action(self, action: str, params: Optional[dict] = None) -> None:
         """Enfileira um comando RPC para envio via WebSocket."""
         payload = {
-            "id": f"tui-{int(time.time()*1000)}",
+            "id": f"tui-{action}-{int(time.time()*1000)}",
             "action": action,
             "params": params or {},
         }
@@ -1083,7 +1331,13 @@ class GeraldoTUI(App):
         if msg_type == "event":
             self.handle_event(msg.get("event"), msg.get("data", {}))
         elif msg_type == "response":
-            self.handle_response(msg.get("id"), msg.get("status"), msg.get("data", {}), msg.get("error"))
+            self.handle_response(
+                req_id=msg.get("id"),
+                status=msg.get("status"),
+                data=msg.get("data", {}),
+                error=msg.get("error"),
+                action=msg.get("action"),
+            )
 
     def handle_event(self, event_name: str, data: dict) -> None:
         """Processa eventos broadcast do Geraldo."""
@@ -1140,12 +1394,26 @@ class GeraldoTUI(App):
         elif event_name == "status_update":
             self.update_status_dashboard(data)
 
+        elif event_name in ("calendar_status", "calendar_updated"):
+            self.send_action("check_calendar")
+            self.send_action("get_calendar_events")
+
         elif event_name == "cancelled":
             chat.write("[bold yellow]⚡ Ação / som cancelado.[/]")
 
-    def handle_response(self, req_id: str, status: str, data: dict, error: Optional[str]) -> None:
+    def handle_response(
+        self,
+        req_id: Optional[str],
+        status: str,
+        data: dict,
+        error: Optional[str],
+        action: Optional[str] = None,
+    ) -> None:
         """Processa respostas RPC enviadas pelo Geraldo."""
         chat = self.query_one("#chat-log", RichLog)
+        req_s = str(req_id or "")
+        act = str(action or "")
+
         if status == "ok":
             reply = data.get("reply")
             if reply and not reply.startswith("Nenhum processador"):
@@ -1164,24 +1432,34 @@ class GeraldoTUI(App):
                 self._audio_input_device = data.get("input_device")
                 self._audio_output_device = data.get("output_device")
                 self.update_audio_dashboard()
-            if req_id.startswith("check_calendar") and isinstance(data, dict):
+
+            if (req_s.startswith("check_calendar") or act == "check_calendar") and isinstance(data, dict):
                 try:
                     lbl = self.query_one("#cal-status-label", Label)
                     if data.get("status") == "configured" or data.get("token_exists"):
-                        lbl.update("Status: [bold green]Conectada (OK)[/]")
+                        lbl.update("Status: [bold green]Vinculada (Google Calendar)[/]")
                     elif data.get("status") == "partial" or data.get("credentials_exists"):
                         lbl.update("Status: [bold yellow]Credenciais OK[/]")
                     else:
                         lbl.update("Status: [dim]Não Vinculada[/]")
                 except Exception:
                     pass
-            elif req_id.startswith("auth_calendar") and isinstance(data, dict):
+            elif (req_s.startswith("get_calendar_events") or act == "get_calendar_events") and isinstance(data, dict):
+                self._cal_events = data.get("events", [])
+                self.update_calendar_grid()
+                self.update_calendar_events_display()
+            elif (req_s.startswith("create_calendar_event") or act == "create_calendar_event") and isinstance(data, dict):
+                msg = data.get("message") or "Evento criado na agenda!"
+                chat.write(f"[bold green]📅 {msg}[/]\n")
+                self.send_action("get_calendar_events")
+            elif (req_s.startswith("auth_calendar") or act == "auth_calendar") and isinstance(data, dict):
                 if data.get("success"):
                     chat.write("[bold green]✅ Agenda do Google vinculada com sucesso![/]")
                     try:
-                        self.query_one("#cal-status-label", Label).update("Status: [bold green]Conectada (OK)[/]")
+                        self.query_one("#cal-status-label", Label).update("Status: [bold green]Vinculada (Google Calendar)[/]")
                     except Exception:
                         pass
+                    self.send_action("get_calendar_events")
                 else:
                     msg = data.get("message", "Falha na autenticação.")
                     chat.write(f"[bold red]❌ {msg}[/]")
@@ -1391,9 +1669,180 @@ class GeraldoTUI(App):
         elif button_id == "btn-alarm-clear":
             self.clear_all_alarms()
 
+        elif button_id == "btn-cal-prev-month":
+            self._cal_month -= 1
+            if self._cal_month < 1:
+                self._cal_month = 12
+                self._cal_year -= 1
+            self.update_calendar_grid()
+
+        elif button_id == "btn-cal-next-month":
+            self._cal_month += 1
+            if self._cal_month > 12:
+                self._cal_month = 1
+                self._cal_year += 1
+            self.update_calendar_grid()
+
+        elif button_id == "btn-cal-today":
+            today = datetime.date.today()
+            self._cal_year = today.year
+            self._cal_month = today.month
+            self.update_calendar_grid()
+
+        elif button_id == "btn-cal-new":
+            self.action_open_calendar_new_modal()
+
+        elif button_id == "btn-cal-refresh-btn":
+            self.send_action("check_calendar")
+            self.send_action("get_calendar_events")
+            self.run_worker(self._async_load_local_calendar_events, exclusive=False)
+            chat = self.query_one("#chat-log", RichLog)
+            chat.write("[bold cyan]🔄 Sincronizando eventos do Google Calendar...[/]")
+
+        elif button_id == "btn-system-ollama-cfg":
+            self.action_open_ollama_settings()
+
     # ==========================================
-    # AÇÕES DOS ATALHOS DE TECLADO
+    # AÇÕES DOS ATALHOS DE TECLADO E CALENDÁRIO
     # ==========================================
+    def render_calendar_grid_text(self, year: int, month: int) -> str:
+        cal = calendar.Calendar(firstweekday=6)  # Domingo como primeiro dia
+        month_weeks = cal.monthdayscalendar(year, month)
+        today = datetime.date.today()
+
+        days_with_events = set()
+        for ev in getattr(self, "_cal_events", []):
+            st = str(ev.get("start", ""))[:10]
+            if st.startswith(f"{year:04d}-{month:02d}-"):
+                try:
+                    d_num = int(st[8:10])
+                    days_with_events.add(d_num)
+                except ValueError:
+                    pass
+
+        lines = []
+        lines.append("[bold cyan]Dom   Seg   Ter   Qua   Qui   Sex   Sáb[/bold cyan]")
+        lines.append("[dim]──────────────────────────────────────────[/dim]")
+
+        for week in month_weeks:
+            day_strs = []
+            for d in week:
+                if d == 0:
+                    day_strs.append("     ")
+                else:
+                    is_today = (d == today.day and year == today.year and month == today.month)
+                    has_ev = (d in days_with_events)
+
+                    if is_today and has_ev:
+                        day_strs.append(f"[bold reverse #38bdf8] {d:2d}*[/]")
+                    elif is_today:
+                        day_strs.append(f"[bold reverse #38bdf8] {d:2d} [/]")
+                    elif has_ev:
+                        day_strs.append(f"[bold #10b981]•{d:2d} [/]")
+                    else:
+                        day_strs.append(f" {d:2d}  ")
+            lines.append(" ".join(day_strs))
+
+        lines.append("")
+        lines.append("[dim]Legenda:[/] [bold reverse #38bdf8] Hoje [/]  [bold #10b981]• Evento[/]")
+        return "\n".join(lines)
+
+    def update_calendar_grid(self) -> None:
+        try:
+            meses = [
+                "", "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+                "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
+            ]
+            lbl_title = self.query_one("#cal-month-title", Label)
+            lbl_title.update(f"{meses[self._cal_month]} {self._cal_year}")
+
+            grid_static = self.query_one("#calendar-grid-view", Static)
+            grid_static.update(self.render_calendar_grid_text(self._cal_year, self._cal_month))
+        except Exception:
+            pass
+
+    def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated) -> None:
+        """Disparado quando uma aba do Textual é ativada."""
+        if getattr(event.pane, "id", "") == "tab-pane-agenda":
+            self.update_calendar_grid()
+            self.update_calendar_events_display()
+
+    def update_calendar_events_display(self) -> None:
+        try:
+            cal_log = self.query_one("#cal-events-log", RichLog)
+            cal_log.clear()
+            events = getattr(self, "_cal_events", [])
+            if not events:
+                cal_log.write("[dim italic]Nenhum compromisso agendado para o período ou agenda desvinculada.[/dim italic]\n")
+                cal_log.write("[yellow]Clique em [bold]'🔑 Conectar'[/bold] para autenticar sua conta Google.[/yellow]")
+                return
+
+            today_str = datetime.date.today().strftime("%Y-%m-%d")
+            upcoming = [e for e in events if str(e.get("start", ""))[:10] >= today_str]
+            past = [e for e in events if str(e.get("start", ""))[:10] < today_str]
+
+            cal_log.write(f"[bold cyan]Total sincronizado: {len(events)} compromisso(s) ({len(upcoming)} futuros / hoje)[/bold cyan]\n")
+
+            if upcoming:
+                cal_log.write("[bold green]─── PRÓXIMOS EVENTOS ───[/bold green]")
+                for ev in upcoming:
+                    self._render_single_event_line(cal_log, ev, is_upcoming=True, today_str=today_str)
+                cal_log.write("")
+
+            if past:
+                cal_log.write("[dim]─── RECENTES (ÚLTIMOS DIAS) ───[/dim]")
+                for ev in past:
+                    self._render_single_event_line(cal_log, ev, is_upcoming=False, today_str=today_str)
+        except Exception:
+            pass
+
+    def _render_single_event_line(self, cal_log: RichLog, ev: dict, is_upcoming: bool, today_str: str) -> None:
+        summary = ev.get("summary", "Sem título")
+        start_raw = ev.get("start", "")
+        date_str = start_raw[:10] if len(start_raw) >= 10 else "Data indefinida"
+        if ev.get("all_day"):
+            time_str = "Dia inteiro"
+        else:
+            t1 = start_raw[11:16] if len(start_raw) >= 16 else ""
+            end_raw = ev.get("end", "")
+            t2 = end_raw[11:16] if len(end_raw) >= 16 else ""
+            time_str = f"{t1} - {t2}" if t2 else t1
+
+        loc = ev.get("location")
+        loc_badge = f" [dim]📍 {loc}[/dim]" if loc else ""
+        is_today = (date_str == today_str)
+
+        if is_today:
+            cal_log.write(f"[bold reverse #38bdf8] HOJE [/] [bold yellow]{date_str}[/] [cyan]({time_str})[/]: [bold white]{summary}[/]{loc_badge}")
+        elif is_upcoming:
+            cal_log.write(f"[bold green]•[/] [bold yellow]{date_str}[/] [cyan]({time_str})[/]: [bold white]{summary}[/]{loc_badge}")
+        else:
+            cal_log.write(f"[dim]• {date_str} ({time_str}): {summary}{loc_badge}[/dim]")
+
+        desc = ev.get("description", "").strip()
+        if desc:
+            preview = desc.split("\n")[0][:80]
+            cal_log.write(f"   [dim italic]{preview}[/dim italic]")
+
+    def action_open_calendar_new_modal(self) -> None:
+        self.push_screen(CalendarNewEventModal())
+
+    def create_calendar_event(
+        self,
+        summary: str,
+        date_query: str = "hoje",
+        time_str: str = "09:00",
+        duration_minutes: int = 60
+    ) -> None:
+        self.send_action("create_calendar_event", {
+            "summary": summary,
+            "date_query": date_query,
+            "time_str": time_str,
+            "duration_minutes": duration_minutes,
+        })
+        chat = self.query_one("#chat-log", RichLog)
+        chat.write(f"[bold cyan]📅 Criando compromisso '{summary}' para {date_query} às {time_str}...[/]")
+
     def action_open_calendar(self) -> None:
         """Abre o Google Calendar no navegador padrão e notifica o barramento."""
         import webbrowser

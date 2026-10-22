@@ -65,6 +65,9 @@ class GeraldoIPCServer:
         self.register_handler("auth_calendar", self._handle_auth_calendar)
         self.register_handler("disconnect_calendar", self._handle_disconnect_calendar)
         self.register_handler("save_google_creds", self._handle_save_google_creds)
+        self.register_handler("get_calendar_events", self._handle_get_calendar_events)
+        self.register_handler("create_calendar_event", self._handle_create_calendar_event)
+        self.register_handler("delete_calendar_event", self._handle_delete_calendar_event)
         self.register_handler("get_audio_devices", self._handle_get_audio_devices)
         self.register_handler("get_audio_config", self._handle_get_audio_config)
         self.register_handler("set_audio_config", self._handle_set_audio_config)
@@ -315,24 +318,26 @@ class GeraldoIPCServer:
             else:
                 result = handler(params)
 
-            await self._send_response(websocket, req_id, result)
+            await self._send_response(websocket, req_id, result, action=action)
         except Exception as exc:
             logger.error(f"[Geraldo:IPC] Falha ao processar '{action}': {exc}")
-            await self._send_error(websocket, req_id, str(exc))
+            await self._send_error(websocket, req_id, str(exc), action=action)
 
-    async def _send_response(self, websocket: ServerConnection, req_id: Any, result: Any) -> None:
+    async def _send_response(self, websocket: ServerConnection, req_id: Any, result: Any, action: str = "") -> None:
         payload = {
             "type": "response",
             "id": req_id,
+            "action": action,
             "status": "ok",
             "data": result if result is not None else {},
         }
         await websocket.send(json.dumps(payload, ensure_ascii=False))
 
-    async def _send_error(self, websocket: ServerConnection, req_id: Any, error_msg: str) -> None:
+    async def _send_error(self, websocket: ServerConnection, req_id: Any, error_msg: str, action: str = "") -> None:
         payload = {
             "type": "response",
             "id": req_id,
+            "action": action,
             "status": "error",
             "error": error_msg,
         }
@@ -657,6 +662,53 @@ class GeraldoIPCServer:
         status = OnboardingManager.check_calendar_integration()
         self.broadcast_event("calendar_status", status)
         return {"success": True, "config": updated, "status": status}
+
+    def _handle_get_calendar_events(self, params: dict) -> dict:
+        from tools.calendar import CalendarTools
+        days_ahead = int(params.get("days_ahead", 35))
+        days_behind = int(params.get("days_behind", 7))
+        events = CalendarTools.get_events_raw(days_ahead=days_ahead, days_behind=days_behind)
+        return {
+            "status": "ok",
+            "events": events,
+            "count": len(events)
+        }
+
+    def _handle_create_calendar_event(self, params: dict) -> dict:
+        from tools.calendar import CalendarTools
+        summary = params.get("summary", "").strip()
+        if not summary:
+            return {"status": "error", "message": "O título do evento não pode ser vazio."}
+        date_query = params.get("date_query") or params.get("date") or "hoje"
+        time_str = params.get("time_str") or params.get("time") or "09:00"
+        duration_minutes = int(params.get("duration_minutes", 60))
+        all_day = bool(params.get("all_day", False))
+
+        msg = CalendarTools.create_event(
+            summary=summary,
+            date_query=date_query,
+            time_str=time_str,
+            duration_minutes=duration_minutes,
+            all_day=all_day
+        )
+        # Emite evento para sincronizar UIs conectadas
+        self.broadcast_event("calendar_updated", {"action": "create", "summary": summary})
+        return {"status": "ok", "message": msg, "reply": msg}
+
+    def _handle_delete_calendar_event(self, params: dict) -> dict:
+        from tools.calendar import CalendarTools
+        event_id = params.get("event_id") or params.get("id")
+        summary = params.get("summary", "")
+        date_query = params.get("date_query", "hoje")
+
+        msg = CalendarTools.delete_event(
+            summary=summary,
+            date_query=date_query,
+            event_id=event_id
+        )
+        # Emite evento para sincronizar UIs conectadas
+        self.broadcast_event("calendar_updated", {"action": "delete", "event_id": event_id})
+        return {"status": "ok", "message": msg, "reply": msg}
 
 
 class IPCManager:

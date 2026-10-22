@@ -110,8 +110,70 @@ class GeraldoDesktopClient {
             specsAudioInText: document.getElementById("specs-audio-in-text"),
             specsAudioOutText: document.getElementById("specs-audio-out-text"),
             tuiPathStatusBadge: document.getElementById("tui-path-status-badge"),
-            btnExportTuiPath: document.getElementById("btn-export-tui-path")
+            btnExportTuiPath: document.getElementById("btn-export-tui-path"),
+            // Elementos de Navegação de Abas
+            mainNavTabs: document.querySelectorAll(".main-nav-tab"),
+            mainViewPanels: document.querySelectorAll(".main-view-panel"),
+            btnJumpToCalendarTab: document.getElementById("btn-jump-to-calendar-tab"),
+            navCalendarBadge: document.getElementById("nav-calendar-badge"),
+            navPomodoroStatus: document.getElementById("nav-pomodoro-status"),
+            navTimersBadge: document.getElementById("nav-timers-badge"),
+            // Elementos da Aba de Agenda
+            calendarMonthYearLabel: document.getElementById("calendar-month-year-label"),
+            calendarDaysGrid: document.getElementById("calendar-days-grid"),
+            selectedDayFullLabel: document.getElementById("selected-day-full-label"),
+            selectedDayEventsCount: document.getElementById("selected-day-events-count"),
+            selectedDayEventsList: document.getElementById("selected-day-events-list"),
+            calendarCreateForm: document.getElementById("calendar-create-event-form"),
+            btnCalToggleNew: document.getElementById("btn-cal-toggle-new"),
+            btnCalRefresh: document.getElementById("btn-cal-refresh"),
+            btnCalPrevMonth: document.getElementById("btn-cal-prev-month"),
+            btnCalNextMonth: document.getElementById("btn-cal-next-month"),
+            btnCalToday: document.getElementById("btn-cal-today"),
+            btnCalWebLink: document.getElementById("btn-cal-web-link"),
+            btnCalManageAuth: document.getElementById("btn-cal-manage-auth"),
+            calAuthBtnLabel: document.getElementById("cal-auth-btn-label"),
+            calViewStatusPill: document.getElementById("cal-view-status-pill"),
+            eventInputSummary: document.getElementById("event-input-summary"),
+            eventInputDate: document.getElementById("event-input-date"),
+            eventInputTime: document.getElementById("event-input-time"),
+            eventInputDuration: document.getElementById("event-input-duration"),
+            eventInputAllDay: document.getElementById("event-input-allday"),
+            btnSubmitCreateEvent: document.getElementById("btn-submit-create-event"),
+            btnCancelCreateEvent: document.getElementById("btn-cancel-create-event"),
+            // Pomodoro Expandido
+            pomoHeroCountdown: document.getElementById("pomo-hero-countdown"),
+            pomoHeroBadge: document.getElementById("pomo-hero-badge"),
+            pomoHeroCycle: document.getElementById("pomo-hero-cycle"),
+            btnPomoHeroToggle: document.getElementById("btn-pomo-hero-toggle"),
+            btnPomoHeroSkip: document.getElementById("btn-pomo-hero-skip"),
+            btnPomoHeroReset: document.getElementById("btn-pomo-hero-reset"),
+            // Timers & Alarmes Expandidos
+            timersFullCountBadge: document.getElementById("timers-full-count-badge"),
+            alarmsFullCountBadge: document.getElementById("alarms-full-count-badge"),
+            fullTimersStream: document.getElementById("full-timers-stream"),
+            fullAlarmsStream: document.getElementById("full-alarms-stream"),
+            btnFullTimerSubmit: document.getElementById("btn-full-timer-submit"),
+            btnFullAlarmSubmit: document.getElementById("btn-full-alarm-submit"),
+            fullTimerLabel: document.getElementById("full-timer-label"),
+            fullTimerH: document.getElementById("full-timer-h"),
+            fullTimerM: document.getElementById("full-timer-m"),
+            fullTimerS: document.getElementById("full-timer-s"),
+            fullAlarmLabel: document.getElementById("full-alarm-label"),
+            fullAlarmTime: document.getElementById("full-alarm-time"),
+            btnQuickOpenSettingsModal: document.getElementById("btn-quick-open-settings-modal"),
+            settingsViewCalBadge: document.getElementById("settings-view-cal-badge")
         };
+
+        const now = new Date();
+        this.currentCalendarYear = now.getFullYear();
+        this.currentCalendarMonth = now.getMonth();
+        // Formato ISO YYYY-MM-DD com fuso local
+        const localYear = now.getFullYear();
+        const localMonth = String(now.getMonth() + 1).padStart(2, '0');
+        const localDay = String(now.getDate()).padStart(2, '0');
+        this.selectedCalendarDate = `${localYear}-${localMonth}-${localDay}`;
+        this.calendarEvents = [];
 
         this.audioConfig = {
             input_device: null,
@@ -149,6 +211,7 @@ class GeraldoDesktopClient {
                 this.updateConnectionStatus(true, "Conectado");
                 this.sendAction("get_config");
                 this.sendAction("check_calendar");
+                this.loadCalendarEvents();
                 this.loadAudioDevices();
             };
 
@@ -285,6 +348,11 @@ class GeraldoDesktopClient {
 
             case "calendar_status":
                 this.updateCalendarStatus(data);
+                this.loadCalendarEvents();
+                break;
+
+            case "calendar_updated":
+                this.loadCalendarEvents();
                 break;
 
             case "audio_config_changed":
@@ -313,6 +381,11 @@ class GeraldoDesktopClient {
                 this.displayTestResults(msg.data);
             } else if (msg.id.startsWith("check_calendar")) {
                 this.updateCalendarStatus(msg.data);
+            } else if (msg.id.startsWith("get_calendar_events")) {
+                this.calendarEvents = (msg.data && msg.data.events) || [];
+                this.renderCalendarMonthGrid();
+                this.renderSelectedDayEvents(this.selectedCalendarDate);
+                this.updateCalendarBadge();
             } else if (msg.id.startsWith("get_audio_config")) {
                 this.updateAudioDevicesDisplay(msg.data);
             } else if (msg.id.startsWith("get_tui_path_status")) {
@@ -1034,6 +1107,169 @@ class GeraldoDesktopClient {
             this.dom.btnExportTuiPath.addEventListener("click", () => this.exportTuiPath());
         }
 
+        // Navegação de Abas Principais
+        if (this.dom.mainNavTabs) {
+            this.dom.mainNavTabs.forEach(tab => {
+                tab.addEventListener("click", () => {
+                    const view = tab.getAttribute("data-view");
+                    if (view) this.switchMainTab(view);
+                });
+            });
+        }
+        if (this.dom.btnJumpToCalendarTab) {
+            this.dom.btnJumpToCalendarTab.addEventListener("click", () => {
+                this.switchMainTab("view-calendar");
+            });
+        }
+
+        // Calendário Interativo: Navegação de Mês & Ações
+        if (this.dom.btnCalPrevMonth) {
+            this.dom.btnCalPrevMonth.addEventListener("click", () => {
+                this.currentCalendarMonth--;
+                if (this.currentCalendarMonth < 0) {
+                    this.currentCalendarMonth = 11;
+                    this.currentCalendarYear--;
+                }
+                this.renderCalendarMonthGrid();
+            });
+        }
+        if (this.dom.btnCalNextMonth) {
+            this.dom.btnCalNextMonth.addEventListener("click", () => {
+                this.currentCalendarMonth++;
+                if (this.currentCalendarMonth > 11) {
+                    this.currentCalendarMonth = 0;
+                    this.currentCalendarYear++;
+                }
+                this.renderCalendarMonthGrid();
+            });
+        }
+        if (this.dom.btnCalToday) {
+            this.dom.btnCalToday.addEventListener("click", () => {
+                const now = new Date();
+                this.currentCalendarYear = now.getFullYear();
+                this.currentCalendarMonth = now.getMonth();
+                const m = String(now.getMonth() + 1).padStart(2, '0');
+                const d = String(now.getDate()).padStart(2, '0');
+                this.selectCalendarDate(`${now.getFullYear()}-${m}-${d}`);
+                this.renderCalendarMonthGrid();
+            });
+        }
+        if (this.dom.btnCalRefresh) {
+            this.dom.btnCalRefresh.addEventListener("click", () => {
+                this.loadCalendarEvents();
+            });
+        }
+        if (this.dom.btnCalToggleNew) {
+            this.dom.btnCalToggleNew.addEventListener("click", () => {
+                if (this.dom.calendarCreateForm) {
+                    this.dom.calendarCreateForm.classList.toggle("hidden");
+                }
+            });
+        }
+        if (this.dom.btnCancelCreateEvent) {
+            this.dom.btnCancelCreateEvent.addEventListener("click", () => {
+                if (this.dom.calendarCreateForm) {
+                    this.dom.calendarCreateForm.classList.add("hidden");
+                }
+            });
+        }
+        if (this.dom.btnSubmitCreateEvent) {
+            this.dom.btnSubmitCreateEvent.addEventListener("click", () => {
+                this.createCalendarEvent();
+            });
+        }
+        if (this.dom.btnCalWebLink) {
+            this.dom.btnCalWebLink.addEventListener("click", () => {
+                this.openCalendar();
+            });
+        }
+        if (this.dom.btnCalManageAuth && this.dom.btnAuthCalendar) {
+            this.dom.btnCalManageAuth.addEventListener("click", () => {
+                this.dom.btnAuthCalendar.click();
+            });
+        }
+
+        // Pomodoro Expandido (Hero Controls)
+        if (this.dom.btnPomoHeroToggle && this.dom.btnPomoToggle) {
+            this.dom.btnPomoHeroToggle.addEventListener("click", () => {
+                this.dom.btnPomoToggle.click();
+            });
+        }
+        if (this.dom.btnPomoHeroSkip && this.dom.btnPomoSkip) {
+            this.dom.btnPomoHeroSkip.addEventListener("click", () => {
+                this.dom.btnPomoSkip.click();
+            });
+        }
+        if (this.dom.btnPomoHeroReset && this.dom.btnPomoReset) {
+            this.dom.btnPomoHeroReset.addEventListener("click", () => {
+                this.dom.btnPomoReset.click();
+            });
+        }
+        document.querySelectorAll(".pomo-mode-card").forEach(card => {
+            card.addEventListener("click", () => {
+                document.querySelectorAll(".pomo-mode-card").forEach(c => c.classList.remove("active"));
+                card.classList.add("active");
+                const work = card.getAttribute("data-work");
+                const brk = card.getAttribute("data-break");
+                const longBreak = card.getAttribute("data-long-break");
+                const longInterval = card.getAttribute("data-long-interval");
+                if (work) {
+                    this.sendAction("pomodoro", {
+                        sub_action: "start",
+                        work_minutes: parseInt(work, 10),
+                        break_minutes: parseInt(brk, 10),
+                        long_break_minutes: parseInt(longBreak, 10),
+                        long_break_interval: parseInt(longInterval, 10)
+                    });
+                }
+            });
+        });
+
+        // Temporizadores Expandidos
+        if (this.dom.btnFullTimerSubmit) {
+            this.dom.btnFullTimerSubmit.addEventListener("click", () => {
+                const label = this.dom.fullTimerLabel?.value.trim() || "Timer";
+                const h = parseInt(this.dom.fullTimerH?.value || "0", 10) || 0;
+                const m = parseInt(this.dom.fullTimerM?.value || "5", 10) || 5;
+                const s = parseInt(this.dom.fullTimerS?.value || "0", 10) || 0;
+                this.sendAction("timer_add", { hours: h, minutes: m, seconds: s, label });
+            });
+        }
+        document.querySelectorAll(".timer-preset-full").forEach(chip => {
+            chip.addEventListener("click", () => {
+                document.querySelectorAll(".timer-preset-full").forEach(c => c.classList.remove("active"));
+                chip.classList.add("active");
+                const h = chip.getAttribute("data-h") || "0";
+                const m = chip.getAttribute("data-m") || "5";
+                const s = chip.getAttribute("data-s") || "0";
+                if (this.dom.fullTimerH) this.dom.fullTimerH.value = h;
+                if (this.dom.fullTimerM) this.dom.fullTimerM.value = m;
+                if (this.dom.fullTimerS) this.dom.fullTimerS.value = s;
+            });
+        });
+
+        if (this.dom.btnFullAlarmSubmit) {
+            this.dom.btnFullAlarmSubmit.addEventListener("click", () => {
+                const label = this.dom.fullAlarmLabel?.value.trim() || "Alarme";
+                const time = this.dom.fullAlarmTime?.value.trim() || "08:00";
+                this.sendAction("alarm_add", { time, label });
+            });
+        }
+        document.querySelectorAll(".alarm-preset-full").forEach(chip => {
+            chip.addEventListener("click", () => {
+                document.querySelectorAll(".alarm-preset-full").forEach(c => c.classList.remove("active"));
+                chip.classList.add("active");
+                const time = chip.getAttribute("data-time") || "08:00";
+                if (this.dom.fullAlarmTime) this.dom.fullAlarmTime.value = time;
+            });
+        });
+
+        if (this.dom.btnQuickOpenSettingsModal) {
+            this.dom.btnQuickOpenSettingsModal.addEventListener("click", () => {
+                this.openSettingsModal();
+            });
+        }
+
         // Intercepta qualquer outro link externo no documento para abrir confiavelmente no navegador
         document.addEventListener("click", (e) => {
             const target = e.target.closest("a[target='_blank'], a.field-link");
@@ -1074,13 +1310,27 @@ class GeraldoDesktopClient {
     }
 
     updateCalendarStatus(info) {
-        if (!this.dom.calStatusBadge) return;
+        if (!this.dom.calStatusBadge && !this.dom.calViewStatusPill) return;
         this.calendarInfo = info || {};
         const status = info ? info.status : "not_configured";
+        const isConnected = (status === "configured" || (info && info.token_exists));
 
-        if (status === "configured" || (info && info.token_exists)) {
-            this.dom.calStatusBadge.textContent = "Conectada";
-            this.dom.calStatusBadge.className = "badge-tag status-ok";
+        if (isConnected) {
+            if (this.dom.calStatusBadge) {
+                this.dom.calStatusBadge.textContent = "Conectada";
+                this.dom.calStatusBadge.className = "badge-tag status-ok";
+            }
+            if (this.dom.calViewStatusPill) {
+                this.dom.calViewStatusPill.textContent = "Conectado";
+                this.dom.calViewStatusPill.className = "status-pill-badge connected";
+            }
+            if (this.dom.settingsViewCalBadge) {
+                this.dom.settingsViewCalBadge.textContent = "Conectado";
+                this.dom.settingsViewCalBadge.className = "badge-tag status-ok";
+            }
+            if (this.dom.calAuthBtnLabel) {
+                this.dom.calAuthBtnLabel.textContent = "Desconectar Conta";
+            }
             if (this.dom.calStatusDesc) {
                 this.dom.calStatusDesc.textContent = "Conta Google sincronizada. Comandos de voz ativos.";
             }
@@ -1090,8 +1340,21 @@ class GeraldoDesktopClient {
                 this.dom.btnAuthCalendar.title = "Clique para desvincular sua conta Google";
             }
         } else if (status === "partial" || (info && info.credentials_exists) || (info && info.ready_to_auth)) {
-            this.dom.calStatusBadge.textContent = "1 Clique Pronto";
-            this.dom.calStatusBadge.className = "badge-tag status-warn";
+            if (this.dom.calStatusBadge) {
+                this.dom.calStatusBadge.textContent = "1 Clique Pronto";
+                this.dom.calStatusBadge.className = "badge-tag status-warn";
+            }
+            if (this.dom.calViewStatusPill) {
+                this.dom.calViewStatusPill.textContent = "Pronto para Conectar";
+                this.dom.calViewStatusPill.className = "status-pill-badge";
+            }
+            if (this.dom.settingsViewCalBadge) {
+                this.dom.settingsViewCalBadge.textContent = "Pronto para Conectar";
+                this.dom.settingsViewCalBadge.className = "badge-tag status-warn";
+            }
+            if (this.dom.calAuthBtnLabel) {
+                this.dom.calAuthBtnLabel.textContent = "Conectar Google";
+            }
             if (this.dom.calStatusDesc) {
                 this.dom.calStatusDesc.textContent = "Tudo pronto! Clique em Conectar para autorizar no navegador.";
             }
@@ -1101,8 +1364,21 @@ class GeraldoDesktopClient {
                 this.dom.btnAuthCalendar.title = "Autorizar Google Calendar em 1 clique";
             }
         } else {
-            this.dom.calStatusBadge.textContent = "Não Configurado";
-            this.dom.calStatusBadge.className = "badge-tag status-offline";
+            if (this.dom.calStatusBadge) {
+                this.dom.calStatusBadge.textContent = "Não Configurado";
+                this.dom.calStatusBadge.className = "badge-tag status-offline";
+            }
+            if (this.dom.calViewStatusPill) {
+                this.dom.calViewStatusPill.textContent = "Não Vinculado";
+                this.dom.calViewStatusPill.className = "status-pill-badge disconnected";
+            }
+            if (this.dom.settingsViewCalBadge) {
+                this.dom.settingsViewCalBadge.textContent = "Não Vinculado";
+                this.dom.settingsViewCalBadge.className = "badge-tag status-offline";
+            }
+            if (this.dom.calAuthBtnLabel) {
+                this.dom.calAuthBtnLabel.textContent = "Configurar Chave Google";
+            }
             if (this.dom.calStatusDesc) {
                 this.dom.calStatusDesc.textContent = "Clique para configurar seu Client ID do Google.";
             }
@@ -1112,6 +1388,330 @@ class GeraldoDesktopClient {
                 this.dom.btnAuthCalendar.title = "Inserir chaves do Google";
             }
         }
+    }
+
+    // ==========================================
+    // NAVEGAÇÃO DE ABAS PRINCIPAIS
+    // ==========================================
+    switchMainTab(viewId) {
+        if (this.dom.mainNavTabs) {
+            this.dom.mainNavTabs.forEach(tab => {
+                const isTarget = tab.getAttribute("data-view") === viewId;
+                tab.classList.toggle("active", isTarget);
+                tab.setAttribute("aria-selected", isTarget ? "true" : "false");
+            });
+        }
+        if (this.dom.mainViewPanels) {
+            this.dom.mainViewPanels.forEach(panel => {
+                const isTarget = panel.id === viewId;
+                panel.classList.toggle("active", isTarget);
+                panel.classList.toggle("hidden", !isTarget);
+            });
+        }
+
+        if (viewId === "view-calendar") {
+            this.loadCalendarEvents();
+        }
+    }
+
+    // ==========================================
+    // MÓDULO COMPLETO DE GOOGLE CALENDAR
+    // ==========================================
+    loadCalendarEvents() {
+        this.sendAction("get_calendar_events", { days_ahead: 60, days_behind: 30 }, (ok, data) => {
+            if (ok && data && Array.isArray(data.events)) {
+                this.calendarEvents = data.events;
+                this.renderCalendarMonthGrid();
+                this.renderSelectedDayEvents(this.selectedCalendarDate);
+                this.updateCalendarBadge();
+            }
+        });
+    }
+
+    updateCalendarBadge() {
+        if (!this.dom.navCalendarBadge) return;
+        const total = (this.calendarEvents || []).length;
+        if (total > 0) {
+            this.dom.navCalendarBadge.textContent = total;
+            this.dom.navCalendarBadge.classList.remove("hidden");
+        } else {
+            this.dom.navCalendarBadge.classList.add("hidden");
+        }
+    }
+
+    renderCalendarMonthGrid() {
+        if (!this.dom.calendarDaysGrid || !this.dom.calendarMonthYearLabel) return;
+
+        const monthNames = [
+            "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+            "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
+        ];
+        this.dom.calendarMonthYearLabel.textContent = `${monthNames[this.currentCalendarMonth]} ${this.currentCalendarYear}`;
+
+        const firstDayOfMonth = new Date(this.currentCalendarYear, this.currentCalendarMonth, 1).getDay();
+        const daysInCurrentMonth = new Date(this.currentCalendarYear, this.currentCalendarMonth + 1, 0).getDate();
+        const daysInPrevMonth = new Date(this.currentCalendarYear, this.currentCalendarMonth, 0).getDate();
+
+        const todayObj = new Date();
+        const todayStr = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
+
+        let html = "";
+
+        // 1. Dias do mês anterior para preencher a primeira semana
+        for (let i = firstDayOfMonth - 1; i >= 0; i--) {
+            const dayNum = daysInPrevMonth - i;
+            const prevMonth = this.currentCalendarMonth === 0 ? 12 : this.currentCalendarMonth;
+            const prevYear = this.currentCalendarMonth === 0 ? this.currentCalendarYear - 1 : this.currentCalendarYear;
+            const dateStr = `${prevYear}-${String(prevMonth).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
+            html += `
+                <div class="cal-day-cell other-month" data-date="${dateStr}">
+                    <span class="day-number">${dayNum}</span>
+                </div>
+            `;
+        }
+
+        // 2. Dias do mês corrente
+        for (let dayNum = 1; dayNum <= daysInCurrentMonth; dayNum++) {
+            const mStr = String(this.currentCalendarMonth + 1).padStart(2, '0');
+            const dStr = String(dayNum).padStart(2, '0');
+            const dateStr = `${this.currentCalendarYear}-${mStr}-${dStr}`;
+
+            const isToday = dateStr === todayStr;
+            const isSelected = dateStr === this.selectedCalendarDate;
+
+            // Filtra eventos do dia
+            const dayEvents = (this.calendarEvents || []).filter(ev => {
+                if (!ev.start) return false;
+                return ev.start.startsWith(dateStr);
+            });
+
+            const hasEvents = dayEvents.length > 0;
+            let dotsHtml = "";
+            if (hasEvents) {
+                const countDots = Math.min(dayEvents.length, 3);
+                dotsHtml = '<div class="day-events-dots">';
+                for (let k = 0; k < countDots; k++) {
+                    dotsHtml += '<span class="event-dot"></span>';
+                }
+                dotsHtml += '</div>';
+            }
+
+            const classes = [
+                "cal-day-cell",
+                isToday ? "today" : "",
+                isSelected ? "selected" : "",
+                hasEvents ? "has-events" : ""
+            ].filter(Boolean).join(" ");
+
+            html += `
+                <div class="${classes}" data-date="${dateStr}">
+                    <span class="day-number">${dayNum}</span>
+                    ${dotsHtml}
+                </div>
+            `;
+        }
+
+        // 3. Dias do mês seguinte para completar até múltiplo de 7 (35 ou 42 células)
+        const totalCellsSoFar = firstDayOfMonth + daysInCurrentMonth;
+        const totalRows = Math.ceil(totalCellsSoFar / 7);
+        const nextMonthDays = (totalRows * 7) - totalCellsSoFar;
+        for (let dayNum = 1; dayNum <= nextMonthDays; dayNum++) {
+            const nextMonth = this.currentCalendarMonth === 11 ? 1 : this.currentCalendarMonth + 2;
+            const nextYear = this.currentCalendarMonth === 11 ? this.currentCalendarYear + 1 : this.currentCalendarYear;
+            const dateStr = `${nextYear}-${String(nextMonth).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
+            html += `
+                <div class="cal-day-cell other-month" data-date="${dateStr}">
+                    <span class="day-number">${dayNum}</span>
+                </div>
+            `;
+        }
+
+        this.dom.calendarDaysGrid.innerHTML = html;
+
+        // Adiciona evento de clique nas células dos dias
+        this.dom.calendarDaysGrid.querySelectorAll(".cal-day-cell").forEach(cell => {
+            cell.addEventListener("click", () => {
+                const dateStr = cell.getAttribute("data-date");
+                if (dateStr) {
+                    this.selectCalendarDate(dateStr);
+                }
+            });
+        });
+    }
+
+    selectCalendarDate(dateStr) {
+        this.selectedCalendarDate = dateStr;
+
+        // Atualiza campos do formulário de novo evento
+        if (this.dom.eventInputDate) {
+            this.dom.eventInputDate.value = dateStr;
+        }
+
+        // Formata data por extenso em português
+        try {
+            const parts = dateStr.split("-");
+            const y = parseInt(parts[0], 10);
+            const m = parseInt(parts[1], 10) - 1;
+            const d = parseInt(parts[2], 10);
+            const dt = new Date(y, m, d);
+
+            const dayNames = [
+                "Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira",
+                "Quinta-feira", "Sexta-feira", "Sábado"
+            ];
+            const monthNames = [
+                "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+                "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
+            ];
+
+            if (this.dom.selectedDayFullLabel) {
+                this.dom.selectedDayFullLabel.textContent = `${dayNames[dt.getDay()]}, ${d} de ${monthNames[m]} de ${y}`;
+            }
+        } catch (e) {
+            if (this.dom.selectedDayFullLabel) {
+                this.dom.selectedDayFullLabel.textContent = dateStr;
+            }
+        }
+
+        // Destaque visual da célula selecionada
+        if (this.dom.calendarDaysGrid) {
+            this.dom.calendarDaysGrid.querySelectorAll(".cal-day-cell").forEach(c => {
+                const cellDate = c.getAttribute("data-date");
+                c.classList.toggle("selected", cellDate === dateStr);
+            });
+        }
+
+        this.renderSelectedDayEvents(dateStr);
+    }
+
+    renderSelectedDayEvents(dateStr) {
+        if (!this.dom.selectedDayEventsList) return;
+
+        const events = (this.calendarEvents || []).filter(ev => {
+            if (!ev.start) return false;
+            return ev.start.startsWith(dateStr);
+        });
+
+        if (this.dom.selectedDayEventsCount) {
+            if (events.length === 0) {
+                this.dom.selectedDayEventsCount.textContent = "Nenhum compromisso para este dia";
+            } else if (events.length === 1) {
+                this.dom.selectedDayEventsCount.textContent = "1 compromisso agendado";
+            } else {
+                this.dom.selectedDayEventsCount.textContent = `${events.length} compromissos agendados`;
+            }
+        }
+
+        if (events.length === 0) {
+            this.dom.selectedDayEventsList.innerHTML = `
+                <div class="empty-state" style="padding: 30px 10px;">
+                    <div style="font-size: 32px; margin-bottom: 8px;">✨</div>
+                    <p style="color: var(--text-secondary); font-size: 13.5px; margin-bottom: 12px;">Sua agenda está livre neste dia.</p>
+                    <button type="button" class="btn-action primary mini" onclick="window.geraldoApp.openCreateEventForm('${dateStr}')">
+                        ➕ Agendar Compromisso
+                    </button>
+                </div>
+            `;
+            return;
+        }
+
+        this.dom.selectedDayEventsList.innerHTML = events.map(ev => {
+            const summary = this.escapeHtml(ev.summary || "Sem título");
+            const location = ev.location ? this.escapeHtml(ev.location) : "";
+            const desc = ev.description ? this.escapeHtml(ev.description) : "";
+            const isAllDay = !!ev.all_day;
+
+            let timeBadge = "Dia Inteiro";
+            if (!isAllDay && ev.start && ev.start.includes("T")) {
+                const startH = ev.start.split("T")[1].substring(0, 5);
+                const endH = ev.end && ev.end.includes("T") ? ev.end.split("T")[1].substring(0, 5) : "";
+                timeBadge = endH ? `🕒 ${startH} - ${endH}` : `🕒 às ${startH}`;
+            }
+
+            const locHtml = location ? `<div class="cal-event-location">📍 ${location}</div>` : "";
+            const descHtml = desc ? `<div class="cal-event-desc">${desc}</div>` : "";
+            const evId = this.escapeHtml(ev.id || "");
+            const webLink = ev.htmlLink ? `<a href="${this.escapeHtml(ev.htmlLink)}" target="_blank" class="field-link" style="font-size: 11.5px;">Google Agenda ↗</a>` : "";
+
+            return `
+                <div class="cal-event-card ${isAllDay ? 'all-day' : ''}" data-event-id="${evId}">
+                    <div class="cal-event-time-badge">${timeBadge}</div>
+                    <div class="cal-event-title">${summary}</div>
+                    ${locHtml}
+                    ${descHtml}
+                    <div class="cal-event-footer">
+                        <div>${webLink}</div>
+                        <button type="button" class="btn-delete-event" onclick="window.geraldoApp.deleteCalendarEvent('${evId}', '${summary.replace(/'/g, "\\'")}')">
+                            🗑️ Excluir
+                        </button>
+                    </div>
+                </div>
+            `;
+        }).join("");
+    }
+
+    openCreateEventForm(dateStr) {
+        if (this.dom.calendarCreateForm) {
+            this.dom.calendarCreateForm.classList.remove("hidden");
+            if (this.dom.eventInputDate) this.dom.eventInputDate.value = dateStr || this.selectedCalendarDate;
+            if (this.dom.eventInputSummary) this.dom.eventInputSummary.focus();
+        }
+    }
+
+    createCalendarEvent() {
+        const summary = this.dom.eventInputSummary?.value.trim();
+        if (!summary) {
+            alert("Por favor, digite o título do compromisso.");
+            this.dom.eventInputSummary?.focus();
+            return;
+        }
+
+        const date = this.dom.eventInputDate?.value || this.selectedCalendarDate;
+        const time = this.dom.eventInputTime?.value || "09:00";
+        const duration = parseInt(this.dom.eventInputDuration?.value || "60", 10);
+        const allDay = !!(this.dom.eventInputAllDay && this.dom.eventInputAllDay.checked);
+
+        if (this.dom.btnSubmitCreateEvent) {
+            this.dom.btnSubmitCreateEvent.textContent = "Salvando...";
+            this.dom.btnSubmitCreateEvent.disabled = true;
+        }
+
+        this.sendAction("create_calendar_event", {
+            summary: summary,
+            date_query: date,
+            time_str: time,
+            duration_minutes: duration,
+            all_day: allDay
+        }, (ok, data, err) => {
+            if (this.dom.btnSubmitCreateEvent) {
+                this.dom.btnSubmitCreateEvent.textContent = "Salvar no Google Agenda";
+                this.dom.btnSubmitCreateEvent.disabled = false;
+            }
+
+            if (ok && data) {
+                this.appendSystemMessage(`📅 ${data.message || 'Compromisso agendado com sucesso!'}`);
+                if (this.dom.eventInputSummary) this.dom.eventInputSummary.value = "";
+                if (this.dom.calendarCreateForm) this.dom.calendarCreateForm.classList.add("hidden");
+                this.loadCalendarEvents();
+            } else {
+                alert(`Erro ao criar compromisso: ${err || (data && data.message) || 'Falha na comunicação.'}`);
+            }
+        });
+    }
+
+    deleteCalendarEvent(eventId, summary) {
+        if (!confirm(`Deseja realmente excluir o compromisso "${summary || 'Compromisso'}" da sua Agenda do Google?`)) {
+            return;
+        }
+
+        this.sendAction("delete_calendar_event", { event_id: eventId, summary }, (ok, data, err) => {
+            if (ok && data) {
+                this.appendSystemMessage(`🗑️ ${data.message || 'Compromisso excluído da agenda.'}`);
+                this.loadCalendarEvents();
+            } else {
+                alert(`Erro ao excluir compromisso: ${err || (data && data.message) || 'Falha.'}`);
+            }
+        });
     }
 
     selectProvider(prov) {
