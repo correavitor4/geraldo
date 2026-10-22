@@ -492,11 +492,70 @@ class CalendarTools:
             return "Ocorreu um erro ao tentar criar o evento na agenda."
 
     @classmethod
-    def delete_event(cls, summary: str = "", date_query: str = "hoje", *args, **kwargs) -> str:
-        """Exclui um evento da agenda pelo título aproximado e data."""
+    def get_events_raw(cls, days_ahead: int = 35, days_behind: int = 7) -> List[Dict[str, Any]]:
+        """
+        Retorna lista estruturada de eventos do Google Calendar para a interface gráfica.
+        """
+        service = cls.get_service()
+        if not service:
+            return []
+
+        try:
+            today = datetime.date.today()
+            start_dt = datetime.datetime.combine(today - datetime.timedelta(days=days_behind), datetime.time.min, tzinfo=LOCAL_TZ)
+            end_dt = datetime.datetime.combine(today + datetime.timedelta(days=days_ahead), datetime.time.max, tzinfo=LOCAL_TZ)
+            time_min = start_dt.astimezone(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+            time_max = end_dt.astimezone(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+
+            events_result = service.events().list(
+                calendarId=CALENDAR_ID,
+                timeMin=time_min,
+                timeMax=time_max,
+                singleEvents=True,
+                orderBy="startTime"
+            ).execute()
+
+            items = events_result.get("items", [])
+            parsed = []
+            for ev in items:
+                start_obj = ev.get("start") or {}
+                end_obj = ev.get("end") or {}
+                start_raw = start_obj.get("dateTime") or start_obj.get("date") or ""
+                end_raw = end_obj.get("dateTime") or end_obj.get("date") or ""
+                all_day = "T" not in str(start_raw)
+
+                parsed.append({
+                    "id": ev.get("id"),
+                    "summary": ev.get("summary", "Sem título"),
+                    "description": ev.get("description", ""),
+                    "start": start_raw,
+                    "end": end_raw,
+                    "all_day": all_day,
+                    "location": ev.get("location", ""),
+                    "htmlLink": ev.get("htmlLink", "")
+                })
+            return parsed
+        except Exception as e:
+            print(f"[Geraldo:Calendar Raw Events Error]: {e}")
+            return []
+
+    @classmethod
+    def delete_event(cls, summary: str = "", date_query: str = "hoje", event_id: str = None, *args, **kwargs) -> str:
+        """Exclui um evento da agenda pelo ID direto ou pelo título aproximado e data."""
         service = cls.get_service()
         if not service:
             return "A agenda do Google não está autenticada para escrita."
+
+        # Exclusão direta por ID (usada pela interface gráfica)
+        if event_id:
+            try:
+                service.events().delete(calendarId=CALENDAR_ID, eventId=event_id).execute()
+                cls.clear_calendar_cache()
+                cls.refresh_cache(async_run=True)
+                return "Compromisso excluído com sucesso."
+            except Exception as e:
+                print(f"[Geraldo:Calendar Delete ID Error]: {e}")
+                return "Ocorreu um erro ao excluir o compromisso."
 
         target_date = cls._parse_target_date(date_query)
         dia_str = "hoje" if target_date == datetime.date.today() else ("amanhã" if target_date == datetime.date.today() + datetime.timedelta(days=1) else f"dia {target_date.strftime('%d/%m')}")
