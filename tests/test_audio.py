@@ -119,7 +119,7 @@ class TestWakeWordDetector:
 
         with patch("sounddevice.InputStream") as mock_input_stream:
             mock_input_stream.return_value.__enter__.return_value = mock_stream
-            result = detector.wait_for_wake_word()
+            result = detector.wait_for_wake_word(max_loops=3)
             assert result is True
 
     def test_wait_for_wake_word_skips_silence(self):
@@ -142,9 +142,27 @@ class TestWakeWordDetector:
 
         with patch("sounddevice.InputStream") as mock_input_stream:
             mock_input_stream.return_value.__enter__.return_value = mock_stream
-            assert detector.wait_for_wake_word() is True
+            assert detector.wait_for_wake_word(max_loops=3) is True
             # Transcribe deve ser chamado apenas 1 vez (o silêncio foi pulado)
             assert mock_stt.model_wake.transcribe.call_count == 1
+
+    def test_wait_for_wake_word_rejects_low_confidence(self):
+        mock_stt = MagicMock()
+        mock_seg = MagicMock()
+        mock_seg.text = "geraldo"
+        mock_seg.no_speech_prob = 0.8  # Alta probabilidade de ser ruído/silêncio
+        mock_seg.avg_logprob = -1.5
+        mock_stt.model_wake.transcribe.return_value = ([mock_seg], None)
+
+        detector = WakeWordDetector(target_word="geraldo", stt=mock_stt)
+        audio_chunk = np.ones((24000, 1), dtype=np.float32) * 0.1
+        mock_stream = MagicMock()
+        mock_stream.read.return_value = (audio_chunk, None)
+
+        with patch("sounddevice.InputStream") as mock_input_stream:
+            mock_input_stream.return_value.__enter__.return_value = mock_stream
+            result = detector.wait_for_wake_word(max_loops=2)
+            assert result is False
 
 class TestAudioFeedback:
     @patch("subprocess.Popen")

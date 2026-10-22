@@ -627,6 +627,7 @@ class GeraldoIPCServer:
             # Executa o fluxo OAuth (que abre o navegador) em thread separada para não travar o WebSocket
             creds = await asyncio.to_thread(CalendarTools.authenticate)
             if creds:
+                CalendarTools.refresh_cache(async_run=True)
                 self.broadcast_event("calendar_status", {"status": "configured", "token_exists": True})
                 return {"success": True, "status": "authenticated", "message": "Conta do Google vinculada com sucesso!"}
             return {"success": False, "status": "failed", "message": "A autorização no navegador foi cancelada ou falhou."}
@@ -643,6 +644,7 @@ class GeraldoIPCServer:
             except Exception:
                 pass
         CalendarTools._service = None
+        CalendarTools.clear_calendar_cache()
         self.broadcast_event("calendar_status", {"status": "partial", "token_exists": False})
         return {"success": True, "status": "disconnected", "message": "Conta do Google desvinculada com sucesso."}
 

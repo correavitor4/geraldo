@@ -6,6 +6,7 @@ import re
 import datetime
 import random
 import threading
+import time
 import config
 from config import SYSTEM_PROMPT
 from brain.nlu import IntentEngine
@@ -18,11 +19,86 @@ from tools.calendar import CalendarTools
 from tools.hyprland import HyprlandTools
 from tools.waybar import WaybarTools
 
+# num_ctx fixo para todas as chamadas: o Ollama recarrega o modelo se o contexto mudar entre requisições.
+# 2048 comporta o prompt do roteador (lista de comandos) + histórico curto.
 LLM_OPTIONS = {
     "temperature": 0.2,
-    "num_ctx": 1024,
+    "num_ctx": 2048,
     "num_predict": 90
 }
+
+# Tokens extras para o roteador: JSON + resposta curta de conversa
+ROUTER_MAX_TOKENS = 160
+WARMUP_COOLDOWN_S = 60.0
+
+# Comandos que a LLM pode escolher quando o NLU não tem confiança.
+# Para cada um: (descrição curta, campos de TEXTO aceitos da LLM -> valores permitidos ou None = livre).
+# Números e horários (hour, minute, minutes, time_str, ...) NÃO vêm da LLM: são sempre extraídos via Regex.
+LLM_ROUTES = {
+    "get_time": ("perguntar as horas", {}),
+    "greeting_morning": ("cumprimento de bom dia", {}),
+    "thanks": ("agradecimento", {}),
+    "get_weather": ("previsão do tempo ou clima", {"query": None, "query_type": {"hoje", "amanhã", "semana"}}),
+    "get_calendar": ("consultar agenda ou compromissos", {"date_query": {"hoje", "amanhã", "depois de amanhã", "semana", "próximo"}}),
+    "create_calendar": ("criar compromisso na agenda", {"summary": None, "date_query": None}),
+    "delete_calendar": ("cancelar compromisso da agenda", {"summary": None, "date_query": None}),
+    "set_alarm": ("criar alarme ou despertador para um horário", {"label": None}),
+    "set_timer": ("timer regressivo ou aviso daqui a um tempo", {"label": None}),
+    "list_timers": ("listar timers ou alarmes ativos", {}),
+    "cancel_timers": ("cancelar ou silenciar timers ou alarmes", {"query": None}),
+    "pause_timer": ("pausar um timer", {"query": None}),
+    "resume_timer": ("retomar um timer pausado", {"query": None}),
+    "control_stopwatch": ("cronômetro progressivo", {"action": {"start", "pause", "reset"}}),
+    "pomodoro_control": ("pomodoro ou modo foco", {"action": {"start", "pause", "resume", "advance", "stop", "status", "long_break"}}),
+    "play_music": ("tocar música, artista ou álbum", {"query": None, "item_type": {"auto", "album"}}),
+    "media_control": ("pausar ou continuar a mídia atual", {}),
+    "volume_control": ("ajustar o volume (+, -, mute ou 0-100)", {"change": None}),
+    "get_news": ("notícias", {"query": None}),
+    "search_web": ("pesquisar informação atual na internet", {"query": None}),
+    "hyprland_control": ("janelas, workspaces ou brilho da tela", {
+        "action": {"workspace", "close_window", "fullscreen", "floating", "brightness", "launcher"},
+        "target": None,
+    }),
+    "restart_waybar": ("reiniciar a waybar", {}),
+}
+
+# Validação extra de formato para campos livres sensíveis
+SLOT_PATTERNS = {
+    "change": r"(?:\+|-|mute|\d{1,3})",
+    "target": r"[\w%.\-]{1,10}",
+}
+
+
+def build_router_prompt() -> str:
+    lines = []
+    for name, (desc, fields) in LLM_ROUTES.items():
+        field_desc = ", ".join(
+            f"{k} ({'|'.join(sorted(v))})" if isinstance(v, set) else k
+            for k, v in fields.items()
+        )
+        lines.append(f"- {name}: {desc}" + (f". Campos: {field_desc}" if field_desc else ""))
+    return (
+        f"{SYSTEM_PROMPT}\n"
+        "Você também é o roteador de comandos do assistente. Analise a última mensagem do usuário e "
+        "responda SOMENTE com um objeto JSON, sem nenhum texto fora dele.\n"
+        'Se ela pedir uma das ações abaixo, responda {"intent": "<nome>", "slots": {...}} usando apenas os campos listados.\n'
+        'Caso contrário, responda {"intent": "conversa", "reply": "<resposta em português, no máximo 2 frases curtas>"}.\n'
+        "Ações:\n" + "\n".join(lines)
+    )
+
+
+def parse_llm_route(raw: str) -> dict | None:
+    """Extrai o primeiro objeto JSON da resposta da LLM. Retorna None se não houver JSON válido."""
+    if not raw:
+        return None
+    m = re.search(r"\{.*\}", raw, re.DOTALL)
+    if not m:
+        return None
+    try:
+        data = json.loads(m.group(0))
+    except (json.JSONDecodeError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
 
 def phonetize_time_patterns(text: str) -> str:
     horas_map = {
@@ -100,6 +176,9 @@ class BrainLLM:
         self.history = collections.deque(maxlen=max_history_turns)
         self._fallback_tts = None
         self._fallback_player = None
+        self._router_prompt = build_router_prompt()
+        self._warmup_lock = threading.Lock()
+        self._last_warmup = float("-inf")
 
     @property
     def provider(self) -> str:
@@ -262,29 +341,66 @@ class BrainLLM:
         with urllib.request.urlopen(req, timeout=30) as resp:
             return json.loads(resp.read().decode("utf-8"))
 
-    def _call_llm(self, messages: list) -> str:
+    def warmup_async(self) -> None:
+        """Pré-carrega o modelo no Ollama em segundo plano, sem bloquear (limitado a 1x por minuto)."""
+        if (self.provider or "ollama").lower() != "ollama":
+            return
+        now = time.monotonic()
+        with self._warmup_lock:
+            if now - self._last_warmup < WARMUP_COOLDOWN_S:
+                return
+            self._last_warmup = now
+        threading.Thread(target=self._warmup_sync, daemon=True).start()
+
+    def _warmup_sync(self) -> None:
+        try:
+            # messages vazio: o Ollama apenas carrega o modelo na memória (mesmo num_ctx das chamadas reais)
+            self._post_json({
+                "model": self.model,
+                "messages": [],
+                "stream": False,
+                "keep_alive": -1,
+                "options": LLM_OPTIONS,
+            })
+        except Exception as e:
+            print(f"[Geraldo:LLM Warmup] Falhou: {e}")
+
+    def _call_llm(self, messages: list, json_mode: bool = False, max_tokens: int | None = None) -> str:
         """Invoca o provedor LLM ativo (Ollama local ou provedor externo com API Key)."""
         prov = (self.provider or "ollama").lower()
+        t_llm0 = time.perf_counter()
         if prov == "ollama":
-            res = self._post_json({
+            options = dict(LLM_OPTIONS)
+            if max_tokens:
+                options["num_predict"] = max_tokens
+            payload = {
                 "model": self.model,
                 "messages": messages,
                 "stream": False,
                 "keep_alive": -1,
-                "options": LLM_OPTIONS
-            })
+                "options": options
+            }
+            if json_mode:
+                payload["format"] = "json"
+            res = self._post_json(payload)
+            ms_llm = (time.perf_counter() - t_llm0) * 1000
+            print(f"[Geraldo:LLM] Resposta {prov} ({self.model}) em {ms_llm:.1f}ms")
             if "message" in res and isinstance(res["message"], dict):
                 return res["message"].get("content", "").strip()
             elif "choices" in res and len(res["choices"]) > 0:
                 return res["choices"][0].get("message", {}).get("content", "").strip()
             return ""
         else:
+            # response_format não é enviado: nem todo provedor compatível com OpenAI suporta.
+            # O formato JSON é pedido no prompt e a resposta é analisada de forma tolerante.
             res = self._post_json_openai({
                 "model": self.model,
                 "messages": messages,
                 "temperature": 0.2,
-                "max_tokens": 150,
+                "max_tokens": max_tokens or 150,
             })
+            ms_llm = (time.perf_counter() - t_llm0) * 1000
+            print(f"[Geraldo:LLM] Resposta {prov} ({self.model}) em {ms_llm:.1f}ms")
             if "choices" in res and len(res["choices"]) > 0:
                 return res["choices"][0].get("message", {}).get("content", "").strip()
             elif "message" in res and isinstance(res["message"], dict):
@@ -293,26 +409,114 @@ class BrainLLM:
 
     def _summarize_with_llm(self, instruction: str, content: str) -> str:
         try:
+            t_sum0 = time.perf_counter()
             messages = [
                 {"role": "system", "content": instruction},
                 {"role": "user", "content": content}
             ]
             reply = self._call_llm(messages)
+            ms_sum = (time.perf_counter() - t_sum0) * 1000
+            print(f"[Geraldo:LLM] Resumo gerado em {ms_sum:.1f}ms")
             return clean_for_speech(reply) if reply else clean_for_speech(content)
         except Exception as e:
             print(f"[Geraldo:LLM Error]: {e}")
             return clean_for_speech(content)
 
     def ask(self, user_prompt: str) -> str:
+        t_ask_start = time.perf_counter()
         lowered = user_prompt.lower()
         if any(cmd in lowered for cmd in ["esquece o que conversamos", "esquecer conversa", "limpar memória", "limpar memoria", "novo assunto"]):
             self.reset_memory()
             return "Memória recente apagada."
 
+        # 1. NLU sem LLM: regras Regex + TF-IDF/Regressão Logística (em paralelo)
         intent, confidence, slots = self.nlu.predict(user_prompt)
-        print(f"[Geraldo:NLU] Intenção: '{intent}' (confiança: {confidence:.2f}) | Slots: {slots}")
 
-        # 1. Respostas 100% Determinísticas (Zero LLM, Zero Latência)
+        if intent in LLM_ROUTES:
+            t_act0 = time.perf_counter()
+            reply = self._dispatch_intent(intent, slots, user_prompt)
+            ms_act = (time.perf_counter() - t_act0) * 1000
+            if reply is not None:
+                ms_total = (time.perf_counter() - t_ask_start) * 1000
+                print(f"[Geraldo:Action] '{intent}' executado em {ms_act:.1f}ms | ⏱️ Total Cérebro: {ms_total:.1f}ms")
+                return reply
+
+        # 2. NLU sem confiança: a LLM classifica o comando ou responde como conversa
+        t_fallback0 = time.perf_counter()
+        reply = self._llm_fallback(user_prompt)
+        ms_fallback = (time.perf_counter() - t_fallback0) * 1000
+        ms_total = (time.perf_counter() - t_ask_start) * 1000
+        print(f"[Geraldo:LLM-Fallback] Concluído em {ms_fallback:.1f}ms | ⏱️ Total Cérebro: {ms_total:.1f}ms")
+        return reply
+
+    def _merge_llm_slots(self, intent: str, user_prompt: str, llm_slots) -> dict:
+        """Slots numéricos/horários vêm do Regex; campos de texto validados da LLM sobrescrevem."""
+        slots = self.nlu.extract_slots_from_text(intent, user_prompt)
+        if not isinstance(llm_slots, dict):
+            return slots
+        for key, allowed in LLM_ROUTES[intent][1].items():
+            val = llm_slots.get(key)
+            if val is None or isinstance(val, bool):
+                continue
+            if isinstance(val, (int, float)):
+                val = str(int(val))
+            if not isinstance(val, str):
+                continue
+            val = val.strip()
+            if not val or len(val) > 120:
+                continue
+            if isinstance(allowed, set):
+                val = val.lower()
+                if val not in allowed:
+                    continue
+            pattern = SLOT_PATTERNS.get(key)
+            if pattern and not re.fullmatch(pattern, val.lower()):
+                continue
+            slots[key] = val
+        return slots
+
+    def _llm_fallback(self, user_prompt: str) -> str:
+        messages = [{"role": "system", "content": self._router_prompt}]
+        messages.extend(list(self.history))
+        messages.append({"role": "user", "content": user_prompt})
+
+        try:
+            raw = self._call_llm(messages, json_mode=True, max_tokens=ROUTER_MAX_TOKENS)
+        except Exception as e:
+            print(f"[Geraldo:LLM Error]: {e}")
+            return "Desculpe, não entendi ou o serviço de conversação está indisponível."
+
+        route = parse_llm_route(raw)
+        intent = str(route.get("intent", "")).strip() if route else ""
+
+        if intent in LLM_ROUTES:
+            slots = self._merge_llm_slots(intent, user_prompt, route.get("slots"))
+            print(f"[Geraldo:LLM-Router] Intenção: '{intent}' | Slots: {slots}")
+            reply = self._dispatch_intent(intent, slots, user_prompt)
+            if reply is not None:
+                return reply
+
+        # Conversa livre: usa o campo de resposta do JSON ou, se a LLM ignorou o formato, o texto bruto
+        if route is not None:
+            reply_text = next(
+                (route[k] for k in ("reply", "resposta", "response", "text") if isinstance(route.get(k), str)),
+                ""
+            )
+        else:
+            reply_text = raw
+
+        reply = clean_for_speech((reply_text or "").strip())
+        if reply:
+            self.history.append({"role": "user", "content": user_prompt})
+            self.history.append({"role": "assistant", "content": reply})
+            return reply
+        return "Não consegui formular uma resposta."
+
+    def _dispatch_intent(self, intent: str, slots: dict, user_prompt: str) -> str | None:
+        """Executa a função Python associada à intenção. Retorna None se a intenção não tiver handler."""
+        lowered = user_prompt.lower()
+
+        # Respostas 100% Determinísticas (Zero LLM, Zero Latência)
         if intent == "get_time":
             return clean_for_speech(SystemTools.get_current_time())
 
@@ -474,27 +678,7 @@ class BrainLLM:
             filler_thread.join(timeout=8.0)
             return final_reply
 
-        # 3. Fallback: Conversação Geral Aberta via Ollama
-        sys_chat = (
-            f"{SYSTEM_PROMPT}\nVocê é o Geraldo, assistente de voz local. "
-            "Responda de forma direta, natural e concisa em no máximo 2 frases curtas. "
-            "Nunca use listas markdown, asteriscos ou códigos."
-        )
-        messages = [{"role": "system", "content": sys_chat}]
-        messages.extend(list(self.history))
-        messages.append({"role": "user", "content": user_prompt})
-
-        try:
-            raw_reply = self._call_llm(messages)
-            reply = clean_for_speech(raw_reply.strip())
-            if reply:
-                self.history.append({"role": "user", "content": user_prompt})
-                self.history.append({"role": "assistant", "content": reply})
-                return reply
-            return "Não consegui formular uma resposta."
-        except Exception as e:
-            print(f"[Geraldo:LLM Error]: {e}")
-            return "Desculpe, não entendi ou o serviço de conversação está indisponível."
+        return None
 
 
 LLMHandler = BrainLLM

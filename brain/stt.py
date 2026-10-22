@@ -1,15 +1,20 @@
 import os
 import numpy as np
 from faster_whisper import WhisperModel
+import config
 
 class SpeechToText:
     def __init__(
         self,
-        wake_model_size: str = "tiny",
-        cmd_model_size: str = "small",
+        wake_model_size: str = None,
+        cmd_model_size: str = None,
         device: str = "cpu",
         compute_type: str = "int8"
     ):
+        if wake_model_size is None:
+            wake_model_size = getattr(config, "STT_WAKE_MODEL", "base")
+        if cmd_model_size is None:
+            cmd_model_size = getattr(config, "STT_CMD_MODEL", "base")
         cpu_total = os.cpu_count() or 4
         print(f"[Geraldo] Inicializando STT Dual-Engine...")
         print(f"  -> Wake Word: {wake_model_size.upper()} (int8, estrito)")
@@ -48,16 +53,21 @@ class SpeechToText:
             beam_size=1,
             best_of=1,
             temperature=0.0,
-            initial_prompt="Geraldo.",
             condition_on_previous_text=False,
             vad_filter=True,
-            vad_parameters=dict(min_silence_duration_ms=300, threshold=0.5)
+            vad_parameters=dict(min_silence_duration_ms=300, threshold=0.7)
         )
-        text = " ".join([seg.text.strip() for seg in segments]).strip().lower()
-        
-        # Filtro estrito: só retorna se contiver "geraldo" de fato
-        if "geraldo" in text:
-            return text
+        for seg in segments:
+            no_speech = getattr(seg, "no_speech_prob", None)
+            if isinstance(no_speech, (int, float)) and no_speech > 0.45:
+                continue
+
+            avg_logprob = getattr(seg, "avg_logprob", None)
+            if isinstance(avg_logprob, (int, float)) and avg_logprob < -0.85:
+                continue
+            text = seg.text.strip().lower()
+            if "geraldo" in text:
+                return text
         return ""
 
     def transcribe(self, audio_data: np.ndarray) -> str:

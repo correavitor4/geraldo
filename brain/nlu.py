@@ -1,4 +1,7 @@
 import re
+import datetime
+import time
+from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
@@ -129,11 +132,26 @@ for _tens_word, _tens_val in [("vinte", 20), ("trinta", 30), ("quarenta", 40), (
     ]:
         NUMBER_WORDS[f"{_tens_word} e {_u_word}"] = _tens_val + _u_val
 
+# --- Padrões Regex compartilhados para horários e números por extenso ---
+# Palavras mais longas primeiro para que "vinte e cinco" vença "vinte" e "uma" vença "um".
+_WORDS_ALT = '|'.join(sorted(NUMBER_WORDS.keys(), key=len, reverse=True))
+NUM_OR_WORD = r'(\d{1,2}|' + _WORDS_ALT + r')'
+NUM_DURATION = r'(\d{1,3}|' + _WORDS_ALT + r')'
+# Conectivos de "X para as Y" (inclui as formas faladas "pra", "pras", "pro")
+_PARA = r'(?:para\s+as|para\s+a|para\s+o|para|pras|pra\s+as|pra\s+a|pra\s+o|pra|pro)'
+_MEIO_DIA = r'meio[\s-]?dia'
+_MEIA_NOITE = r'meia[\s-]?noite'
+# Prefixos de tempo relativo: "daqui a", "daqui há", "dentro de", "em"
+_REL_PREFIX = r'\b(?:daqui\s+(?:a\s+|há\s+|ha\s+)?|dentro\s+de\s+|em\s+)'
+
+
 class IntentEngine:
     def __init__(self, confidence_threshold: float = 0.35):
         self.threshold = confidence_threshold
         self.phrases = []
         self.labels = []
+        # Pool persistente para rodar regras Regex e classificador em paralelo
+        self._executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="nlu")
 
         for intent, examples in TRAINING_DATA.items():
             for ex in examples:
@@ -172,30 +190,69 @@ class IntentEngine:
             return sum(NUMBER_WORDS.get(p.strip(), 0) for p in parts)
         return NUMBER_WORDS.get(token, 0)
 
+    @property
+    def intents(self) -> tuple[str, ...]:
+        return tuple(TRAINING_DATA.keys())
+
+    def extract_slots_from_text(self, intent: str, text: str) -> dict:
+        """Extrai slots via Regex para uma intenção já conhecida (usado quando a LLM decide a intenção)."""
+        return self.extract_slots(intent, text, self._normalize(text))
+
+    def _classify(self, norm: str) -> tuple[str, float]:
+        """Classificação estatística: TF-IDF (palavras + caracteres) + Regressão Logística."""
+        X_test = self.vectorizer.transform([norm])
+        probs = self.clf.predict_proba(X_test)[0]
+        max_idx = int(np.argmax(probs))
+        return str(self.clf.classes_[max_idx]), float(probs[max_idx])
+
     def predict(self, text: str) -> tuple[str, float, dict]:
+        t_start = time.perf_counter()
         norm = self._normalize(text)
         if not norm:
             return "unknown", 0.0, {}
 
-        intent_override = self._hard_rules(norm)
+        # Executa em paralelo regras Regex e TF-IDF + Regressão Logística cronometrando cada um
+        def _timed_rules():
+            t0 = time.perf_counter()
+            res = self._hard_rules(norm)
+            return res, (time.perf_counter() - t0) * 1000
+
+        def _timed_classify():
+            t0 = time.perf_counter()
+            res = self._classify(norm)
+            return res, (time.perf_counter() - t0) * 1000
+
+        rules_future = self._executor.submit(_timed_rules)
+        clf_future = self._executor.submit(_timed_classify)
+
+        intent_override, ms_rules = rules_future.result()
         if intent_override:
+            clf_future.cancel()
+            t_s0 = time.perf_counter()
             slots = self.extract_slots(intent_override, text, norm)
+            ms_slots = (time.perf_counter() - t_s0) * 1000
+            ms_total = (time.perf_counter() - t_start) * 1000
+            print(f"[Geraldo:NLU] Intenção: '{intent_override}' (confiança: 1.00) | Slots: {slots} | ⏱️ Regex: {ms_rules:.2f}ms | Slots: {ms_slots:.2f}ms | Total NLU: {ms_total:.2f}ms")
             return intent_override, 1.0, slots
 
-        X_test = self.vectorizer.transform([norm])
-        probs = self.clf.predict_proba(X_test)[0]
-        max_idx = int(np.argmax(probs))
-        best_intent = self.clf.classes_[max_idx]
-        confidence = float(probs[max_idx])
+        (best_intent, confidence), ms_clf = clf_future.result()
 
         if norm.startswith(("como ", "por que ", "porque ", "explique ", "qual a diferença ", "o que é ")):
             if best_intent not in ["get_weather", "get_calendar", "search_web", "get_news"]:
+                ms_total = (time.perf_counter() - t_start) * 1000
+                print(f"[Geraldo:NLU] Pergunta explicativa direcionada para LLM (confiança: {confidence:.2f}) | ⏱️ Regex: {ms_rules:.2f}ms | TF-IDF: {ms_clf:.2f}ms | Total NLU: {ms_total:.2f}ms")
                 return "conversa_llm", confidence, {}
 
         if confidence < self.threshold:
+            ms_total = (time.perf_counter() - t_start) * 1000
+            print(f"[Geraldo:NLU] Confiança baixa ({confidence:.2f} < {self.threshold}) -> fallback LLM | ⏱️ Regex: {ms_rules:.2f}ms | TF-IDF: {ms_clf:.2f}ms | Total NLU: {ms_total:.2f}ms")
             return "conversa_llm", confidence, {}
 
+        t_s0 = time.perf_counter()
         slots = self.extract_slots(best_intent, text, norm)
+        ms_slots = (time.perf_counter() - t_s0) * 1000
+        ms_total = (time.perf_counter() - t_start) * 1000
+        print(f"[Geraldo:NLU] Intenção: '{best_intent}' (confiança: {confidence:.2f}) | Slots: {slots} | ⏱️ Regex: {ms_rules:.2f}ms | TF-IDF: {ms_clf:.2f}ms | Slots: {ms_slots:.2f}ms | Total NLU: {ms_total:.2f}ms")
         return best_intent, confidence, slots
 
     def _hard_rules(self, norm: str) -> str | None:
@@ -251,6 +308,11 @@ class IntentEngine:
                 "marque", "marcar", "crie", "criar", "novo", "minuto", "minutos", "segundo", "segundos",
                 "hora", "horas", "de", "para"
             ]) or re.search(r'\d', norm):
+                return "set_timer"
+
+        # "me avise daqui a meia hora", "me lembre em 20 minutos" -> timer regressivo
+        if re.search(r'\b(?:avise|avisa|avisar|lembre|lembra|lembrar|chame|chama|chamar)\b', norm):
+            if self._extract_relative_minutes(norm) is not None:
                 return "set_timer"
 
         # Regras de Agendamento, Consulta e Cancelamento do Google Calendar
@@ -338,7 +400,13 @@ class IntentEngine:
                 slots["action"] = "launcher"
 
         elif intent == "set_alarm":
-            h, m = self._extract_time(norm)
+            rel_minutes = self._extract_relative_minutes(norm)
+            if rel_minutes is not None:
+                # "me acorde daqui a meia hora" -> horário absoluto a partir de agora
+                target = datetime.datetime.now() + datetime.timedelta(minutes=rel_minutes)
+                h, m = target.hour, target.minute
+            else:
+                h, m = self._extract_time(norm)
             slots["hour"] = h
             slots["minute"] = m
             label = "Alarme"
@@ -354,8 +422,18 @@ class IntentEngine:
             m_sec = re.search(num_pattern + r'\s*(?:segundo|segundos|seg|s\b)', norm)
             m_hr = re.search(num_pattern + r'\s*(?:hora|horas|h\b)', norm)
 
-            slots["hours"] = self._parse_number(m_hr.group(1)) if m_hr else 0
-            slots["minutes"] = self._parse_number(m_min.group(1)) if m_min else (0 if (m_sec or m_hr) else 5)
+            hours = self._parse_number(m_hr.group(1)) if m_hr else 0
+            minutes = self._parse_number(m_min.group(1)) if m_min else 0
+            # "meia hora" e "uma hora e meia"
+            if re.search(r'\bmeia\s+hora\b', norm):
+                minutes += 30
+            elif m_hr and re.search(r'\bhoras?\s+e\s+meia\b', norm):
+                minutes += 30
+            if not (m_min or m_sec or m_hr) and minutes == 0:
+                minutes = 5
+
+            slots["hours"] = hours
+            slots["minutes"] = minutes
             slots["seconds"] = self._parse_number(m_sec.group(1)) if m_sec else 0
 
             m_rotulo = re.search(r'(?:chamado|para\s+o|para\s+a|para)\s+([a-zA-ZÀ-ÿ0-9\s]+)$', norm)
@@ -465,14 +543,17 @@ class IntentEngine:
                 slots["change"] = "+"
 
         elif intent == "get_weather":
-            if "amanhã" in norm or "amanha" in norm:
+            if any(w in norm for w in ["amanhã", "amanha", "amãhã", "o maior"]):
                 slots["query_type"] = "amanhã"
             elif "semana" in norm:
                 slots["query_type"] = "semana"
             else:
                 slots["query_type"] = "hoje"
             m_city = re.search(r'\b(?:em|para|de)\s+([a-zA-ZÀ-ÿ\s]+?)(?:\s+(?:hoje|amanhã|amanha|semana))?$', norm)
-            slots["query"] = m_city.group(1).strip() if m_city else "Anápolis"
+            cand = m_city.group(1).strip() if m_city else "Anápolis"
+            if cand.lower() in ["hoje", "amanhã", "amanha", "semana", "o maior", "maior", "tempo", "clima", "mim", "manhã", "manha"]:
+                cand = "Anápolis"
+            slots["query"] = cand
 
         elif intent == "get_calendar":
             if any(w in norm for w in ["próximo", "proximo", "em breve"]):
@@ -643,32 +724,59 @@ class IntentEngine:
 
         return 60, False
 
+    def _extract_relative_minutes(self, norm: str) -> int | None:
+        """Tempo relativo em minutos: 'daqui a meia hora', 'em 20 minutos', 'daqui a uma hora e meia'."""
+        if re.search(_REL_PREFIX + r'(?:uma\s+)?meia\s+hora\b', norm):
+            return 30
+
+        m_h = re.search(
+            _REL_PREFIX + NUM_DURATION + r'\s*(?:horas?|h)\b'
+            r'(?:\s+e\s+(meia|' + _WORDS_ALT + r'|\d{1,2})\b(?:\s*minutos?)?)?',
+            norm
+        )
+        if m_h:
+            extra = m_h.group(2)
+            mins = 30 if extra == "meia" else (self._parse_number(extra) if extra else 0)
+            total = self._parse_number(m_h.group(1)) * 60 + mins
+            return total if total > 0 else None
+
+        m_m = re.search(_REL_PREFIX + NUM_DURATION + r'\s*(?:minutos?|min)\b', norm)
+        if m_m:
+            total = self._parse_number(m_m.group(1))
+            return total if total > 0 else None
+        return None
+
     def _extract_time(self, norm: str) -> tuple[int, int]:
         # Exclui artigos "um"/"uma" quando seguidos de substantivos como alarme/compromisso/reunião/evento
         cleaned = re.sub(r'\b(um|uma)\s+(alarme|despertador|compromisso|evento|reunião|reuniao|lembrete)\b', r'\2', norm)
 
-        # 0. Meio-dia e Meia-noite
-        if re.search(r'\b(?:ao\s+)?meio[- ]?dia\b', cleaned):
-            if re.search(r'\b(?:ao\s+)?meio[- ]?dia\s+e\s+meia\b', cleaned):
-                return 12, 30
-            m_min = re.search(r'\b(?:ao\s+)?meio[- ]?dia\s+e\s+(\d{1,2})\b', cleaned)
-            if m_min:
-                return 12, int(m_min.group(1))
-            return 12, 0
+        # 0a. "X para o meio-dia / pra meia-noite" (ex: "quinze pro meio-dia" -> 11:45)
+        m_para_marco = re.search(
+            r'\b' + NUM_OR_WORD + r'\s*(?:minutos?\s*)?' + _PARA + r'\s*(' + _MEIO_DIA + '|' + _MEIA_NOITE + r')\b',
+            cleaned
+        )
+        if m_para_marco:
+            mins_before = self._parse_number(m_para_marco.group(1))
+            if 0 < mins_before < 60:
+                base_h = 12 if m_para_marco.group(2).startswith("meio") else 24
+                total = base_h * 60 - mins_before
+                return (total // 60) % 24, total % 60
 
-        if re.search(r'\b(?:à\s+|a\s+)?meia[- ]?noite\b', cleaned):
-            if re.search(r'\b(?:à\s+|a\s+)?meia[- ]?noite\s+e\s+meia\b', cleaned):
-                return 0, 30
-            m_min = re.search(r'\b(?:à\s+|a\s+)?meia[- ]?noite\s+e\s+(\d{1,2})\b', cleaned)
-            if m_min:
-                return 0, int(m_min.group(1))
-            return 0, 0
+        # 0b. Meio-dia e Meia-noite ("meio-dia e meia", "meia-noite e quinze")
+        for marco, base_h in ((_MEIO_DIA, 12), (_MEIA_NOITE, 0)):
+            if re.search(r'\b' + marco + r'\b', cleaned):
+                if re.search(r'\b' + marco + r'\s+e\s+meia\b', cleaned):
+                    return base_h, 30
+                m_min = re.search(r'\b' + marco + r'\s+e\s+' + NUM_OR_WORD + r'\b', cleaned)
+                if m_min:
+                    return base_h, self._parse_number(m_min.group(1)) % 60
+                return base_h, 0
 
-        num_or_word_pattern = r'(\d{1,2}|' + '|'.join(sorted(NUMBER_WORDS.keys(), key=len, reverse=True)) + r')'
+        num_or_word_pattern = NUM_OR_WORD
 
-        # 1. Padrão "X para as / pras Y" (ex: "dez para as oito", "15 pras 8", "vinte para as 7", "cinco para as 8")
+        # 1. Padrão "X para as / pras / pro Y" (ex: "dez para as oito", "15 pras 8", "vinte pra sete")
         m_para = re.search(
-            r'\b' + num_or_word_pattern + r'\s*(?:para\s+as|pras|para\s+a|para)\s*' + num_or_word_pattern + r'\b',
+            r'\b' + num_or_word_pattern + r'\s*' + _PARA + r'\s*' + num_or_word_pattern + r'\b',
             cleaned
         )
         if m_para:

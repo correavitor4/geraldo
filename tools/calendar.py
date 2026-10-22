@@ -2,6 +2,7 @@ import datetime
 import os
 import os.path
 import re
+import time
 from typing import Optional, Dict, Any, List
 from dotenv import load_dotenv
 from google.auth.transport.requests import Request
@@ -75,6 +76,58 @@ def format_speech_time(hh_mm: str) -> str:
 
 class CalendarTools:
     _service = None
+    _calendar_cache = {}
+    _CALENDAR_CACHE_TTL = 300  # 5 minutos
+    _poller_started = False
+
+    @classmethod
+    def clear_calendar_cache(cls):
+        cls._calendar_cache.clear()
+
+    @classmethod
+    def refresh_cache(cls, async_run: bool = True):
+        def _do_refresh():
+            service = cls.get_service()
+            if not service:
+                return
+            for query in ["hoje", "amanhã", "próximo", "semana"]:
+                try:
+                    cls.get_events(query, use_cache=False)
+                except Exception as e:
+                    print(f"[Geraldo:Calendar Cache Refresh Error for '{query}']: {e}")
+            print("[Geraldo:Calendar] Cache de agenda renovado em background.")
+
+        if async_run:
+            import threading
+            threading.Thread(target=_do_refresh, daemon=True, name="cal_cache_refresh").start()
+        else:
+            _do_refresh()
+
+    @classmethod
+    def start_calendar_poller(cls, interval_seconds: int = 300):
+        """
+        Polling periódico a cada 5 minutos em background (12 req/h, ~288/dia).
+        A cota do Google Calendar é de 1.000.000 req/dia, portanto consome menos de 0.03% da cota.
+        """
+        if cls._poller_started:
+            return
+        cls._poller_started = True
+
+        import threading
+        import time as _t
+
+        def _poller():
+            _t.sleep(2)
+            cls.refresh_cache(async_run=False)
+
+            while True:
+                _t.sleep(interval_seconds)
+                try:
+                    cls.refresh_cache(async_run=False)
+                except Exception as e:
+                    print(f"[Geraldo:Calendar Poller Error]: {e}")
+
+        threading.Thread(target=_poller, daemon=True, name="cal_cache_poller").start()
 
     @classmethod
     def get_service(cls):
@@ -112,6 +165,11 @@ class CalendarTools:
                 return creds
             except Exception as e:
                 print(f"[Geraldo:Calendar Refresh Error]: {e}")
+                try:
+                    if os.path.exists(TOKEN_FILE):
+                        os.remove(TOKEN_FILE)
+                except Exception:
+                    pass
                 creds = None
 
         return None
@@ -238,11 +296,19 @@ class CalendarTools:
 
     @classmethod
     def get_events(cls, date_query: str = "hoje", *args, **kwargs) -> str:
+        q_lower = (date_query or "hoje").lower().strip()
+        use_cache = kwargs.get("use_cache", True)
+
+        if use_cache and q_lower in cls._calendar_cache:
+            cached_time, cached_result = cls._calendar_cache[q_lower]
+            if time.time() - cached_time < cls._CALENDAR_CACHE_TTL:
+                print(f"[Geraldo:Calendar] Cache atingido para '{q_lower}'.")
+                return cached_result
+
         service = cls.get_service()
         if not service:
             return "A agenda do Google ainda não está configurada ou autenticada."
 
-        q_lower = (date_query or "hoje").lower().strip()
         is_next = any(w in q_lower for w in ["próximo", "proximo", "em breve"])
         is_week = "semana" in q_lower
 
@@ -260,22 +326,24 @@ class CalendarTools:
 
                 events = events_result.get("items", [])
                 if not events:
-                    return "Você não tem próximos compromissos agendados."
-
-                ev = events[0]
-                summary = ev.get("summary", "Compromisso sem título")
-                start = ev.get("start", {}).get("dateTime", ev.get("start", {}).get("date"))
-                today = datetime.date.today()
-                if "T" in start:
-                    dt_part, tm_part = start.split("T")
-                    ev_date = datetime.date.fromisoformat(dt_part)
-                    dia_str = "hoje" if ev_date == today else ("amanhã" if ev_date == today + datetime.timedelta(days=1) else f"no dia {ev_date.strftime('%d/%m')}")
-                    tempo_falado = format_speech_time(tm_part[:5])
-                    return f"Seu próximo compromisso é {summary}, {dia_str} {tempo_falado}."
+                    result = "Você não tem próximos compromissos agendados."
                 else:
-                    ev_date = datetime.date.fromisoformat(start)
-                    dia_str = "hoje" if ev_date == today else ("amanhã" if ev_date == today + datetime.timedelta(days=1) else f"no dia {ev_date.strftime('%d/%m')}")
-                    return f"Seu próximo compromisso é {summary}, {dia_str} o dia todo."
+                    ev = events[0]
+                    summary = ev.get("summary", "Compromisso sem título")
+                    start = (ev.get("start") or {}).get("dateTime") or (ev.get("start") or {}).get("date") or ""
+                    today = datetime.date.today()
+                    if "T" in start:
+                        dt_part, tm_part = start.split("T")
+                        ev_date = datetime.date.fromisoformat(dt_part)
+                        dia_str = "hoje" if ev_date == today else ("amanhã" if ev_date == today + datetime.timedelta(days=1) else f"no dia {ev_date.strftime('%d/%m')}")
+                        tempo_falado = format_speech_time(tm_part[:5])
+                        result = f"Seu próximo compromisso é {summary}, {dia_str} {tempo_falado}."
+                    elif start:
+                        ev_date = datetime.date.fromisoformat(start)
+                        dia_str = "hoje" if ev_date == today else ("amanhã" if ev_date == today + datetime.timedelta(days=1) else f"no dia {ev_date.strftime('%d/%m')}")
+                        result = f"Seu próximo compromisso é {summary}, {dia_str} o dia todo."
+                    else:
+                        result = f"Seu próximo compromisso é {summary}."
 
             elif is_week:
                 today = datetime.date.today()
@@ -295,25 +363,27 @@ class CalendarTools:
 
                 events = events_result.get("items", [])
                 if not events:
-                    return f"Você não tem compromissos agendados {rotulo_dia}."
+                    result = f"Você não tem compromissos agendados {rotulo_dia}."
+                else:
+                    agenda_items = []
+                    dias_nomes = ["segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo"]
+                    for ev in events:
+                        summary = ev.get("summary", "Compromisso sem título")
+                        start = (ev.get("start") or {}).get("dateTime") or (ev.get("start") or {}).get("date") or ""
+                        if "T" in start:
+                            dt_part, tm_part = start.split("T")
+                            ev_date = datetime.date.fromisoformat(dt_part)
+                            dia_nome = dias_nomes[ev_date.weekday()]
+                            tempo_falado = format_speech_time(tm_part[:5])
+                            agenda_items.append(f"{dia_nome} {ev_date.day}/{ev_date.month:02d}, {tempo_falado}: {summary}")
+                        elif start:
+                            ev_date = datetime.date.fromisoformat(start)
+                            dia_nome = dias_nomes[ev_date.weekday()]
+                            agenda_items.append(f"{dia_nome} {ev_date.day}/{ev_date.month:02d}, o dia todo: {summary}")
+                        else:
+                            agenda_items.append(f"{summary}")
 
-                agenda_items = []
-                dias_nomes = ["segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo"]
-                for ev in events:
-                    summary = ev.get("summary", "Compromisso sem título")
-                    start = ev.get("start", {}).get("dateTime", ev.get("start", {}).get("date"))
-                    if "T" in start:
-                        dt_part, tm_part = start.split("T")
-                        ev_date = datetime.date.fromisoformat(dt_part)
-                        dia_nome = dias_nomes[ev_date.weekday()]
-                        tempo_falado = format_speech_time(tm_part[:5])
-                        agenda_items.append(f"{dia_nome} {ev_date.day}/{ev_date.month:02d}, {tempo_falado}: {summary}")
-                    else:
-                        ev_date = datetime.date.fromisoformat(start)
-                        dia_nome = dias_nomes[ev_date.weekday()]
-                        agenda_items.append(f"{dia_nome} {ev_date.day}/{ev_date.month:02d}, o dia todo: {summary}")
-
-                return f"Compromissos {rotulo_dia}: " + "; ".join(agenda_items) + "."
+                    result = f"Compromissos {rotulo_dia}: " + "; ".join(agenda_items) + "."
 
             else:
                 target_date = cls._parse_target_date(date_query)
@@ -341,20 +411,25 @@ class CalendarTools:
 
                 events = events_result.get("items", [])
                 if not events:
-                    return f"Você não tem compromissos agendados {rotulo_dia}."
+                    result = f"Você não tem compromissos agendados {rotulo_dia}."
+                else:
+                    agenda_items = []
+                    for ev in events:
+                        summary = ev.get("summary", "Compromisso sem título")
+                        start = (ev.get("start") or {}).get("dateTime") or (ev.get("start") or {}).get("date") or ""
+                        if "T" in start:
+                            hh_mm = start.split("T")[1][:5]
+                            tempo_falado = format_speech_time(hh_mm)
+                            agenda_items.append(f"{tempo_falado}: {summary}")
+                        elif start:
+                            agenda_items.append(f"o dia todo: {summary}")
+                        else:
+                            agenda_items.append(f"{summary}")
 
-                agenda_items = []
-                for ev in events:
-                    summary = ev.get("summary", "Compromisso sem título")
-                    start = ev.get("start", {}).get("dateTime", ev.get("start", {}).get("date"))
-                    if "T" in start:
-                        hh_mm = start.split("T")[1][:5]
-                        tempo_falado = format_speech_time(hh_mm)
-                        agenda_items.append(f"{tempo_falado}: {summary}")
-                    else:
-                        agenda_items.append(f"o dia todo: {summary}")
+                    result = f"Compromissos {rotulo_dia}: " + "; ".join(agenda_items) + "."
 
-                return f"Compromissos {rotulo_dia}: " + "; ".join(agenda_items) + "."
+            cls._calendar_cache[q_lower] = (time.time(), result)
+            return result
 
         except Exception as e:
             print(f"[Geraldo:Calendar Error]: {e}")
@@ -406,6 +481,8 @@ class CalendarTools:
 
         try:
             created = service.events().insert(calendarId=CALENDAR_ID, body=event_body).execute()
+            cls.clear_calendar_cache()
+            cls.refresh_cache(async_run=True)
             if all_day:
                 return f"Agendado com sucesso: {summary} {dia_str} o dia inteiro."
             hora_extenso = format_speech_time(f"{hour:02d}:{minute:02d}")
@@ -460,6 +537,8 @@ class CalendarTools:
                     return f"Você tem mais de um compromisso {dia_str}: {', '.join(titles)}. Qual você deseja cancelar?"
 
             service.events().delete(calendarId=CALENDAR_ID, eventId=matched_event["id"]).execute()
+            cls.clear_calendar_cache()
+            cls.refresh_cache(async_run=True)
             deleted_title = matched_event.get("summary", summary or "Compromisso")
             return f"Compromisso '{deleted_title}' {dia_str} cancelado com sucesso."
 

@@ -159,6 +159,12 @@ class TestSystemToolsWeather:
         assert "ensolarado" in res
         assert "24 graus" in res
 
+    @pytest.fixture(autouse=True)
+    def reset_weather_cache(self):
+        SystemTools.clear_weather_cache()
+        yield
+        SystemTools.clear_weather_cache()
+
     @patch.object(SystemTools, "_fetch_open_meteo", side_effect=Exception("OpenMeteo Down"))
     @patch.object(SystemTools, "_fetch_wttr", return_value="Previsão via wttr.in")
     def test_get_weather_fallback_to_wttr(self, mock_wttr, mock_om):
@@ -170,3 +176,14 @@ class TestSystemToolsWeather:
     def test_get_weather_all_fail(self, mock_wttr, mock_om):
         res = SystemTools.get_weather("hoje", "Anápolis")
         assert "Não foi possível obter a previsão do tempo no momento" in res
+
+    @patch.object(SystemTools, "_fetch_open_meteo", return_value="Tempo ensolarado em Anápolis.")
+    def test_get_weather_cache_hit(self, mock_om):
+        res1 = SystemTools.get_weather("hoje", "Anápolis")
+        assert res1 == "Tempo ensolarado em Anápolis."
+        assert mock_om.call_count == 1
+
+        # Segunda chamada deve retornar do cache sem chamar a rede
+        res2 = SystemTools.get_weather("hoje", "Anápolis")
+        assert res2 == "Tempo ensolarado em Anápolis."
+        assert mock_om.call_count == 1

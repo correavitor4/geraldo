@@ -84,6 +84,25 @@ class TestNLUTimeExtraction:
         assert engine._extract_time(engine._normalize("à meia-noite")) == (0, 0)
         assert engine._extract_time(engine._normalize("à meia-noite e meia")) == (0, 30)
 
+    def test_extract_time_colloquial(self, shared_nlu_engine):
+        engine = shared_nlu_engine
+        # "quinze pro meio-dia" -> 11:45
+        assert engine._extract_time(engine._normalize("quinze pro meio-dia")) == (11, 45)
+        # "dez pra meia-noite" -> 23:50
+        assert engine._extract_time(engine._normalize("dez pra meia-noite")) == (23, 50)
+        # "meia-noite e quinze" -> 00:15
+        assert engine._extract_time(engine._normalize("meia-noite e quinze")) == (0, 15)
+        # "meio-dia e vinte" -> 12:20
+        assert engine._extract_time(engine._normalize("meio-dia e vinte")) == (12, 20)
+
+    def test_extract_relative_minutes(self, shared_nlu_engine):
+        engine = shared_nlu_engine
+        assert engine._extract_relative_minutes(engine._normalize("daqui a meia hora")) == 30
+        assert engine._extract_relative_minutes(engine._normalize("daqui a uma hora e meia")) == 90
+        assert engine._extract_relative_minutes(engine._normalize("em 20 minutos")) == 20
+        assert engine._extract_relative_minutes(engine._normalize("dentro de quinze minutos")) == 15
+        assert engine._extract_relative_minutes(engine._normalize("sem tempo relativo")) is None
+
     def test_extract_duration_range(self, shared_nlu_engine):
         engine = shared_nlu_engine
         assert engine._extract_duration(engine._normalize("evento das 14 às 16 horas")) == (120, False)

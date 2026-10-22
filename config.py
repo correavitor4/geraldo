@@ -195,9 +195,17 @@ def get_ollama_config() -> dict:
 def update_ollama_config(host: str = None, model: str = None, persist: bool = True) -> dict:
     return update_llm_config(provider="ollama" if host else None, host=host, model=model, persist=persist)
 
-# Google Calendar OAuth 2.0 (Configuração para 1 clique)
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", _user_settings.get("google_client_id", _bundled_defaults.get("google_client_id", ""))).strip()
-GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", _user_settings.get("google_client_secret", _bundled_defaults.get("google_client_secret", ""))).strip()
+# Google Calendar OAuth 2.0 (Carregado de variáveis de ambiente, settings.json ou bundle de release)
+GOOGLE_CLIENT_ID = (
+    os.getenv("GOOGLE_CLIENT_ID", "").strip()
+    or _user_settings.get("google_client_id", "").strip()
+    or _bundled_defaults.get("google_client_id", "").strip()
+)
+GOOGLE_CLIENT_SECRET = (
+    os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
+    or _user_settings.get("google_client_secret", "").strip()
+    or _bundled_defaults.get("google_client_secret", "").strip()
+)
 
 def get_google_oauth_config() -> dict:
     return {

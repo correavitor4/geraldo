@@ -79,6 +79,12 @@ class TestCalendarDateParsing:
         assert d_ano == datetime.date(2028, 5, 10)
 
 class TestCalendarEventsAndCreation:
+    @pytest.fixture(autouse=True)
+    def clean_cache(self):
+        CalendarTools.clear_calendar_cache()
+        yield
+        CalendarTools.clear_calendar_cache()
+
     @patch.object(CalendarTools, "get_service", return_value=None)
     def test_get_events_no_service(self, mock_svc):
         res = CalendarTools.get_events("hoje")
@@ -290,3 +296,60 @@ class TestCalendarEventsAndCreation:
         with patch.object(CalendarTools, "get_service", return_value=mock_svc):
             res = CalendarTools.delete_event(summary="Dentista")
             assert "Ocorreu um erro ao tentar cancelar o compromisso" in res
+
+
+class TestCalendarCaching:
+    @pytest.fixture(autouse=True)
+    def clean_cache(self):
+        CalendarTools.clear_calendar_cache()
+        yield
+        CalendarTools.clear_calendar_cache()
+
+    def test_cache_hit_avoids_api_call(self):
+        mock_svc = MagicMock()
+        mock_svc.events().list().execute.return_value = {
+            "items": [{"summary": "Evento Teste", "start": {"dateTime": "2026-10-18T10:00:00Z"}}]
+        }
+        with patch.object(CalendarTools, "get_service", return_value=mock_svc):
+            # Primeira chamada - vai à API
+            res1 = CalendarTools.get_events("hoje")
+            assert "Evento Teste" in res1
+            assert mock_svc.events().list().execute.call_count == 1
+
+            # Segunda chamada - atinge o cache em memória
+            res2 = CalendarTools.get_events("hoje")
+            assert "Evento Teste" in res2
+            assert mock_svc.events().list().execute.call_count == 1
+
+    def test_cache_invalidation_on_create(self):
+        mock_svc = MagicMock()
+        mock_svc.events().list().execute.return_value = {"items": []}
+        mock_svc.events().insert().execute.return_value = {"id": "ev_new"}
+
+        with patch.object(CalendarTools, "get_service", return_value=mock_svc), \
+             patch.object(CalendarTools, "refresh_cache") as mock_refresh:
+            CalendarTools.get_events("hoje")
+            assert "hoje" in CalendarTools._calendar_cache
+
+            # Criar evento invalida o cache
+            CalendarTools.create_event(summary="Novo Evento")
+            assert len(CalendarTools._calendar_cache) == 0
+            mock_refresh.assert_called_once_with(async_run=True)
+
+    def test_cache_invalidation_on_delete(self):
+        mock_svc = MagicMock()
+        mock_svc.events().list().execute.return_value = {
+            "items": [{"id": "ev_1", "summary": "Reunião"}]
+        }
+        mock_svc.events().delete().execute.return_value = None
+
+        with patch.object(CalendarTools, "get_service", return_value=mock_svc), \
+             patch.object(CalendarTools, "refresh_cache") as mock_refresh:
+            CalendarTools.get_events("hoje")
+            assert "hoje" in CalendarTools._calendar_cache
+
+            # Deletar evento invalida o cache
+            CalendarTools.delete_event(summary="Reunião")
+            assert len(CalendarTools._calendar_cache) == 0
+            mock_refresh.assert_called_once_with(async_run=True)
+

@@ -176,17 +176,82 @@ class SystemTools:
         hoje = weather_list[0]
         return f"Em {cidade_nome}, o tempo está {desc}, marcando {temp} graus com sensação de {sensacao} graus. Para hoje, mínima de {hoje.get('mintempC', temp)} e máxima de {hoje.get('maxtempC', temp)} graus."
 
-    @classmethod
-    def get_weather(cls, query_type: str = "hoje", query: str = "Anápolis", *args, **kwargs) -> str:
-        city = query if query and query.lower() not in ["hoje", "amanhã", "amanha", "amãhã", "semana"] else "Anápolis"
+    _weather_cache = {}
+    _WEATHER_CACHE_TTL = 900  # 15 minutos
 
+    @classmethod
+    def clear_weather_cache(cls):
+        cls._weather_cache.clear()
+
+    _weather_poller_started = False
+
+    @classmethod
+    def start_weather_poller(cls, interval_seconds: int = 900):
+        """Dispara poller em background thread que mantém o clima de Anápolis sempre em cache."""
+        if cls._weather_poller_started:
+            return
+        cls._weather_poller_started = True
+
+        import threading
+        import time as _t
+
+        def _poller():
+            # Executa aquecimento imediato
+            try:
+                cls.get_weather("hoje", "Anápolis", use_cache=False)
+                cls.get_weather("amanhã", "Anápolis", use_cache=False)
+                print("[Geraldo:Weather] Pré-cache de clima carregado em background.")
+            except Exception as e:
+                print(f"[Geraldo:Weather] Falha no pré-cache inicial: {e}")
+
+            while True:
+                _t.sleep(interval_seconds)
+                try:
+                    cls.get_weather("hoje", "Anápolis", use_cache=False)
+                    cls.get_weather("amanhã", "Anápolis", use_cache=False)
+                    print("[Geraldo:Weather] Cache periódico de clima renovado em background.")
+                except Exception as e:
+                    print(f"[Geraldo:Weather] Falha ao renovar cache de clima: {e}")
+
+        threading.Thread(target=_poller, daemon=True, name="weather_cache_poller").start()
+
+    _INVALID_CITY_WORDS = {
+        "hoje", "amanhã", "amanha", "amãhã", "semana", "agora", "aqui",
+        "o maior", "maior", "tempo", "clima", "mim", "manhã", "manha", "tarde", "noite"
+    }
+
+    @classmethod
+    def get_weather(cls, query_type: str = "hoje", query: str = "Anápolis", use_cache: bool = True, *args, **kwargs) -> str:
+        city_raw = (query or "").strip()
+        if not city_raw or city_raw.lower() in cls._INVALID_CITY_WORDS:
+            city = "Anápolis"
+        else:
+            city = city_raw
+
+        cache_key = (city.lower().strip(), query_type.lower().strip())
+        import time as _t
+        now = _t.time()
+
+        if use_cache and cache_key in cls._weather_cache:
+            cached_time, cached_val = cls._weather_cache[cache_key]
+            if now - cached_time < cls._WEATHER_CACHE_TTL:
+                remaining = int(cls._WEATHER_CACHE_TTL - (now - cached_time))
+                print(f"[Geraldo:Weather] Cache atingido (restam {remaining}s de validade)")
+                return cached_val
+
+        result = None
         try:
-            return cls._fetch_open_meteo(city, query_type)
+            result = cls._fetch_open_meteo(city, query_type)
         except Exception as e:
             print(f"[Geraldo:Weather] Open-Meteo falhou ({e}). Recorrendo ao wttr.in...")
 
-        try:
-            return cls._fetch_wttr(city, query_type)
-        except Exception as e_fb:
-            print(f"[Geraldo:Weather] Fallback wttr.in falhou: {e_fb}")
-            return "Não foi possível obter a previsão do tempo no momento."
+        if not result:
+            try:
+                result = cls._fetch_wttr(city, query_type)
+            except Exception as e_fb:
+                print(f"[Geraldo:Weather] Fallback wttr.in falhou: {e_fb}")
+                return "Não foi possível obter a previsão do tempo no momento."
+
+        if result:
+            cls._weather_cache[cache_key] = (now, result)
+        return result
