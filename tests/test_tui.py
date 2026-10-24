@@ -932,8 +932,8 @@ async def test_tui_timer_modal_presets_and_creation():
     """Valida abertura do modal de timers, clique em preset e envio de timer_add."""
     app = GeraldoTUI(auto_connect=False)
     async with app.run_test(size=(160, 50)) as pilot:
-        # 1. Abre modal pelo botão "+ Novo"
-        app.query_one("#btn-timer-new", Button).press()
+        # 1. Abre modal de timers
+        app.action_open_timer_modal()
         await pilot.pause()
         assert isinstance(app.screen, TimerConfigModal)
 
@@ -1022,8 +1022,8 @@ async def test_tui_alarm_modal_presets_and_creation():
     """Valida abertura do modal de alarmes, clique em preset e envio de alarm_add."""
     app = GeraldoTUI(auto_connect=False)
     async with app.run_test(size=(160, 50)) as pilot:
-        # 1. Abre modal pelo botão "+ Novo" na aba de alarmes
-        app.query_one("#btn-alarm-new", Button).press()
+        # 1. Abre modal de alarmes
+        app.action_open_alarm_modal()
         await pilot.pause()
         assert isinstance(app.screen, AlarmConfigModal)
 
