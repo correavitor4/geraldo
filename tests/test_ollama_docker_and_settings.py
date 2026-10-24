@@ -427,7 +427,9 @@ class TestTauriMainRsIntegration:
 
         assert "fn open_external_url" in content
         assert "open_external_url" in content
-        assert "tauri::generate_handler![get_desktop_version, is_daemon_active, open_external_url]" in content
+        assert "tauri::generate_handler!" in content
+        assert "open_external_url" in content
+        assert "open_desktop_tui" in content
 
     def test_main_rs_has_windows_sidecar_candidates(self):
         main_rs_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src-tauri", "src", "main.rs"))

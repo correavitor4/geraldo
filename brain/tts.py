@@ -13,10 +13,14 @@ class TextToSpeech:
             self.model_path = str(resolved)
         elif os.path.exists(model_path):
             self.model_path = model_path
+        elif any(k in model_path.lower() for k in ("voz_faber", "voz.onnx", "pt_br-faber")):
+            from core.paths import ensure_model_available
+            self.model_path = str(ensure_model_available(model_path))
         else:
             raise FileNotFoundError(f"Modelo não encontrado: {model_path}")
 
         self.output_file = "/tmp/geraldo_response.wav"
+        self._voice = None
 
     def synthesize(self, text: str) -> str:
         """Sintetiza o texto para WAV usando o módulo oficial piper do venv."""

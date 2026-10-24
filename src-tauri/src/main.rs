@@ -6,6 +6,9 @@ use std::process::{Child, Command};
 use std::sync::Mutex;
 use std::time::Duration;
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -73,7 +76,13 @@ fn try_spawn_sidecar() {
                 let adjacent = parent.join(name);
                 if adjacent.exists() {
                     println!("[Tauri] Iniciando sidecar adjacente ao executável: {:?}", adjacent);
-                    if let Ok(child) = Command::new(&adjacent).spawn() {
+                    let mut cmd = Command::new(&adjacent);
+                    cmd.current_dir(parent);
+                    #[cfg(target_os = "windows")]
+                    {
+                        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+                    }
+                    if let Ok(child) = cmd.spawn() {
                         if let Ok(mut lock) = SIDECAR_PROCESS.lock() {
                             *lock = Some(child);
                         }
@@ -102,7 +111,15 @@ fn try_spawn_sidecar() {
         let path = std::path::Path::new(candidate);
         if path.exists() {
             println!("[Tauri] Iniciando sidecar em segundo plano: {:?}", path);
-            if let Ok(child) = Command::new(path).spawn() {
+            let mut cmd = Command::new(path);
+            if let Some(parent) = path.parent() {
+                cmd.current_dir(parent);
+            }
+            #[cfg(target_os = "windows")]
+            {
+                cmd.creation_flags(0x08000000);
+            }
+            if let Ok(child) = cmd.spawn() {
                 if let Ok(mut lock) = SIDECAR_PROCESS.lock() {
                     *lock = Some(child);
                 }
@@ -128,7 +145,13 @@ fn try_spawn_sidecar() {
                 } else {
                     std::path::PathBuf::from("python3")
                 };
-                if let Ok(child) = Command::new(&exec_candidate).arg(&main_py).current_dir(&dir).spawn() {
+                let mut cmd = Command::new(&exec_candidate);
+                cmd.arg(&main_py).current_dir(&dir);
+                #[cfg(target_os = "windows")]
+                {
+                    cmd.creation_flags(0x08000000);
+                }
+                if let Ok(child) = cmd.spawn() {
                     if let Ok(mut lock) = SIDECAR_PROCESS.lock() {
                         *lock = Some(child);
                     }
@@ -141,7 +164,13 @@ fn try_spawn_sidecar() {
 
     // Se nenhum binário for encontrado, tenta iniciar main.py com o interpretador python disponível
     for py_cmd in &["python", "py", "python3"] {
-        if let Ok(child) = Command::new(py_cmd).args(["main.py"]).spawn() {
+        let mut cmd = Command::new(py_cmd);
+        cmd.args(["main.py"]);
+        #[cfg(target_os = "windows")]
+        {
+            cmd.creation_flags(0x08000000);
+        }
+        if let Ok(child) = cmd.spawn() {
             if let Ok(mut lock) = SIDECAR_PROCESS.lock() {
                 *lock = Some(child);
             }
@@ -149,6 +178,86 @@ fn try_spawn_sidecar() {
             return;
         }
     }
+}
+
+fn open_tui() {
+    let mut core_candidate: Option<std::path::PathBuf> = None;
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(parent) = exe_path.parent() {
+            for name in &["geraldo-core.exe", "geraldo-core"] {
+                let p = parent.join(name);
+                if p.exists() {
+                    core_candidate = Some(p);
+                    break;
+                }
+            }
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(core) = &core_candidate {
+            let core_str = core.to_string_lossy().to_string();
+            let _ = Command::new("cmd")
+                .args(["/C", "start", "Geraldo TUI", &core_str, "--tui"])
+                .spawn();
+            return;
+        }
+
+        if let Ok(exe_path) = std::env::current_exe() {
+            if let Some(parent) = exe_path.parent() {
+                for rel in &["_up_/bin/geraldo-tui.cmd", "_up_/bin/geraldo_tui.cmd", "bin/geraldo-tui.cmd", "bin/geraldo_tui.cmd", "run_tui.bat"] {
+                    let sp = parent.join(rel);
+                    if sp.exists() {
+                        let _ = Command::new("cmd")
+                            .args(["/C", "start", "Geraldo TUI", &sp.to_string_lossy().to_string()])
+                            .spawn();
+                        return;
+                    }
+                }
+            }
+        }
+
+        let _ = Command::new("cmd")
+            .args(["/C", "start", "Geraldo TUI", "geraldo_tui"])
+            .spawn();
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(core) = &core_candidate {
+            let core_str = core.to_string_lossy().to_string();
+            let script = format!("tell application \"Terminal\" to do script \"\\\"{}\\\" --tui\"", core_str);
+            let _ = Command::new("osascript").args(["-e", &script]).spawn();
+            return;
+        }
+        let _ = Command::new("osascript").args(["-e", "tell application \"Terminal\" to do script \"geraldo_tui\""]).spawn();
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let cmd_str = if let Some(core) = &core_candidate {
+            format!("\"{}\" --tui", core.to_string_lossy())
+        } else {
+            "geraldo_tui".to_string()
+        };
+
+        for term in &["x-terminal-emulator", "gnome-terminal", "konsole", "xfce4-terminal", "alacritty", "kitty", "xterm"] {
+            let res = if *term == "gnome-terminal" {
+                Command::new(term).args(["--", "bash", "-c", &format!("{}; exec bash", cmd_str)]).spawn()
+            } else {
+                Command::new(term).args(["-e", "bash", "-c", &format!("{}; exec bash", cmd_str)]).spawn()
+            };
+            if res.is_ok() {
+                return;
+            }
+        }
+    }
+}
+
+#[tauri::command]
+fn open_desktop_tui() {
+    open_tui();
 }
 
 fn stop_sidecar() {
@@ -258,12 +367,14 @@ fn main() {
 
             // Cria menu de contexto da bandeja do sistema
             let open_item = MenuItemBuilder::with_id("open", "Abrir Geraldo").build(app)?;
+            let tui_item = MenuItemBuilder::with_id("tui", "Abrir TUI").build(app)?;
             let mute_item = MenuItemBuilder::with_id("mute", "Mutar/Desmutar Microfone").build(app)?;
             let cancel_item = MenuItemBuilder::with_id("cancel", "Cancelar Sons e Ações").build(app)?;
             let quit_item = MenuItemBuilder::with_id("quit", "Sair do Geraldo").build(app)?;
 
             let tray_menu = MenuBuilder::new(app)
                 .item(&open_item)
+                .item(&tui_item)
                 .separator()
                 .item(&mute_item)
                 .item(&cancel_item)
@@ -273,6 +384,7 @@ fn main() {
 
             let _tray = TrayIconBuilder::with_id("main-tray")
                 .menu(&tray_menu)
+                .show_menu_on_left_click(false)
                 .tooltip("Geraldo - Assistente de Voz Local")
                 .on_menu_event(|app, event| {
                     match event.id().as_ref() {
@@ -282,6 +394,9 @@ fn main() {
                                 let _ = window.unminimize();
                                 let _ = window.set_focus();
                             }
+                        }
+                        "tui" => {
+                            open_tui();
                         }
                         "quit" => {
                             stop_sidecar();
@@ -321,7 +436,12 @@ fn main() {
                 let _ = window.hide();
             }
         })
-        .invoke_handler(tauri::generate_handler![get_desktop_version, is_daemon_active, open_external_url])
+        .invoke_handler(tauri::generate_handler![
+            get_desktop_version,
+            is_daemon_active,
+            open_external_url,
+            open_desktop_tui
+        ])
         .run(tauri::generate_context!())
         .expect("error while running geraldo desktop application");
 }

@@ -133,6 +133,7 @@ def test_tauri_main_rs_source_components():
 
     # Itens do Menu da Bandeja
     assert 'MenuItemBuilder::with_id("open", "Abrir Geraldo")' in code
+    assert 'MenuItemBuilder::with_id("tui", "Abrir TUI")' in code
     assert 'MenuItemBuilder::with_id("mute", "Mutar/Desmutar Microfone")' in code
     assert 'MenuItemBuilder::with_id("cancel", "Cancelar Sons e Ações")' in code
     assert 'MenuItemBuilder::with_id("quit", "Sair do Geraldo")' in code
@@ -140,14 +141,16 @@ def test_tauri_main_rs_source_components():
     # Eventos de clique na bandeja
     assert 'TrayIconBuilder::with_id("main-tray")' in code
     assert 'on_tray_icon_event' in code
+    assert 'open_tui' in code
 
     # Minimizar para bandeja ao fechar janela
     assert 'WindowEvent::CloseRequested' in code
     assert 'api.prevent_close()' in code
     assert 'window.hide()' in code
 
-    # Comando exposto
+    # Comandos expostos
     assert 'get_desktop_version' in code
+    assert 'open_desktop_tui' in code
 
     # Configuração de PATH CLI para geraldo_tui
     assert 'ensure_cli_path' in code
@@ -166,6 +169,7 @@ def test_tauri_nsis_installer_hooks_config():
     resources = conf.get("bundle", {}).get("resources", [])
     assert any("geraldo_tui.cmd" in r for r in resources)
     assert any("geraldo_tui" in r for r in resources)
+    assert any("voz_faber.onnx" in r for r in resources)
 
 
 def test_tauri_updater_plugin_config():

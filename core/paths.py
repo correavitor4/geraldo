@@ -89,18 +89,34 @@ def get_models_search_paths() -> list[Path]:
     if env_dir:
         candidates.append(Path(env_dir))
 
-    # 2. Diretório base da aplicação (raiz do projeto ou bundle PyInstaller)
+    # 2. Diretório onde o executável está localizado (instalação / sidecar)
+    if is_frozen():
+        exe_dir = Path(sys.executable).parent.resolve()
+        candidates.append(exe_dir)
+        candidates.append(exe_dir / "resources")
+        candidates.append(exe_dir / "_up_")
+        candidates.append(exe_dir / "models")
+        candidates.append(exe_dir / "assets")
+
+    # 3. Diretório base da aplicação (raiz do projeto ou bundle PyInstaller sys._MEIPASS)
     base = get_base_dir()
     candidates.append(base)
     candidates.append(base / "models")
     candidates.append(base / "assets")
 
-    # 3. Diretório de dados do usuário
+    # 4. Diretório de dados do usuário
     user_models = get_user_data_dir() / "models"
     candidates.append(user_models)
+    candidates.append(get_user_data_dir())
 
-    # 4. Diretório de trabalho atual (cwd)
+    # 5. Diretório de trabalho atual (cwd)
     candidates.append(Path.cwd())
+    candidates.append(Path.cwd() / "models")
+
+    # 6. Diretórios conhecidos no home do usuário (repositórios de desenvolvimento)
+    home = Path.home()
+    for sub in ("source/repos/geraldo", "projects/geraldo", "geraldo", ".local/share/geraldo"):
+        candidates.append(home / sub)
 
     # Retorna caminhos únicos preservando a ordem
     unique_paths = []
@@ -120,12 +136,66 @@ def resolve_model_path(model_filename: str) -> Optional[Path]:
     if direct.is_absolute() and direct.exists():
         return direct
 
+    # Nomes alternativos equivalentes
+    alternatives = [model_filename]
+    if model_filename == "voz_faber.onnx":
+        alternatives.append("voz.onnx")
+    elif model_filename == "voz.onnx":
+        alternatives.append("voz_faber.onnx")
+    elif model_filename == "voz_faber.onnx.json":
+        alternatives.append("voz.onnx.json")
+    elif model_filename == "voz.onnx.json":
+        alternatives.append("voz_faber.onnx.json")
+
     for search_dir in get_models_search_paths():
-        candidate = search_dir / model_filename
-        if candidate.exists():
-            return candidate
+        for alt in alternatives:
+            candidate = search_dir / alt
+            if candidate.exists() and candidate.is_file():
+                return candidate
 
     return None
+
+
+def ensure_model_available(model_filename: str = "voz_faber.onnx") -> Path:
+    """
+    Garante que o modelo neural ONNX esteja acessível.
+    Se não for encontrado em nenhum diretório padrão, baixa automaticamente
+    o modelo oficial pt_BR (Piper Faber) para a pasta de dados do usuário.
+    """
+    resolved = resolve_model_path(model_filename)
+    if resolved:
+        return resolved
+
+    # Auto-download apenas para as vozes oficiais do Geraldo (voz_faber.onnx ou voz.onnx)
+    is_official_model = any(k in model_filename.lower() for k in ("voz_faber", "voz.onnx", "pt_br-faber"))
+    if not is_official_model:
+        raise FileNotFoundError(f"Modelo não encontrado: {model_filename}")
+
+    user_models_dir = get_user_data_dir() / "models"
+    user_models_dir.mkdir(parents=True, exist_ok=True)
+    target_onnx = user_models_dir / "voz_faber.onnx"
+    target_json = user_models_dir / "voz_faber.onnx.json"
+
+    print(f"[Geraldo:TTS] Modelo neural '{model_filename}' não encontrado localmente.")
+    print(f"[Geraldo:TTS] Baixando modelo oficial Piper pt_BR (Faber) para {user_models_dir}...")
+
+    import urllib.request
+    onnx_url = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/pt/pt_BR/faber/medium/pt_BR-faber-medium.onnx"
+    json_url = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/pt/pt_BR/faber/medium/pt_BR-faber-medium.onnx.json"
+
+    try:
+        urllib.request.urlretrieve(onnx_url, str(target_onnx))
+        urllib.request.urlretrieve(json_url, str(target_json))
+        print("[Geraldo:TTS] Modelo neural baixado com sucesso!")
+        return target_onnx
+    except Exception as e:
+        print(f"[Geraldo:TTS] Erro ao baixar modelo neural: {e}")
+        raise FileNotFoundError(
+            f"Modelo não encontrado: {model_filename}. "
+            f"Não foi possível localizá-lo nos diretórios de busca nem baixá-lo automaticamente ({e}). "
+            f"Coloque o arquivo 'voz_faber.onnx' (ou 'voz.onnx') em {user_models_dir}."
+        )
+
 
 
 def get_credentials_path() -> Path:

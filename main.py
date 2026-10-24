@@ -5,10 +5,50 @@ import re
 import time
 import config
 
-if __name__ == "__main__" and any(arg in ("--tui", "tui", "-t") for arg in sys.argv[1:]):
-    from ui.tui import run_tui
-    run_tui()
-    sys.exit(0)
+class _TeeWriter:
+    def __init__(self, original_stream, log_file):
+        self.original_stream = original_stream
+        self.log_file = log_file
+
+    def write(self, message):
+        if self.original_stream:
+            try:
+                self.original_stream.write(message)
+                self.original_stream.flush()
+            except Exception:
+                pass
+        if self.log_file:
+            try:
+                self.log_file.write(message)
+                self.log_file.flush()
+            except Exception:
+                pass
+
+    def flush(self):
+        if self.original_stream:
+            try:
+                self.original_stream.flush()
+            except Exception:
+                pass
+        if self.log_file:
+            try:
+                self.log_file.flush()
+            except Exception:
+                pass
+
+
+if __name__ == "__main__":
+    if any(arg in ("--tui", "tui", "-t") for arg in sys.argv[1:]):
+        from ui.tui import run_tui
+        run_tui()
+        sys.exit(0)
+
+    if "-m" in sys.argv and "piper" in sys.argv:
+        from piper import __main__ as piper_main
+        idx = sys.argv.index("piper")
+        sys.argv = [sys.argv[0]] + sys.argv[idx + 1:]
+        piper_main.main()
+        sys.exit(0)
 
 from audio.wakeword import WakeWordDetector
 from audio.recorder import AudioRecorder
@@ -20,8 +60,19 @@ from tools.timer import TimerManager
 from tools.system import SystemTools
 from tools.calendar import CalendarTools
 from core.ipc import IPCManager
+from core.paths import get_user_data_dir
 
 def main():
+    try:
+        data_dir = get_user_data_dir()
+        data_dir.mkdir(parents=True, exist_ok=True)
+        log_f = open(data_dir / "geraldo.log", "a", encoding="utf-8", errors="replace")
+        sys.stdout = _TeeWriter(sys.stdout, log_f)
+        sys.stderr = _TeeWriter(sys.stderr, log_f)
+        print(f"\n=== [Geraldo Daemon Iniciado: {time.strftime('%Y-%m-%d %H:%M:%S')}] ===")
+    except Exception:
+        pass
+
     print("[Geraldo] Inicializando assistente...")
     TimerManager.start_background_loop()
     TimerManager.set_assistant_state("starting")

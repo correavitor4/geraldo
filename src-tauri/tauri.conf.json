@@ -25,7 +25,8 @@
       "id": "main-tray",
       "tooltip": "Geraldo - Assistente de Voz",
       "iconPath": "icons/32x32.png",
-      "iconAsTemplate": true
+      "iconAsTemplate": true,
+      "showMenuOnLeftClick": false
     },
     "security": {
       "csp": null
@@ -53,6 +54,10 @@
       "binaries/geraldo-core"
     ],
     "resources": [
+      "../voz_faber.onnx",
+      "../voz_faber.onnx.json",
+      "../voz.onnx",
+      "../voz.onnx.json",
       "../bin/geraldo_tui.cmd",
       "../bin/geraldo-tui.cmd",
       "../bin/geraldo_tui",

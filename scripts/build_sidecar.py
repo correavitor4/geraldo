@@ -138,6 +138,10 @@ def build_sidecar(target_triple: str = None, dry_run: bool = False) -> Path:
         ]
         if bundled_file.exists():
             cmd.extend(["--add-data", f"{bundled_file}{os.pathsep}."])
+        for model_name in ("voz_faber.onnx", "voz_faber.onnx.json", "voz.onnx", "voz.onnx.json"):
+            m_path = REPO_ROOT / model_name
+            if m_path.exists():
+                cmd.extend(["--add-data", f"{m_path}{os.pathsep}."])
         cmd.append(str(REPO_ROOT / "main.py"))
 
         if "apple-darwin" in triple and platform.system().lower() == "darwin":
@@ -223,10 +227,15 @@ exec "$PYTHON_EXEC" -u "$DIR/main.py" "$@"
             f.write(launcher_content)
         dest_path.chmod(0o755)
 
-    # Copia wrappers CLI do geraldo_tui para a pasta de binarios do Tauri
+    # Copia wrappers CLI do geraldo_tui e modelos para a pasta de binarios do Tauri
     bin_dir = REPO_ROOT / "bin"
     for name in ("geraldo_tui.cmd", "geraldo-tui.cmd", "geraldo_tui", "geraldo-tui"):
         src = bin_dir / name
+        if src.exists():
+            shutil.copy2(src, BINARIES_DIR / name)
+
+    for name in ("voz_faber.onnx", "voz_faber.onnx.json", "voz.onnx", "voz.onnx.json"):
+        src = REPO_ROOT / name
         if src.exists():
             shutil.copy2(src, BINARIES_DIR / name)
 

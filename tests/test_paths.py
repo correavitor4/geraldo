@@ -13,6 +13,7 @@ from core.paths import (
     get_temp_audio_path,
     get_models_search_paths,
     resolve_model_path,
+    ensure_model_available,
     get_credentials_path,
     get_token_path,
     get_env_path,
@@ -109,3 +110,19 @@ class TestPathsManager:
         if (get_base_dir() / ".env").exists():
             assert env_file is not None
             assert env_file.name == ".env"
+
+    def test_resolve_model_path_alternatives(self):
+        # voz_faber.onnx e voz.onnx são equivalentes
+        res = resolve_model_path("voz_faber.onnx")
+        assert res is not None
+        assert res.exists()
+
+    def test_ensure_model_available_existing(self):
+        path = ensure_model_available("voz_faber.onnx")
+        assert path.exists()
+
+    def test_ensure_model_available_invalid_name(self):
+        import pytest
+        with pytest.raises(FileNotFoundError):
+            ensure_model_available("invalid_voice_xyz_12345.onnx")
+
