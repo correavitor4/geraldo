@@ -18,8 +18,9 @@ from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import (
-    Button, Footer, Header, Input, Label, RichLog, Static, TabbedContent, TabPane, Tabs, Tab
+    Button, Footer, Header, Input, Label, OptionList, RichLog, Static, TabbedContent, TabPane, Tabs, Tab
 )
+from textual.widgets.option_list import Option
 
 CSS = """
 Screen {
@@ -630,11 +631,20 @@ AudioConfigModal {
     padding-right: 1;
 }
 
-#meetings-list-log {
+#meetings-option-list {
     height: 1fr;
     background: #0f172a;
     border: round #1e293b;
-    padding: 1;
+    padding: 0;
+}
+
+#meetings-option-list:focus {
+    border: round #38bdf8;
+}
+
+#meetings-option-list > .option-list--option-highlighted {
+    background: #1e3a8a;
+    color: #ffffff;
 }
 
 #meeting-viewer-pane {
@@ -1197,9 +1207,12 @@ class GeraldoTUI(App):
         self._send_queue: asyncio.Queue = asyncio.Queue()
         self._ws_worker_task = None
         self._last_user_prompt = None
-        self._meeting_state: dict = {"is_active": False, "status": "idle", "title": "", "provider": "local", "duration": 0.0}
+        self._meeting_state: dict = {"is_active": False, "status": "idle", "title": "", "provider": "local", "detail_level": "detailed", "duration": 0.0}
         self._meetings_list: list = []
         self._meeting_provider: str = "local"
+        self._meeting_detail_level: str = "detailed"
+        self._meeting_view_mode: str = "markdown"  # "markdown" ou "transcript"
+        self._selected_meeting_id: Optional[str] = None
 
     def compose(self) -> ComposeResult:
         from core.paths import get_token_path
@@ -1250,15 +1263,18 @@ class GeraldoTUI(App):
                             yield Button("⏹ Encerrar e Gerar Ata", id="btn-meeting-stop", variant="error")
                             yield Button("🔄 Atualizar", id="btn-meeting-refresh", variant="default")
                             yield Button("🔒 Modo: Local", id="btn-meeting-provider-toggle", variant="default")
+                            yield Button("📐 Detalhe: Longo", id="btn-meeting-detail-toggle", variant="default")
+                            yield Button("📋 Ver Ata (.md)", id="btn-meeting-view-mode", variant="primary")
+                            yield Button("💾 Exportar", id="btn-meeting-export", variant="default")
 
                         yield Label("Status: Nenhuma reunião ativa. Clique em [Iniciar] para começar.", id="meeting-status-label")
 
                         with Horizontal(id="meeting-content-container"):
                             with Vertical(id="meetings-list-pane"):
-                                yield Label("📁 HISTÓRICO DE REUNIÕES", classes="card-title")
-                                yield RichLog(id="meetings-list-log", highlight=True, markup=True, wrap=True)
+                                yield Label("📁 HISTÓRICO (SELECIONE PARA LER)", classes="card-title")
+                                yield OptionList(id="meetings-option-list")
                             with Vertical(id="meeting-viewer-pane"):
-                                yield Label("📋 LEITOR DA ATA EXECUTIVA (MARKDOWN)", classes="card-title")
+                                yield Label("📋 LEITOR DA ATA EXECUTIVA (MARKDOWN)", id="meeting-viewer-title", classes="card-title")
                                 yield RichLog(id="meeting-viewer-log", highlight=True, markup=True, wrap=True)
 
                 with TabPane("🍅 Pomodoro", id="tab-pane-pomodoro"):
@@ -1499,9 +1515,12 @@ class GeraldoTUI(App):
 
         elif event_name == "meeting_config_updated":
             self._meeting_provider = data.get("provider", self._meeting_provider)
+            self._meeting_detail_level = data.get("detail_level", self._meeting_detail_level)
             try:
-                btn = self.query_one("#btn-meeting-provider-toggle", Button)
-                btn.label = "⚡ Modo: Nuvem" if self._meeting_provider == "cloud" else "🔒 Modo: Local"
+                btn_prov = self.query_one("#btn-meeting-provider-toggle", Button)
+                btn_prov.label = "⚡ Modo: Nuvem" if self._meeting_provider == "cloud" else "🔒 Modo: Local"
+                btn_det = self.query_one("#btn-meeting-detail-toggle", Button)
+                btn_det.label = "📐 Detalhe: Curto" if self._meeting_detail_level == "concise" else "📐 Detalhe: Longo"
             except Exception:
                 pass
 
@@ -1584,6 +1603,19 @@ class GeraldoTUI(App):
             elif (req_s.startswith("meeting_status") or act == "meeting_status") and isinstance(data, dict):
                 self._meeting_state = data.get("state", {})
                 self.update_meeting_display()
+            elif (req_s.startswith("meeting_export") or act == "meeting_export") and isinstance(data, dict):
+                exported = data.get("exported", {})
+                paths = []
+                if "markdown_path" in exported:
+                    paths.append(f"Ata: [cyan]{exported['markdown_path']}[/]")
+                if "transcript_path" in exported:
+                    paths.append(f"Transcrição: [yellow]{exported['transcript_path']}[/]")
+                info_msg = " | ".join(paths) if paths else "Arquivos exportados"
+                chat.write(f"[bold green]💾 Exportação concluída com sucesso![/]\n{info_msg}\n")
+                try:
+                    self.query_one("#meeting-status-label", Label).update(f"Status: [bold green]✓ Exportado com sucesso![/]")
+                except Exception:
+                    pass
         else:
             chat.write(f"[bold red]❌ Erro no comando:[/] {error or 'Falha desconhecida'}")
 
@@ -1735,9 +1767,17 @@ class GeraldoTUI(App):
             btn_resume = self.query_one("#btn-meeting-resume", Button)
             btn_stop = self.query_one("#btn-meeting-stop", Button)
             btn_prov = self.query_one("#btn-meeting-provider-toggle", Button)
+            btn_det = self.query_one("#btn-meeting-detail-toggle", Button)
+            btn_mode = self.query_one("#btn-meeting-view-mode", Button)
 
             prov_mode = getattr(self, "_meeting_provider", "local")
             btn_prov.label = "🔒 Modo: Local" if prov_mode == "local" else "⚡ Modo: Nuvem"
+
+            det_mode = getattr(self, "_meeting_detail_level", "detailed")
+            btn_det.label = "📐 Detalhe: Curto" if det_mode == "concise" else "📐 Detalhe: Longo"
+
+            v_mode = getattr(self, "_meeting_view_mode", "markdown")
+            btn_mode.label = "📝 Transcrição (.txt)" if v_mode == "transcript" else "📋 Ver Ata (.md)"
 
             st = getattr(self, "_meeting_state", {})
             if st.get("is_active"):
@@ -1747,6 +1787,7 @@ class GeraldoTUI(App):
                 secs = dur % 60
                 t_str = f"{mins:02d}:{secs:02d}"
                 prov = "🔒 Local" if st.get("provider", prov_mode) == "local" else "⚡ Nuvem"
+                det_tag = "Longo" if st.get("detail_level", det_mode) == "detailed" else "Curto"
                 title = st.get("title") or "Reunião"
 
                 btn_start.display = False
@@ -1755,11 +1796,11 @@ class GeraldoTUI(App):
                 if status_val == "paused":
                     btn_pause.display = False
                     btn_resume.display = True
-                    lbl.update(f"Status: [bold yellow]⏸ REUNIÃO PAUSADA[/] ({t_str}) - Modo {prov} - '{title}'")
+                    lbl.update(f"Status: [bold yellow]⏸ REUNIÃO PAUSADA[/] ({t_str}) - Modo {prov} [{det_tag}] - '{title}'")
                 else:
                     btn_pause.display = True
                     btn_resume.display = False
-                    lbl.update(f"Status: [bold green]● GRAVANDO REUNIÃO[/] ({t_str}) - Modo {prov} - '{title}'")
+                    lbl.update(f"Status: [bold green]● GRAVANDO REUNIÃO[/] ({t_str}) - Modo {prov} [{det_tag}] - '{title}'")
             else:
                 btn_start.display = True
                 btn_pause.display = False
@@ -1768,66 +1809,142 @@ class GeraldoTUI(App):
 
                 status_val = st.get("status", "idle")
                 if status_val == "transcribing":
-                    lbl.update("Status: [bold cyan]🔄 Transcrevendo gravação em segundo plano...[/]")
+                    lbl.update("Status: [bold cyan]🔄 Transcrevendo gravação e persistindo texto em segundo plano...[/]")
                 elif status_val == "analyzing":
-                    lbl.update("Status: [bold magenta]✨ Analisando transcrição e gerando ata executiva com IA...[/]")
+                    lbl.update("Status: [bold magenta]✨ Analisando transcrição e gerando ata executiva estruturada com IA...[/]")
                 else:
                     lbl.update("Status: [dim]Nenhuma reunião ativa. Clique em [▶ Iniciar] para começar a gravação.[/]")
         except Exception:
             pass
 
     def update_meetings_list_display(self) -> None:
-        """Renderiza a lista de reuniões salvas e exibe a última ata no leitor Markdown."""
+        """Renderiza a lista interativa de reuniões salvas no OptionList e exibe a ata/transcrição no leitor."""
         try:
-            list_log = self.query_one("#meetings-list-log", RichLog)
+            opt_list = self.query_one("#meetings-option-list", OptionList)
             viewer_log = self.query_one("#meeting-viewer-log", RichLog)
-            list_log.clear()
 
             meetings = getattr(self, "_meetings_list", [])
             if not meetings:
-                list_log.write("[dim italic]Nenhuma reunião gravada ainda.[/]")
+                opt_list.clear_options()
+                opt_list.add_option(Option("[dim italic]Nenhuma reunião gravada ainda.[/]", id="none"))
                 viewer_log.clear()
-                viewer_log.write("[dim italic]As atas executivas geradas aparecerão aqui formatadas em Markdown.[/]")
+                viewer_log.write("[dim italic]As atas e transcrições geradas aparecerão aqui para leitura e exportação.[/]")
                 return
 
             import os
+            options = []
             for idx, meet in enumerate(meetings):
+                sid = meet.get("session_id", f"meet_{idx}")
                 title = meet.get("title", "Reunião")
                 status = meet.get("status", "completed")
                 dur = int(meet.get("duration_seconds", 0))
                 mins = dur // 60
                 secs = dur % 60
                 t_str = f"{mins}m {secs}s" if mins > 0 else f"{secs}s"
-                date_str = time.strftime("%d/%m/%Y %H:%M", time.localtime(meet.get("created_at", time.time())))
+                date_str = time.strftime("%d/%m %H:%M", time.localtime(meet.get("created_at", time.time())))
                 prov = "🔒 Local" if meet.get("provider") == "local" else "⚡ Nuvem"
-                status_badge = "[bold green]✓ Concluída[/]" if status == "completed" else f"[bold yellow]{status}[/]"
+                det_tag = "Longo" if meet.get("detail_level") == "detailed" else "Curto"
+                status_badge = "[bold green]✓[/]" if status == "completed" else "[bold yellow]…[/]"
 
-                list_log.write(f"[bold cyan]#{idx+1} {title}[/]")
-                list_log.write(f"  📅 {date_str} | ⏱️ {t_str} | {prov} | {status_badge}")
-                list_log.write("[dim]────────────────────────────────────────[/]")
+                prompt_text = f"[bold cyan]#{idx+1} {title}[/]\n  📅 {date_str} | ⏱️ {t_str} | {prov} ({det_tag}) | {status_badge}"
+                options.append(Option(prompt_text, id=sid))
 
-            # Exibe a ata mais recente no leitor
-            latest = meetings[0]
-            summary = latest.get("summary")
-            viewer_log.clear()
-            if summary and isinstance(summary, dict):
-                viewer_log.write(f"[bold cyan]# 📋 Ata: {summary.get('title', latest.get('title'))}[/]\n")
-                viewer_log.write(f"[bold]Data:[/] {summary.get('date', '')}\n")
-                viewer_log.write(f"[bold yellow]📌 Resumo Executivo:[/]\n{summary.get('executive_summary', '')}\n")
-                viewer_log.write("[bold green]✅ Decisões Tomadas:[/]")
-                for dec in summary.get("decisions", []):
-                    viewer_log.write(f"  • {dec}")
-                viewer_log.write("\n[bold magenta]📋 Ações e Prazos:[/]")
-                for act in summary.get("action_items", []):
-                    viewer_log.write(f"  • [bold]{act.get('task')}[/] (Resp: {act.get('owner')}, Prazo: {act.get('deadline')})")
-            elif latest.get("output_markdown_path") and os.path.exists(latest["output_markdown_path"]):
-                try:
-                    with open(latest["output_markdown_path"], "r", encoding="utf-8") as f:
-                        viewer_log.write(f.read())
-                except Exception:
-                    viewer_log.write("[dim italic]Não foi possível ler o arquivo de ata.[/]")
+            opt_list.clear_options()
+            opt_list.add_options(options)
+
+            valid_sids = [m.get("session_id") for m in meetings]
+            if not self._selected_meeting_id or self._selected_meeting_id not in valid_sids:
+                self._selected_meeting_id = valid_sids[0]
+
+            for i, m in enumerate(meetings):
+                if m.get("session_id") == self._selected_meeting_id:
+                    opt_list.highlighted = i
+                    break
+
+            self.render_selected_meeting()
         except Exception:
             pass
+
+    def render_selected_meeting(self) -> None:
+        """Renderiza a ata (.md) ou a transcrição bruta (.txt) da reunião selecionada no leitor."""
+        try:
+            viewer_log = self.query_one("#meeting-viewer-log", RichLog)
+            title_lbl = self.query_one("#meeting-viewer-title", Label)
+            viewer_log.clear()
+
+            meetings = getattr(self, "_meetings_list", [])
+            target = None
+            for m in meetings:
+                if m.get("session_id") == self._selected_meeting_id:
+                    target = m
+                    break
+            if not target and meetings:
+                target = meetings[0]
+                self._selected_meeting_id = target.get("session_id")
+
+            if not target:
+                viewer_log.write("[dim italic]Nenhuma reunião selecionada.[/]")
+                return
+
+            v_mode = getattr(self, "_meeting_view_mode", "markdown")
+            import os
+
+            if v_mode == "transcript":
+                title_lbl.update(f"📝 TRANSCRIÇÃO INTEGRAL (TEXTO BRUTO) — {target.get('title')}")
+                txt_path = target.get("transcript_path")
+                if txt_path and os.path.exists(txt_path):
+                    try:
+                        with open(txt_path, "r", encoding="utf-8") as f:
+                            viewer_log.write(f.read())
+                        return
+                    except Exception:
+                        pass
+
+                # Fallback formatando os segmentos em memória se o arquivo ainda não existir
+                segs = target.get("transcript_segments", [])
+                if segs:
+                    viewer_log.write(f"[bold cyan]📝 TRANSCRIÇÃO BRUTA: {target.get('title')}[/]\n\n")
+                    for s in segs:
+                        st = s.get("timestamp") or f"[{s.get('start', 0):.1f}s - {s.get('end', 0):.1f}s]"
+                        spk = f"[bold]{s.get('speaker')}:[/] " if s.get("speaker") else ""
+                        viewer_log.write(f"{st} {spk}{s.get('text', '')}")
+                else:
+                    viewer_log.write("[dim italic]Nenhum texto transcrito disponível para esta sessão.[/]")
+            else:
+                title_lbl.update(f"📋 LEITOR DA ATA EXECUTIVA (MARKDOWN) — {target.get('title')}")
+                md_path = target.get("output_markdown_path")
+                if md_path and os.path.exists(md_path):
+                    try:
+                        with open(md_path, "r", encoding="utf-8") as f:
+                            viewer_log.write(f.read())
+                        return
+                    except Exception:
+                        pass
+
+                summary = target.get("summary")
+                if summary and isinstance(summary, dict):
+                    from services.meeting.models import MeetingSummary, MeetingSegment
+                    sum_obj = MeetingSummary.from_dict(summary)
+                    segs_obj = [MeetingSegment.from_dict(s) for s in target.get("transcript_segments", [])]
+                    viewer_log.write(sum_obj.to_markdown(segs_obj))
+                else:
+                    viewer_log.write(f"[bold cyan]# 📋 {target.get('title')}[/]\n\nStatus: {target.get('status')}\nA ata ainda está sendo processada em segundo plano.")
+        except Exception:
+            pass
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        """Disparado quando o usuário clica ou pressiona Enter em um item da lista de reuniões."""
+        if getattr(event.option_list, "id", "") == "meetings-option-list":
+            if event.option_id and event.option_id != "none":
+                self._selected_meeting_id = str(event.option_id)
+                self.render_selected_meeting()
+
+    def on_option_list_option_highlighted(self, event: OptionList.OptionHighlighted) -> None:
+        """Disparado quando o usuário navega com as setas do teclado na lista de reuniões."""
+        if getattr(event.option_list, "id", "") == "meetings-option-list":
+            if event.option_id and event.option_id != "none":
+                self._selected_meeting_id = str(event.option_id)
+                self.render_selected_meeting()
 
     # ==========================================
     # EVENTOS DE INTERAÇÃO DO USUÁRIO
@@ -1927,9 +2044,14 @@ class GeraldoTUI(App):
             self.action_open_ollama_settings()
 
         elif button_id == "btn-meeting-start":
-            self.send_action("meeting_start", {"title": "Reunião de Alinhamento", "provider": self._meeting_provider})
+            self.send_action("meeting_start", {
+                "title": "Reunião de Alinhamento",
+                "provider": self._meeting_provider,
+                "detail_level": self._meeting_detail_level,
+            })
             chat = self.query_one("#chat-log", RichLog)
-            chat.write("[bold green]🎙️ Iniciando gravação da reunião...[/]\n")
+            det_label = "Longa e Detalhada" if self._meeting_detail_level == "detailed" else "Curta e Executiva"
+            chat.write(f"[bold green]🎙️ Iniciando gravação da reunião (Modo: {self._meeting_provider}, Ata: {det_label})...[/]\n")
 
         elif button_id == "btn-meeting-pause":
             self.send_action("meeting_pause", {})
@@ -1940,7 +2062,7 @@ class GeraldoTUI(App):
         elif button_id == "btn-meeting-stop":
             self.send_action("meeting_stop", {})
             chat = self.query_one("#chat-log", RichLog)
-            chat.write("[bold yellow]⏹ Reunião encerrada. Processando ata executiva em segundo plano...[/]\n")
+            chat.write("[bold yellow]⏹ Reunião encerrada. Processando ata e persistindo transcrição em segundo plano...[/]\n")
 
         elif button_id == "btn-meeting-refresh":
             self.send_action("meeting_list", {})
@@ -1955,6 +2077,38 @@ class GeraldoTUI(App):
             except Exception:
                 pass
             self.send_action("set_meeting_config", {"provider": new_prov})
+
+        elif button_id == "btn-meeting-detail-toggle":
+            new_det = "concise" if self._meeting_detail_level == "detailed" else "detailed"
+            self._meeting_detail_level = new_det
+            try:
+                btn = self.query_one("#btn-meeting-detail-toggle", Button)
+                btn.label = "📐 Detalhe: Curto" if new_det == "concise" else "📐 Detalhe: Longo"
+            except Exception:
+                pass
+            self.send_action("set_meeting_config", {"detail_level": new_det})
+            chat = self.query_one("#chat-log", RichLog)
+            det_desc = "Curta / Executiva" if new_det == "concise" else "Longa / Completa (várias páginas)"
+            chat.write(f"[cyan]📐 Formato de ata configurado para: [bold]{det_desc}[/][/]\n")
+
+        elif button_id == "btn-meeting-view-mode":
+            new_mode = "transcript" if getattr(self, "_meeting_view_mode", "markdown") == "markdown" else "markdown"
+            self._meeting_view_mode = new_mode
+            try:
+                btn = self.query_one("#btn-meeting-view-mode", Button)
+                btn.label = "📝 Transcrição (.txt)" if new_mode == "transcript" else "📋 Ver Ata (.md)"
+            except Exception:
+                pass
+            self.render_selected_meeting()
+
+        elif button_id == "btn-meeting-export":
+            sid = getattr(self, "_selected_meeting_id", None)
+            chat = self.query_one("#chat-log", RichLog)
+            if not sid:
+                chat.write("[yellow]⚠️ Nenhuma reunião selecionada para exportar.[/]\n")
+            else:
+                self.send_action("meeting_export", {"session_id": sid})
+                chat.write(f"[cyan]💾 Solicitando exportação dos arquivos da reunião {sid}...[/]\n")
 
     # ==========================================
     # AÇÕES DOS ATALHOS DE TECLADO E CALENDÁRIO

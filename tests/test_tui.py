@@ -1296,7 +1296,12 @@ async def test_tui_meetings_tab_and_button_actions():
         assert app.query_one("#btn-meeting-resume", Button) is not None
         assert app.query_one("#btn-meeting-stop", Button) is not None
         assert app.query_one("#btn-meeting-provider-toggle", Button) is not None
+        assert app.query_one("#btn-meeting-detail-toggle", Button) is not None
+        assert app.query_one("#btn-meeting-view-mode", Button) is not None
+        assert app.query_one("#btn-meeting-export", Button) is not None
         assert app.query_one("#btn-meeting-refresh", Button) is not None
+        from textual.widgets import OptionList
+        assert app.query_one("#meetings-option-list", OptionList) is not None
 
         # 2. Testa alternar provedor (Local -> Nuvem)
         btn_provider = app.query_one("#btn-meeting-provider-toggle", Button)
@@ -1308,7 +1313,17 @@ async def test_tui_meetings_tab_and_button_actions():
         assert msg_cfg["action"] == "set_meeting_config"
         assert msg_cfg["params"]["provider"] == "cloud"
 
-        # 3. Testa iniciar reunião
+        # 3. Testa alternar detalhe (Longo -> Curto)
+        btn_detail = app.query_one("#btn-meeting-detail-toggle", Button)
+        btn_detail.press()
+        await pilot.pause(0.05)
+        assert app._meeting_detail_level == "concise"
+        assert app._send_queue.qsize() == 1
+        msg_det = json.loads(await app._send_queue.get())
+        assert msg_det["action"] == "set_meeting_config"
+        assert msg_det["params"]["detail_level"] == "concise"
+
+        # 4. Testa iniciar reunião com detail_level
         app.query_one("#btn-meeting-start", Button).press()
         await pilot.pause(0.05)
 
@@ -1316,8 +1331,9 @@ async def test_tui_meetings_tab_and_button_actions():
         msg_start = json.loads(await app._send_queue.get())
         assert msg_start["action"] == "meeting_start"
         assert msg_start["params"]["title"] == "Reunião de Alinhamento"
+        assert msg_start["params"]["detail_level"] == "concise"
 
-        # 4. Testa atualização do display de estado da reunião
+        # 5. Testa atualização do display de estado da reunião
         app._meeting_state = {
             "is_active": True,
             "status": "recording",
@@ -1330,19 +1346,64 @@ async def test_tui_meetings_tab_and_button_actions():
         assert "GRAVANDO" in str(status_lbl.render())
         assert "00:42" in str(status_lbl.render())
 
-        # 5. Testa listagem de atas
+        # 6. Testa listagem de atas interativa via OptionList
         sessions = [
             {
-                "id": "sess-1",
+                "session_id": "sess-1",
                 "title": "Ata Semanal",
-                "started_at": "2026-10-22T10:00:00",
+                "created_at": 1700000000.0,
                 "status": "completed",
-                "markdown_path": "/tmp/ata.md"
+                "duration_seconds": 60.0,
+                "provider": "local",
+                "detail_level": "detailed",
+                "summary": {
+                    "title": "Ata Semanal",
+                    "date": "24/10/2026",
+                    "duration_seconds": 60.0,
+                    "executive_summary": "Resumo da ata semanal detalhada.",
+                    "topics": ["Sprint review"],
+                    "decisions": ["Deploy aprovado"],
+                    "action_items": []
+                }
+            },
+            {
+                "session_id": "sess-2",
+                "title": "Alinhamento com Cliente",
+                "created_at": 1700000100.0,
+                "status": "completed",
+                "duration_seconds": 120.0,
+                "provider": "cloud",
+                "detail_level": "concise",
+                "summary": {
+                    "title": "Alinhamento com Cliente",
+                    "date": "24/10/2026",
+                    "duration_seconds": 120.0,
+                    "executive_summary": "Resumo rápido com cliente.",
+                    "topics": ["Contrato"],
+                    "decisions": ["Assinado"],
+                    "action_items": []
+                }
             }
         ]
         app._meetings_list = sessions
         app.update_meetings_list_display()
-        assert len(app._meetings_list) == 1
+        opt_list = app.query_one("#meetings-option-list", OptionList)
+        assert opt_list.option_count == 2
+        assert app._selected_meeting_id == "sess-1"
+
+        # 7. Testa alternar visualização (Ata -> Transcrição)
+        btn_view_mode = app.query_one("#btn-meeting-view-mode", Button)
+        btn_view_mode.press()
+        await pilot.pause(0.05)
+        assert app._meeting_view_mode == "transcript"
+
+        # 8. Testa botão de exportar
+        app.query_one("#btn-meeting-export", Button).press()
+        await pilot.pause(0.05)
+        assert app._send_queue.qsize() == 1
+        msg_exp = json.loads(await app._send_queue.get())
+        assert msg_exp["action"] == "meeting_export"
+        assert msg_exp["params"]["session_id"] == "sess-1"
 
 
 

@@ -235,30 +235,64 @@ MEETING_PROVIDER = os.getenv(
     "MEETING_PROVIDER",
     _user_settings.get("meeting_provider", "local")
 ).lower()
-MEETING_STORAGE_DIR = os.getenv(
-    "MEETING_STORAGE_DIR",
-    _user_settings.get("meeting_storage_dir", os.path.expanduser("~/Geraldo/reunioes"))
+MEETING_STORAGE_DIR = os.path.normpath(
+    os.getenv(
+        "MEETING_STORAGE_DIR",
+        _user_settings.get("meeting_storage_dir", os.path.expanduser("~/Geraldo/reunioes"))
+    )
 )
+MEETING_EXPORT_DIR = os.path.normpath(
+    os.getenv(
+        "MEETING_EXPORT_DIR",
+        _user_settings.get("meeting_export_dir", os.path.join(MEETING_STORAGE_DIR, "exportadas"))
+    )
+)
+MEETING_DETAIL_LEVEL = os.getenv(
+    "MEETING_DETAIL_LEVEL",
+    _user_settings.get("meeting_detail_level", "detailed")
+).lower()
+if MEETING_DETAIL_LEVEL not in ("detailed", "concise"):
+    MEETING_DETAIL_LEVEL = "detailed"
 
 def get_meeting_config() -> dict:
     return {
         "provider": MEETING_PROVIDER,
         "storage_dir": MEETING_STORAGE_DIR,
+        "export_dir": MEETING_EXPORT_DIR,
+        "detail_level": MEETING_DETAIL_LEVEL,
         "supported_providers": ["local", "cloud"],
+        "supported_detail_levels": ["detailed", "concise"],
     }
 
-def update_meeting_config(provider: str = None, storage_dir: str = None, persist: bool = True) -> dict:
-    global MEETING_PROVIDER, MEETING_STORAGE_DIR
+def update_meeting_config(
+    provider: str = None,
+    storage_dir: str = None,
+    export_dir: str = None,
+    detail_level: str = None,
+    persist: bool = True
+) -> dict:
+    global MEETING_PROVIDER, MEETING_STORAGE_DIR, MEETING_EXPORT_DIR, MEETING_DETAIL_LEVEL
     if provider:
         p_clean = provider.strip().lower()
         if p_clean in ("local", "cloud"):
             MEETING_PROVIDER = p_clean
     if storage_dir:
-        MEETING_STORAGE_DIR = os.path.abspath(os.path.expanduser(storage_dir.strip()))
+        MEETING_STORAGE_DIR = os.path.normpath(os.path.abspath(os.path.expanduser(storage_dir.strip())))
+    if export_dir:
+        MEETING_EXPORT_DIR = os.path.normpath(os.path.abspath(os.path.expanduser(export_dir.strip())))
+    if detail_level:
+        d_clean = detail_level.strip().lower()
+        if d_clean in ("detailed", "longo", "long", "completo"):
+            MEETING_DETAIL_LEVEL = "detailed"
+        elif d_clean in ("concise", "curto", "short", "resumido"):
+            MEETING_DETAIL_LEVEL = "concise"
+
     if persist:
         save_settings({
             "meeting_provider": MEETING_PROVIDER,
             "meeting_storage_dir": MEETING_STORAGE_DIR,
+            "meeting_export_dir": MEETING_EXPORT_DIR,
+            "meeting_detail_level": MEETING_DETAIL_LEVEL,
         })
     return get_meeting_config()
 

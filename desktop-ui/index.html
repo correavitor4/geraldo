@@ -623,6 +623,11 @@
                                     <option value="local">🔒 Local (Total Privacidade - Qwen / Whisper)</option>
                                     <option value="cloud">⚡ Nuvem (Alta Velocidade - Gemini / OpenAI)</option>
                                 </select>
+                                <span class="provider-badge-label" style="margin-left: 8px;">Extensão da Ata:</span>
+                                <select id="meeting-detail-select" class="provider-dropdown" title="Escolha a extensão do texto da ata">
+                                    <option value="detailed" selected>📄 Longa / Detalhada (Multi-página)</option>
+                                    <option value="concise">⚡ Curta / Executiva (Resumida)</option>
+                                </select>
                             </div>
                         </div>
 
@@ -671,7 +676,9 @@
                                     <span class="sub-label" id="meeting-viewer-meta">Selecione uma reunião para visualizar o resumo</span>
                                 </div>
                                 <div class="viewer-actions">
-                                    <button type="button" id="btn-copy-meeting-md" class="btn-action small" title="Copiar ata formatada">📋 Copiar Markdown</button>
+                                    <button type="button" id="btn-toggle-meeting-view" class="btn-action small" title="Alternar entre Ata e Transcrição Bruta">📝 Ver Transcrição</button>
+                                    <button type="button" id="btn-export-meeting" class="btn-action small" title="Exportar ata e transcrição para diretório">💾 Exportar</button>
+                                    <button type="button" id="btn-copy-meeting-md" class="btn-action small" title="Copiar ata formatada">📋 Copiar</button>
                                     <button type="button" id="btn-delete-meeting" class="btn-action small danger" title="Excluir reunião e áudio">🗑️ Excluir</button>
                                 </div>
                             </div>

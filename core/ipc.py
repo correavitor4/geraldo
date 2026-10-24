@@ -91,6 +91,7 @@ class GeraldoIPCServer:
         self.register_handler("meeting_list", self._handle_meeting_list)
         self.register_handler("meeting_get", self._handle_meeting_get)
         self.register_handler("meeting_delete", self._handle_meeting_delete)
+        self.register_handler("meeting_export", self._handle_meeting_export)
         self.register_handler("get_meeting_config", self._handle_get_meeting_config)
         self.register_handler("set_meeting_config", self._handle_set_meeting_config)
 
@@ -751,7 +752,8 @@ class GeraldoIPCServer:
         from tools.meeting import MeetingTools
         title = params.get("title")
         provider = params.get("provider")
-        msg = MeetingTools.start_meeting(title=title, provider=provider)
+        detail_level = params.get("detail_level")
+        msg = MeetingTools.start_meeting(title=title, provider=provider, detail_level=detail_level)
         self.broadcast_event("meeting_changed", MeetingTools.get_live_state())
         return {"message": msg, "state": MeetingTools.get_live_state()}
 
@@ -799,6 +801,19 @@ class GeraldoIPCServer:
         self.broadcast_event("meeting_changed", MeetingTools.get_live_state())
         return {"deleted": success}
 
+    def _handle_meeting_export(self, params: dict) -> dict:
+        from tools.meeting import MeetingTools
+        session_id = params.get("session_id")
+        target = params.get("target") or params.get("target_path") or params.get("export_dir")
+        fmt = params.get("format", "both")
+        if not session_id:
+            sessions = MeetingTools.list_meetings()
+            if not sessions:
+                raise ValueError("Nenhuma reunião disponível para exportação.")
+            session_id = sessions[0]["session_id"]
+        exported = MeetingTools.export_meeting(session_id=session_id, target_dir_or_file=target, format_type=fmt)
+        return {"session_id": session_id, "exported": exported}
+
     def _handle_get_meeting_config(self, params: dict) -> dict:
         import config
         return config.get_meeting_config()
@@ -807,8 +822,16 @@ class GeraldoIPCServer:
         import config
         provider = params.get("provider")
         storage_dir = params.get("storage_dir")
+        export_dir = params.get("export_dir")
+        detail_level = params.get("detail_level")
         persist = params.get("persist", True)
-        cfg = config.update_meeting_config(provider=provider, storage_dir=storage_dir, persist=persist)
+        cfg = config.update_meeting_config(
+            provider=provider,
+            storage_dir=storage_dir,
+            export_dir=export_dir,
+            detail_level=detail_level,
+            persist=persist
+        )
         self.broadcast_event("meeting_config_updated", cfg)
         return cfg
 

@@ -182,12 +182,16 @@ class GeraldoDesktopClient {
             meetingViewerMeta: document.getElementById("meeting-viewer-meta"),
             meetingViewerContent: document.getElementById("meeting-viewer-content"),
             btnCopyMeetingMd: document.getElementById("btn-copy-meeting-md"),
-            btnDeleteMeeting: document.getElementById("btn-delete-meeting")
+            btnDeleteMeeting: document.getElementById("btn-delete-meeting"),
+            meetingDetailSelect: document.getElementById("meeting-detail-select"),
+            btnToggleMeetingView: document.getElementById("btn-toggle-meeting-view"),
+            btnExportMeeting: document.getElementById("btn-export-meeting")
         };
 
         this.meetingsList = [];
         this.currentSelectedMeeting = null;
-        this.meetingState = { is_active: false, status: "idle", title: "", provider: "local", duration: 0 };
+        this.meetingState = { is_active: false, status: "idle", title: "", provider: "local", detail_level: "detailed", duration: 0 };
+        this.meetingViewMode = "markdown"; // "markdown" ou "transcript"
 
         const now = new Date();
         this.currentCalendarYear = now.getFullYear();
@@ -758,10 +762,11 @@ class GeraldoDesktopClient {
             this.dom.btnMeetingStart.addEventListener("click", () => {
                 const title = (this.dom.meetingTitleInput && this.dom.meetingTitleInput.value) || "Reunião de Alinhamento";
                 const provider = (this.dom.meetingProviderSelect && this.dom.meetingProviderSelect.value) || "local";
-                this.sendAction("meeting_start", { title, provider }, (ok, data) => {
+                const detail_level = (this.dom.meetingDetailSelect && this.dom.meetingDetailSelect.value) || "detailed";
+                this.sendAction("meeting_start", { title, provider, detail_level }, (ok, data) => {
                     if (ok && data) {
                         this.updateMeetingState(data.state);
-                        this.appendSystemMessage(`🎙️ Reunião iniciada: "${title}" (${provider})`);
+                        this.appendSystemMessage(`🎙️ Reunião iniciada: "${title}" (${provider}, ${detail_level})`);
                     }
                 });
             });
@@ -788,7 +793,7 @@ class GeraldoDesktopClient {
                 this.sendAction("meeting_stop", {}, (ok, data) => {
                     if (ok && data) {
                         this.updateMeetingState(data.state);
-                        this.appendSystemMessage("⏹ Reunião encerrada. A IA está gerando a ata executiva em segundo plano.");
+                        this.appendSystemMessage("⏹ Reunião encerrada. A IA está gerando a ata e persistindo a transcrição em segundo plano.");
                         this.loadMeetings();
                     }
                 });
@@ -807,6 +812,40 @@ class GeraldoDesktopClient {
             });
         }
 
+        if (this.dom.meetingDetailSelect) {
+            this.dom.meetingDetailSelect.addEventListener("change", (e) => {
+                this.sendAction("set_meeting_config", { detail_level: e.target.value });
+            });
+        }
+
+        if (this.dom.btnToggleMeetingView) {
+            this.dom.btnToggleMeetingView.addEventListener("click", () => {
+                this.meetingViewMode = this.meetingViewMode === "markdown" ? "transcript" : "markdown";
+                this.dom.btnToggleMeetingView.textContent = this.meetingViewMode === "transcript" ? "📋 Ver Ata" : "📝 Ver Transcrição";
+                if (this.currentSelectedMeeting) {
+                    this.renderMeetingViewer(this.currentSelectedMeeting);
+                }
+            });
+        }
+
+        if (this.dom.btnExportMeeting) {
+            this.dom.btnExportMeeting.addEventListener("click", () => {
+                if (!this.currentSelectedMeeting) {
+                    this.appendSystemMessage("⚠️ Selecione uma reunião para exportar.");
+                    return;
+                }
+                this.sendAction("meeting_export", { session_id: this.currentSelectedMeeting.session_id }, (ok, data) => {
+                    if (ok && data && data.exported) {
+                        const exp = data.exported;
+                        const msg = `💾 Ata exportada com sucesso:\n${exp.markdown_path || ""} \n${exp.transcript_path || ""}`;
+                        this.appendSystemMessage(msg);
+                    } else {
+                        this.appendSystemMessage("❌ Erro ao exportar reunião.");
+                    }
+                });
+            });
+        }
+
         if (this.dom.btnCopyMeetingMd) {
             this.dom.btnCopyMeetingMd.addEventListener("click", () => {
                 if (this.currentSelectedMeeting) {
@@ -815,7 +854,7 @@ class GeraldoDesktopClient {
                     if (navigator.clipboard) {
                         navigator.clipboard.writeText(md).then(() => {
                             this.dom.btnCopyMeetingMd.innerText = "✓ Copiado!";
-                            setTimeout(() => { if (this.dom.btnCopyMeetingMd) this.dom.btnCopyMeetingMd.innerText = "📋 Copiar Markdown"; }, 2000);
+                            setTimeout(() => { if (this.dom.btnCopyMeetingMd) this.dom.btnCopyMeetingMd.innerText = "📋 Copiar"; }, 2000);
                         });
                     }
                 }
@@ -2525,25 +2564,75 @@ class GeraldoDesktopClient {
 
     renderMeetingViewer(m) {
         if (!this.dom.meetingViewerContent || !m) return;
-        if (this.dom.meetingViewerTitle) this.dom.meetingViewerTitle.innerText = m.title || "Ata de Reunião";
+        if (this.dom.meetingViewerTitle) {
+            const isTranscript = this.meetingViewMode === "transcript";
+            this.dom.meetingViewerTitle.innerText = isTranscript ? `📝 Transcrição: ${m.title || "Reunião"}` : (m.title || "Ata de Reunião");
+        }
         if (this.dom.meetingViewerMeta) {
             const dateStr = new Date(m.created_at * 1000).toLocaleString("pt-BR");
-            this.dom.meetingViewerMeta.innerText = `Data: ${dateStr} • Modo: ${m.provider.toUpperCase()} • Status: ${m.status.toUpperCase()}`;
+            const detStr = m.detail_level === "detailed" ? "LONGA (MULTI-PÁGINA)" : "CURTA (EXECUTIVA)";
+            this.dom.meetingViewerMeta.innerText = `Data: ${dateStr} • Modo: ${m.provider.toUpperCase()} • Formato: ${detStr} • Status: ${m.status.toUpperCase()}`;
         }
 
+        // Modo Transcrição Integral (Texto Bruto)
+        if (this.meetingViewMode === "transcript") {
+            let transcriptText = "";
+            if (m.transcript_segments && m.transcript_segments.length > 0) {
+                transcriptText = m.transcript_segments.map(s => {
+                    const timeTag = s.timestamp || (s.formatted_start ? `[${s.formatted_start} - ${s.formatted_end}]` : `[${s.start || 0}s]`);
+                    const speakerTag = s.speaker ? `${s.speaker}: ` : "";
+                    return `${timeTag} ${speakerTag}${s.text}`;
+                }).join("\n");
+            } else {
+                transcriptText = "Nenhum segmento de transcrição disponível para esta reunião.";
+            }
+
+            this.dom.meetingViewerContent.innerHTML = `
+                <div class="meeting-viewer-summary">
+                    <h3 style="color: #38bdf8; margin-top: 0;">📝 Transcrição Cronológica Integral</h3>
+                    <p style="font-size: 13px; color: #94a3b8; margin-bottom: 12px;">Texto bruto gravado e persistido com minutagem e falas.</p>
+                    <pre style="background: #0f172a; padding: 14px; border: 1px solid #1e293b; border-radius: 8px; white-space: pre-wrap; font-family: 'JetBrains Mono', Consolas, monospace; font-size: 13px; line-height: 1.6; color: #cbd5e1; max-height: 520px; overflow-y: auto;">${this.escapeHtml(transcriptText)}</pre>
+                </div>
+            `;
+            return;
+        }
+
+        // Modo Ata Executiva / Detalhada
         const summary = m.summary;
         if (summary) {
             let html = `
                 <div class="meeting-viewer-summary">
-                    <h3 style="color: #38bdf8; margin-top: 0;">📌 Resumo Executivo</h3>
-                    <p style="font-size: 14px; margin-bottom: 16px;">${summary.executive_summary || "Sem resumo."}</p>
             `;
 
-            if (summary.topics && summary.topics.length > 0) {
+            if (summary.context) {
+                html += `
+                    <h4 style="color: #60a5fa; margin-top: 0; margin-bottom: 6px;">🎯 Contexto e Objetivos</h4>
+                    <p style="font-size: 14px; margin-bottom: 16px; line-height: 1.5; color: #e2e8f0;">${this.escapeHtml(summary.context)}</p>
+                `;
+            }
+
+            html += `
+                <h4 style="color: #38bdf8; margin-bottom: 6px;">📌 Resumo Executivo</h4>
+                <p style="font-size: 14px; margin-bottom: 16px; line-height: 1.5; color: #e2e8f0;">${this.escapeHtml(summary.executive_summary || "Sem resumo.")}</p>
+            `;
+
+            if (summary.detailed_discussions && summary.detailed_discussions.length > 0) {
+                html += `<h4 style="color: #93c5fd; margin-bottom: 8px;">💬 Discussão Minuciosa por Tópicos</h4>`;
+                summary.detailed_discussions.forEach((disc, idx) => {
+                    html += `
+                        <div style="background: #111827; border: 1px solid #1f2937; border-radius: 6px; padding: 10px 14px; margin-bottom: 10px;">
+                            <strong style="color: #38bdf8; font-size: 14px;">${idx + 1}. ${this.escapeHtml(disc.topic || "Pauta")}</strong>
+                            ${disc.details ? `<p style="margin: 6px 0; font-size: 13px; color: #cbd5e1;"><strong>Detalhamento:</strong> ${this.escapeHtml(disc.details)}</p>` : ""}
+                            ${disc.arguments ? `<p style="margin: 6px 0; font-size: 13px; color: #94a3b8;"><strong>Argumentos:</strong> ${this.escapeHtml(disc.arguments)}</p>` : ""}
+                            ${disc.conclusions ? `<p style="margin: 6px 0; font-size: 13px; color: #10b981;"><strong>Conclusão:</strong> ${this.escapeHtml(disc.conclusions)}</p>` : ""}
+                        </div>
+                    `;
+                });
+            } else if (summary.topics && summary.topics.length > 0) {
                 html += `
                     <h4 style="color: #93c5fd; margin-bottom: 6px;">💬 Principais Tópicos</h4>
                     <ul style="padding-left: 20px; margin-bottom: 16px;">
-                        ${summary.topics.map(t => `<li>${t}</li>`).join("")}
+                        ${summary.topics.map(t => `<li style="margin-bottom: 4px;">${this.escapeHtml(t)}</li>`).join("")}
                     </ul>
                 `;
             }
@@ -2552,7 +2641,16 @@ class GeraldoDesktopClient {
                 html += `
                     <h4 style="color: #10b981; margin-bottom: 6px;">✅ Decisões Tomadas</h4>
                     <ul style="padding-left: 20px; margin-bottom: 16px;">
-                        ${summary.decisions.map(d => `<li>${d}</li>`).join("")}
+                        ${summary.decisions.map(d => `<li style="margin-bottom: 4px;">${this.escapeHtml(d)}</li>`).join("")}
+                    </ul>
+                `;
+            }
+
+            if (summary.risks_and_concerns && summary.risks_and_concerns.length > 0) {
+                html += `
+                    <h4 style="color: #f87171; margin-bottom: 6px;">⚠️ Riscos e Pontos Críticos</h4>
+                    <ul style="padding-left: 20px; margin-bottom: 16px;">
+                        ${summary.risks_and_concerns.map(r => `<li style="margin-bottom: 4px;">${this.escapeHtml(r)}</li>`).join("")}
                     </ul>
                 `;
             }
@@ -2560,20 +2658,35 @@ class GeraldoDesktopClient {
             if (summary.action_items && summary.action_items.length > 0) {
                 html += `
                     <h4 style="color: #f59e0b; margin-bottom: 8px;">📋 Tarefas e Prazos (Action Items)</h4>
-                    <table>
+                    <table style="width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 13px;">
                         <thead>
-                            <tr><th>Tarefa</th><th>Responsável</th><th>Prazo</th></tr>
+                            <tr style="border-bottom: 1px solid #374151; color: #9ca3af; text-align: left;">
+                                <th style="padding: 6px 8px;">Tarefa</th>
+                                <th style="padding: 6px 8px;">Responsável</th>
+                                <th style="padding: 6px 8px;">Prazo</th>
+                                <th style="padding: 6px 8px;">Prioridade</th>
+                            </tr>
                         </thead>
                         <tbody>
                             ${summary.action_items.map(a => `
-                                <tr>
-                                    <td><strong>${a.task || "-"}</strong></td>
-                                    <td>${a.owner || "A definir"}</td>
-                                    <td>${a.deadline || "A definir"}</td>
+                                <tr style="border-bottom: 1px solid #1f2937;">
+                                    <td style="padding: 6px 8px;"><strong>${this.escapeHtml(a.task || "-")}</strong></td>
+                                    <td style="padding: 6px 8px;">${this.escapeHtml(a.owner || "A definir")}</td>
+                                    <td style="padding: 6px 8px;">${this.escapeHtml(a.deadline || "A definir")}</td>
+                                    <td style="padding: 6px 8px;">${this.escapeHtml(a.priority || "Normal")}</td>
                                 </tr>
                             `).join("")}
                         </tbody>
                     </table>
+                `;
+            }
+
+            if (summary.next_steps && summary.next_steps.length > 0) {
+                html += `
+                    <h4 style="color: #a78bfa; margin-bottom: 6px;">🚀 Próximos Passos</h4>
+                    <ul style="padding-left: 20px; margin-bottom: 16px;">
+                        ${summary.next_steps.map(s => `<li style="margin-bottom: 4px;">${this.escapeHtml(s)}</li>`).join("")}
+                    </ul>
                 `;
             }
 

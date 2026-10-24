@@ -1,5 +1,6 @@
 """
 Analisador e sumarizador de reuniões (Local via Ollama Qwen2.5 e Nuvem via Gemini/OpenAI).
+Suporta geração de atas curtas (síntese executiva) ou longas (detalhamento exaustivo multi-página).
 """
 from abc import ABC, abstractmethod
 import json
@@ -13,9 +14,9 @@ from services.meeting.models import MeetingSummary
 import config
 
 
-MEETING_SYSTEM_PROMPT = """Você é um assistente executivo e secretário profissional sênior.
+MEETING_CONCISE_SYSTEM_PROMPT = """Você é um assistente executivo e secretário profissional sênior.
 Sua missão é analisar transcrições brutas de reuniões, conversas com clientes ou prestadores de serviços,
-corrigir imperfeições da linguagem falada, identificar o cerne das discussões e gerar uma ata executiva impecável.
+corrigir imperfeições da linguagem falada, identificar o cerne das discussões e gerar uma ata executiva direta e concisa.
 
 Você DEVE responder ESTRITAMENTE em formato JSON com o seguinte schema:
 {
@@ -45,40 +46,112 @@ Regras:
 """
 
 
-def parse_summary_json(raw: str, default_title: str = "Reunião") -> Dict[str, Any]:
+MEETING_DETAILED_SYSTEM_PROMPT = """Você é um consultor sênior de governança corporativa, auditor e secretário executivo de conselhos de administração.
+Sua missão é analisar a transcrição bruta da reunião e produzir uma ata de reunião extremamente aprofundada, minuciosa, exaustiva e de alto valor documental (formato longo / multi-página).
+Você deve destrinchar cada debate, contextualizar cada pauta, capturar as nuances das opiniões, registrar detalhadamente as justificativas de cada decisão e os riscos apontados.
+
+Você DEVE responder ESTRITAMENTE em formato JSON com o seguinte schema completo:
+{
+  "title": "Título oficial claro e descritivo para a reunião",
+  "context": "Contexto detalhado, motivação inicial e objetivos de negócio da reunião (1 a 2 parágrafos densos).",
+  "executive_summary": "Síntese executiva abrangente cobrindo todo o arco da conversa (2 a 4 parágrafos substanciais).",
+  "detailed_discussions": [
+    {
+      "topic": "Nome do tópico ou pauta debatida",
+      "details": "Detalhamento minucioso de tudo o que foi abordado, informações técnicas ou de negócio citadas e pontos de concordância.",
+      "arguments": "Diferentes posicionamentos, preocupações expressas, contrapontos e alternativas ponderadas.",
+      "conclusions": "Conclusão ou encaminhamento específico alcançado para este tópico."
+    }
+  ],
+  "topics": [
+    "Resumo em tópicos dos pontos principais discutidos"
+  ],
+  "decisions": [
+    "Decisão formal 1 acompanhada da justificativa/racional e impacto previsto",
+    "Decisão formal 2 acompanhada da justificativa/racional e impacto previsto"
+  ],
+  "risks_and_concerns": [
+    "Risco técnico, operacional, financeiro ou prazo levantado na conversa",
+    "Ponto de atenção ou dependência externa mencionada"
+  ],
+  "action_items": [
+    {
+      "task": "Ação específica e minuciosa a ser executada com critérios claros",
+      "owner": "Responsável pela entrega (ou 'Não atribuído')",
+      "deadline": "Prazo acordado (ou 'A definir')",
+      "priority": "Alta / Média / Baixa"
+    }
+  ],
+  "next_steps": [
+    "Próximo marco crítico, entrega esperada ou reunião de acompanhamento"
+  ]
+}
+
+Diretrizes Cruciais para o Formato Longo:
+1. Não economize palavras: forneça descrições densas, ricas em detalhes factuais presentes na transcrição.
+2. Responda em Português do Brasil com vocabulário corporativo de alto nível.
+3. Não invente fatos externos à transcrição, mas elabore detalhadamente tudo o que foi falado.
+4. Responda SOMENTE o objeto JSON válido, sem texto introdutório ou conclusivo fora das chaves.
+"""
+
+MEETING_SYSTEM_PROMPT = MEETING_DETAILED_SYSTEM_PROMPT
+
+
+def parse_summary_json(raw: str, default_title: str = "Reunião", detail_level: str = "detailed") -> Dict[str, Any]:
     """Extrai e valida o JSON da resposta da LLM com fallbacks tolerantes."""
-    if not raw:
-        return {}
+    data: Dict[str, Any] = {}
+    if raw:
+        # Tentativa 1: Busca bloco de código ```json ... ```
+        match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw, re.DOTALL)
+        if match:
+            try:
+                data = json.loads(match.group(1))
+            except Exception:
+                pass
 
-    # Tentativa 1: Busca bloco de código ```json ... ```
-    match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw, re.DOTALL)
-    if match:
-        try:
-            return json.loads(match.group(1))
-        except Exception:
-            pass
+        # Tentativa 2: Busca primeiro objeto {...} no texto
+        if not data:
+            match = re.search(r"\{.*\}", raw, re.DOTALL)
+            if match:
+                try:
+                    data = json.loads(match.group(0))
+                except Exception:
+                    pass
 
-    # Tentativa 2: Busca primeiro objeto {...} no texto
-    match = re.search(r"\{.*\}", raw, re.DOTALL)
-    if match:
-        try:
-            return json.loads(match.group(0))
-        except Exception:
-            pass
+        # Tentativa 3: Parse direto
+        if not data:
+            try:
+                data = json.loads(raw)
+            except Exception:
+                pass
 
-    # Tentativa 3: Parse direto
-    try:
-        return json.loads(raw)
-    except Exception:
-        pass
+    if not data:
+        # Fallback estruturado caso a LLM retorne texto livre
+        return {
+            "title": default_title,
+            "executive_summary": raw.strip() if raw else "Não foi possível extrair a síntese.",
+            "topics": [],
+            "decisions": [],
+            "action_items": [],
+            "context": "",
+            "detailed_discussions": [],
+            "risks_and_concerns": [],
+            "next_steps": [],
+            "detail_level": detail_level,
+        }
 
-    # Fallback estruturado caso a LLM retorne texto livre
+    # Normalização dos campos
     return {
-        "title": default_title,
-        "executive_summary": raw.strip(),
-        "topics": [],
-        "decisions": [],
-        "action_items": []
+        "title": data.get("title") or default_title,
+        "executive_summary": data.get("executive_summary") or "",
+        "topics": data.get("topics") or [],
+        "decisions": data.get("decisions") or [],
+        "action_items": data.get("action_items") or [],
+        "context": data.get("context") or "",
+        "detailed_discussions": data.get("detailed_discussions") or [],
+        "risks_and_concerns": data.get("risks_and_concerns") or [],
+        "next_steps": data.get("next_steps") or [],
+        "detail_level": detail_level,
     }
 
 
@@ -96,7 +169,7 @@ class LocalMeetingAnalyzer(MeetingAnalyzer):
         self,
         host: Optional[str] = None,
         model: Optional[str] = None,
-        num_ctx: int = 8192,
+        num_ctx: int = 16384,
     ):
         self.host = host or getattr(config, "OLLAMA_HOST", "http://localhost:11434")
         self.model = model or getattr(config, "LLM_MODEL", "qwen2.5:3b")
@@ -107,6 +180,15 @@ class LocalMeetingAnalyzer(MeetingAnalyzer):
         default_title = meta.get("title") or "Reunião"
         duration = float(meta.get("duration_seconds", 0.0))
         date_str = meta.get("date") or time.strftime("%d/%m/%Y %H:%M")
+        detail_level = str(meta.get("detail_level") or getattr(config, "MEETING_DETAIL_LEVEL", "detailed")).lower()
+        if detail_level in ("curto", "concise", "short", "resumido"):
+            detail_level = "concise"
+            system_prompt = MEETING_CONCISE_SYSTEM_PROMPT
+            num_predict = 1024
+        else:
+            detail_level = "detailed"
+            system_prompt = MEETING_DETAILED_SYSTEM_PROMPT
+            num_predict = 4096
 
         if not transcript.strip():
             return MeetingSummary(
@@ -117,13 +199,15 @@ class LocalMeetingAnalyzer(MeetingAnalyzer):
                 topics=[],
                 decisions=[],
                 action_items=[],
-                raw_markdown=""
+                raw_markdown="",
+                detail_level=detail_level,
             )
 
         user_content = (
             f"Metadados da Reunião:\n"
             f"- Título Provisório: {default_title}\n"
-            f"- Data: {date_str}\n\n"
+            f"- Data: {date_str}\n"
+            f"- Formato Solicitado: {'Longo / Detalhado (Multi-página)' if detail_level == 'detailed' else 'Curto / Conciso'}\n\n"
             f"Transcrição da conversa:\n\"\"\"\n{transcript.strip()}\n\"\"\"\n\n"
             f"Gere a ata estruturada em JSON conforme as regras."
         )
@@ -136,13 +220,13 @@ class LocalMeetingAnalyzer(MeetingAnalyzer):
         payload = {
             "model": self.model,
             "messages": [
-                {"role": "system", "content": MEETING_SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_content}
             ],
             "options": {
                 "temperature": 0.2,
                 "num_ctx": self.num_ctx,
-                "num_predict": 1024
+                "num_predict": num_predict
             },
             "stream": False
         }
@@ -154,7 +238,7 @@ class LocalMeetingAnalyzer(MeetingAnalyzer):
         )
 
         try:
-            with urllib.request.urlopen(req, timeout=120) as resp:
+            with urllib.request.urlopen(req, timeout=180) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
             raw_text = data.get("message", {}).get("content", "")
         except Exception as e:
@@ -167,10 +251,11 @@ class LocalMeetingAnalyzer(MeetingAnalyzer):
                 topics=[],
                 decisions=[],
                 action_items=[],
-                raw_markdown=""
+                raw_markdown="",
+                detail_level=detail_level,
             )
 
-        parsed = parse_summary_json(raw_text, default_title=default_title)
+        parsed = parse_summary_json(raw_text, default_title=default_title, detail_level=detail_level)
         return MeetingSummary(
             title=parsed.get("title") or default_title,
             date=date_str,
@@ -179,7 +264,12 @@ class LocalMeetingAnalyzer(MeetingAnalyzer):
             topics=parsed.get("topics", []),
             decisions=parsed.get("decisions", []),
             action_items=parsed.get("action_items", []),
-            raw_markdown=raw_text
+            raw_markdown=raw_text,
+            detail_level=detail_level,
+            context=parsed.get("context", ""),
+            detailed_discussions=parsed.get("detailed_discussions", []),
+            risks_and_concerns=parsed.get("risks_and_concerns", []),
+            next_steps=parsed.get("next_steps", []),
         )
 
 
@@ -203,6 +293,13 @@ class CloudMeetingAnalyzer(MeetingAnalyzer):
         default_title = meta.get("title") or "Reunião"
         duration = float(meta.get("duration_seconds", 0.0))
         date_str = meta.get("date") or time.strftime("%d/%m/%Y %H:%M")
+        detail_level = str(meta.get("detail_level") or getattr(config, "MEETING_DETAIL_LEVEL", "detailed")).lower()
+        if detail_level in ("curto", "concise", "short", "resumido"):
+            detail_level = "concise"
+            system_prompt = MEETING_CONCISE_SYSTEM_PROMPT
+        else:
+            detail_level = "detailed"
+            system_prompt = MEETING_DETAILED_SYSTEM_PROMPT
 
         if not transcript.strip():
             return MeetingSummary(
@@ -213,13 +310,15 @@ class CloudMeetingAnalyzer(MeetingAnalyzer):
                 topics=[],
                 decisions=[],
                 action_items=[],
-                raw_markdown=""
+                raw_markdown="",
+                detail_level=detail_level,
             )
 
         user_content = (
             f"Metadados da Reunião:\n"
             f"- Título Provisório: {default_title}\n"
-            f"- Data: {date_str}\n\n"
+            f"- Data: {date_str}\n"
+            f"- Formato Solicitado: {'Longo / Detalhado (Multi-página)' if detail_level == 'detailed' else 'Curto / Conciso'}\n\n"
             f"Transcrição da conversa:\n\"\"\"\n{transcript.strip()}\n\"\"\"\n\n"
             f"Gere a ata estruturada em JSON conforme as regras."
         )
@@ -228,7 +327,7 @@ class CloudMeetingAnalyzer(MeetingAnalyzer):
         payload = {
             "model": self.model,
             "messages": [
-                {"role": "system", "content": MEETING_SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_content}
             ],
             "temperature": 0.2,
@@ -249,7 +348,7 @@ class CloudMeetingAnalyzer(MeetingAnalyzer):
         )
 
         try:
-            with urllib.request.urlopen(req, timeout=120) as resp:
+            with urllib.request.urlopen(req, timeout=180) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
             raw_text = data["choices"][0]["message"]["content"]
         except Exception as e:
@@ -261,10 +360,11 @@ class CloudMeetingAnalyzer(MeetingAnalyzer):
                 topics=[],
                 decisions=[],
                 action_items=[],
-                raw_markdown=""
+                raw_markdown="",
+                detail_level=detail_level,
             )
 
-        parsed = parse_summary_json(raw_text, default_title=default_title)
+        parsed = parse_summary_json(raw_text, default_title=default_title, detail_level=detail_level)
         return MeetingSummary(
             title=parsed.get("title") or default_title,
             date=date_str,
@@ -273,7 +373,12 @@ class CloudMeetingAnalyzer(MeetingAnalyzer):
             topics=parsed.get("topics", []),
             decisions=parsed.get("decisions", []),
             action_items=parsed.get("action_items", []),
-            raw_markdown=raw_text
+            raw_markdown=raw_text,
+            detail_level=detail_level,
+            context=parsed.get("context", ""),
+            detailed_discussions=parsed.get("detailed_discussions", []),
+            risks_and_concerns=parsed.get("risks_and_concerns", []),
+            next_steps=parsed.get("next_steps", []),
         )
 
 

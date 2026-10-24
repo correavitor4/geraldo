@@ -29,7 +29,12 @@ class MeetingTools:
         cls._manager = manager
 
     @classmethod
-    def start_meeting(cls, title: Optional[str] = None, provider: Optional[str] = None) -> str:
+    def start_meeting(
+        cls,
+        title: Optional[str] = None,
+        provider: Optional[str] = None,
+        detail_level: Optional[str] = None
+    ) -> str:
         manager = cls.get_manager()
         active = manager.active_session
         if active and active.status in (MeetingStatus.RECORDING, MeetingStatus.PAUSED):
@@ -37,11 +42,13 @@ class MeetingTools:
 
         meeting_title = (title or "Reunião de Alinhamento").strip()
         chosen_provider = (provider or getattr(config, "MEETING_PROVIDER", "local")).lower()
+        chosen_detail = (detail_level or getattr(config, "MEETING_DETAIL_LEVEL", "detailed")).lower()
 
         try:
-            manager.start_meeting(title=meeting_title, provider=chosen_provider)
+            manager.start_meeting(title=meeting_title, provider=chosen_provider, detail_level=chosen_detail)
             provider_desc = "em modo local com total privacidade" if chosen_provider == "local" else "em modo nuvem com alta velocidade"
-            return f"Reunião iniciada. Estou gravando a conversa {provider_desc}."
+            detail_desc = "detalhada e completa (multi-página)" if chosen_detail in ("detailed", "longo") else "concisa e executiva"
+            return f"Reunião iniciada. Gravando a conversa {provider_desc} para gerar ata {detail_desc}."
         except Exception as e:
             return f"Não foi possível iniciar a gravação da reunião: {e}"
 
@@ -117,6 +124,19 @@ class MeetingTools:
 
         return f"A reunião está no estado: {active.status.value}."
 
+    @classmethod
+    def export_meeting(
+        cls,
+        session_id: str,
+        target_dir_or_file: Optional[str] = None,
+        format_type: str = "both"
+    ) -> Dict[str, str]:
+        return cls.get_manager().export_meeting(
+            session_id=session_id,
+            target_dir_or_file=target_dir_or_file,
+            format_type=format_type
+        )
+
     # Métodos utilitários para IPC, TUI e GUI
     @classmethod
     def list_meetings(cls) -> List[Dict[str, Any]]:
@@ -145,6 +165,7 @@ class MeetingTools:
                 "status": active.status.value,
                 "title": active.title,
                 "provider": active.provider,
+                "detail_level": active.detail_level,
                 "duration": active.duration_seconds,
                 "rms": manager.current_rms,
             }
@@ -157,6 +178,7 @@ class MeetingTools:
                 "status": proc.status.value,
                 "title": proc.title,
                 "provider": proc.provider,
+                "detail_level": proc.detail_level,
                 "duration": proc.duration_seconds,
                 "rms": 0.0,
             }
@@ -165,6 +187,7 @@ class MeetingTools:
             "status": "idle",
             "title": "",
             "provider": getattr(config, "MEETING_PROVIDER", "local"),
+            "detail_level": getattr(config, "MEETING_DETAIL_LEVEL", "detailed"),
             "duration": 0.0,
             "rms": 0.0,
         }
