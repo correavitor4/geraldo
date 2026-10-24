@@ -53,6 +53,18 @@
             </div>
         </header>
 
+        <!-- BANNER DE ALARME / TIMER DISPARADO -->
+        <div id="alarm-ringing-banner" class="alarm-ringing-banner hidden" role="alert" aria-live="assertive">
+            <div class="alarm-banner-content">
+                <span class="alarm-bell-icon">⏰</span>
+                <div class="alarm-banner-texts">
+                    <strong id="alarm-banner-title">ALARME DISPARADO!</strong>
+                    <span id="alarm-banner-subtitle">O timer finalizou!</span>
+                </div>
+            </div>
+            <button id="btn-silence-alarm-banner" class="btn-silence-alarm" title="Silenciar som do alarme">Silenciar Alarme</button>
+        </div>
+
         <!-- BARRA DE NAVEGAÇÃO DE ABAS PRINCIPAIS -->
         <nav id="main-nav-tabs" class="main-nav-tabs" role="tablist">
             <button class="main-nav-tab active" data-view="view-chat" id="tab-nav-chat" role="tab" aria-selected="true">

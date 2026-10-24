@@ -30,8 +30,9 @@ class AudioRecorder:
                 recorded_chunks.append(chunk)
 
                 rms = np.sqrt(np.mean(chunk**2))
+                effective_threshold = min(self.energy_threshold, 0.005)
 
-                if rms > self.energy_threshold:
+                if rms > effective_threshold:
                     if not has_spoken:
                         print("[Geraldo] Voz detectada...")
                         has_spoken = True

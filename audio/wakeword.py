@@ -33,44 +33,53 @@ class WakeWordDetector:
                 audio_chunk, _ = stream.read(block_size)
                 audio_data = np.squeeze(audio_chunk)
 
-                # Filtro de energia: se o áudio for silêncio absoluto ou ruído mínimo, pula o processamento
-                if np.max(np.abs(audio_data)) < 0.01:
+                peak = np.max(np.abs(audio_data))
+                # Filtro de energia calibrado: silêncio absoluto ou ruído eletrônico desprezível
+                if peak < 0.0025:
                     continue
+
+                # Normalização de pico para garantir transcrição precisa no Whisper mesmo em microfones com ganho baixo
+                norm_audio = audio_data * (0.9 / peak) if peak > 0.001 else audio_data
 
                 # Transcreve usando o modelo de wake word com prompt específico
                 try:
                     segments, _ = self.stt.model_wake.transcribe(
-                        audio_data,
+                        norm_audio,
                         language="pt",
                         beam_size=1,
                         best_of=1,
                         temperature=0.0,
                         initial_prompt="Geraldo.",
                         condition_on_previous_text=False,
-                        vad_filter=True,
-                        vad_parameters=dict(min_silence_duration_ms=250, threshold=0.5)
+                        vad_filter=False,
                     )
 
                     for seg in segments:
                         no_speech = getattr(seg, "no_speech_prob", None)
-                        if isinstance(no_speech, (int, float)) and no_speech > 0.65:
+                        if isinstance(no_speech, (int, float)) and no_speech > 0.75:
                             continue
 
                         avg_logprob = getattr(seg, "avg_logprob", None)
-                        if isinstance(avg_logprob, (int, float)) and avg_logprob < -1.3:
+                        if isinstance(avg_logprob, (int, float)) and avg_logprob < -1.4:
                             continue
 
                         text = seg.text.strip().lower()
                         cleaned_text = "".join([c for c in text if c.isalnum() or c.isspace()])
                         words = cleaned_text.split()
+                        no_spaces = cleaned_text.replace(" ", "")
 
-                        # Verifica se a palavra-chave está presente de forma clara
-                        if self.target_word in words or any(self.target_word in w for w in words):
+                        # Verifica se a palavra-chave está presente (inclui variações fonéticas comuns como "geral do")
+                        if (
+                            self.target_word in words
+                            or self.target_word in no_spaces
+                            or "gerald" in no_spaces
+                            or any(self.target_word in w for w in words)
+                        ):
                             print(f"[Geraldo] Wake word confirmada! Texto capturado: '{text}'")
                             return True
 
-                except Exception:
-                    # Evita que erros de áudio quebrem o loop de escuta
+                except Exception as e:
+                    # Evita que erros esporádicos de I/O quebrem o loop de escuta
                     continue
 
         return False

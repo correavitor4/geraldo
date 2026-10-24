@@ -156,6 +156,52 @@ def resolve_model_path(model_filename: str) -> Optional[Path]:
     return None
 
 
+def resolve_asset_path(asset_filename: str) -> Optional[Path]:
+    """
+    Localiza um arquivo de asset (som de alarme, timer, ícone, etc.) nos diretórios da aplicação.
+    Compatível com desenvolvimento e executáveis empacotados (Tauri / PyInstaller).
+    """
+    direct = Path(asset_filename)
+    if direct.is_absolute() and direct.exists():
+        return direct
+
+    # Nomes alternativos se o arquivo principal não for encontrado
+    alternatives = [asset_filename]
+    if asset_filename in ("timer.wav", "alarm.wav"):
+        alternatives.extend(["alarm.wav", "alarm_windows.wav", "timer.wav"])
+
+    candidates_dirs = [
+        get_base_dir() / "assets",
+        get_base_dir(),
+        Path(__file__).resolve().parent.parent / "assets",
+        get_user_data_dir() / "assets",
+        get_user_data_dir(),
+        Path.cwd() / "assets",
+        Path.cwd(),
+    ]
+
+    if is_frozen():
+        exe_parent = Path(sys.executable).parent.resolve()
+        candidates_dirs.extend([
+            exe_parent / "assets",
+            exe_parent / "resources" / "assets",
+            exe_parent / "resources",
+            exe_parent,
+        ])
+
+    home = Path.home()
+    for sub in ("source/repos/geraldo/assets", "projects/geraldo/assets", "geraldo/assets"):
+        candidates_dirs.append(home / sub)
+
+    for search_dir in candidates_dirs:
+        for alt in alternatives:
+            candidate = search_dir / alt
+            if candidate.exists() and candidate.is_file():
+                return candidate
+
+    return None
+
+
 def ensure_model_available(model_filename: str = "voz_faber.onnx") -> Path:
     """
     Garante que o modelo neural ONNX esteja acessível.

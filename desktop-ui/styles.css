@@ -2438,4 +2438,90 @@ body {
     background: var(--bg-card);
 }
 
+/* BANNER DE ALARME / TIMER DISPARADO */
+.alarm-ringing-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.95), rgba(220, 38, 38, 0.98));
+    color: #ffffff;
+    padding: 12px 20px;
+    border-radius: 12px;
+    margin: 10px 20px 0 20px;
+    box-shadow: 0 8px 24px rgba(239, 68, 68, 0.45);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    animation: alarm-pulse 1.2s infinite ease-in-out;
+    z-index: 1000;
+}
+
+.alarm-ringing-banner.hidden {
+    display: none !important;
+}
+
+@keyframes alarm-pulse {
+    0%, 100% {
+        transform: scale(1);
+        box-shadow: 0 8px 24px rgba(239, 68, 68, 0.45);
+    }
+    50% {
+        transform: scale(1.015);
+        box-shadow: 0 12px 32px rgba(239, 68, 68, 0.7);
+    }
+}
+
+.alarm-banner-content {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.alarm-bell-icon {
+    font-size: 26px;
+    animation: alarm-bell 0.6s infinite alternate ease-in-out;
+}
+
+@keyframes alarm-bell {
+    0% { transform: rotate(-15deg); }
+    100% { transform: rotate(15deg); }
+}
+
+.alarm-banner-texts {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.alarm-banner-texts strong {
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+}
+
+.alarm-banner-texts span {
+    font-size: 12px;
+    opacity: 0.9;
+}
+
+.btn-silence-alarm {
+    background: #ffffff;
+    color: #dc2626;
+    border: none;
+    padding: 8px 18px;
+    border-radius: 8px;
+    font-weight: 700;
+    font-size: 13px;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.btn-silence-alarm:hover {
+    background: #fee2e2;
+    transform: scale(1.05);
+}
+
+.btn-silence-alarm:active {
+    transform: scale(0.98);
+}
+
 

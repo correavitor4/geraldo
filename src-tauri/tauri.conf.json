@@ -54,6 +54,7 @@
       "binaries/geraldo-core"
     ],
     "resources": [
+      "../assets/*",
       "../voz_faber.onnx",
       "../voz_faber.onnx.json",
       "../voz.onnx",

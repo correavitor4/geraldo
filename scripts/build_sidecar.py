@@ -142,6 +142,9 @@ def build_sidecar(target_triple: str = None, dry_run: bool = False) -> Path:
             m_path = REPO_ROOT / model_name
             if m_path.exists():
                 cmd.extend(["--add-data", f"{m_path}{os.pathsep}."])
+        assets_dir = REPO_ROOT / "assets"
+        if assets_dir.exists():
+            cmd.extend(["--add-data", f"{assets_dir}{os.pathsep}assets"])
         cmd.append(str(REPO_ROOT / "main.py"))
 
         if "apple-darwin" in triple and platform.system().lower() == "darwin":
@@ -238,6 +241,12 @@ exec "$PYTHON_EXEC" -u "$DIR/main.py" "$@"
         src = REPO_ROOT / name
         if src.exists():
             shutil.copy2(src, BINARIES_DIR / name)
+
+    assets_dest = BINARIES_DIR / "assets"
+    if (REPO_ROOT / "assets").exists():
+        if assets_dest.exists():
+            shutil.rmtree(assets_dest)
+        shutil.copytree(REPO_ROOT / "assets", assets_dest)
 
     print(f"[Build Sidecar] Sidecar executável pronto em: {dest_path}")
     return dest_path

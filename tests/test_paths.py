@@ -126,3 +126,13 @@ class TestPathsManager:
         with pytest.raises(FileNotFoundError):
             ensure_model_available("invalid_voice_xyz_12345.onnx")
 
+    def test_resolve_asset_path(self):
+        from core.paths import resolve_asset_path
+        alarm_p = resolve_asset_path("alarm.wav")
+        assert alarm_p is not None
+        assert alarm_p.exists()
+
+        timer_p = resolve_asset_path("timer.wav")
+        assert timer_p is not None
+        assert timer_p.exists()
+

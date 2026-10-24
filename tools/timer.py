@@ -3,9 +3,11 @@ import threading
 import subprocess
 import json
 import os
+import sys
 import difflib
 import uuid
 from typing import Any, Dict, List, Optional, Union
+from core.paths import resolve_asset_path
 
 class TimerManager:
     _timers = {}
@@ -17,8 +19,8 @@ class TimerManager:
     _command_dir = "/tmp/geraldo_commands"
     _status_file = "/tmp/geraldo_status.json"
     _state_file = os.path.expanduser("~/.config/geraldo_state.json")
-    _alarm_sound_path = os.path.expanduser("~/projects/geraldo/assets/alarm.wav")
-    _timer_sound_path = os.path.expanduser("~/projects/geraldo/assets/timer.wav")
+    _alarm_sound_path = str(resolve_asset_path("alarm.wav") or os.path.expanduser("~/projects/geraldo/assets/alarm.wav"))
+    _timer_sound_path = str(resolve_asset_path("timer.wav") or os.path.expanduser("~/projects/geraldo/assets/timer.wav"))
     _ringing_alarm = None
     _ringing_timer = None
     _alarm_stop_event = None
@@ -632,20 +634,123 @@ class TimerManager:
     @classmethod
     def _play_sound_loop(cls, sound_file: str, stop_event: threading.Event, max_duration: float):
         start = time.time()
+        resolved_sound = sound_file
+        if not os.path.exists(resolved_sound):
+            base_name = os.path.basename(sound_file) or "alarm.wav"
+            res = resolve_asset_path(base_name)
+            if res:
+                resolved_sound = str(res)
+
+        # 1. No Windows (winsound nativo sem dependências externas)
+        if sys.platform == "win32":
+            try:
+                import winsound
+                if os.path.exists(resolved_sound):
+                    winsound.PlaySound(resolved_sound, winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_LOOP)
+                    while not stop_event.is_set() and (time.time() - start) < max_duration:
+                        time.sleep(0.1)
+                    winsound.PlaySound(None, winsound.SND_PURGE)
+                    return
+                else:
+                    while not stop_event.is_set() and (time.time() - start) < max_duration:
+                        winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
+                        time.sleep(0.8)
+                    return
+            except Exception as e:
+                print(f"[Geraldo:Timer] Falha ao tocar via winsound: {e}")
+
+        # 2. Linux / macOS / Fallback multiplataforma
+        import shutil
         while not stop_event.is_set() and (time.time() - start) < max_duration:
-            if not os.path.exists(sound_file):
+            if not os.path.exists(resolved_sound):
+                try:
+                    from audio.player import AudioPlayer
+                    AudioPlayer.play_beep()
+                except Exception:
+                    pass
                 time.sleep(1)
                 continue
-            proc = subprocess.Popen(["paplay", sound_file], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            while proc.poll() is None:
-                if stop_event.is_set() or (time.time() - start) >= max_duration:
-                    proc.terminate()
+
+            players = []
+            if sys.platform == "darwin":
+                players = [["afplay", resolved_sound]]
+            else:
+                players = [
+                    ["pw-play", resolved_sound],
+                    ["paplay", resolved_sound],
+                    ["aplay", resolved_sound],
+                    ["mpv", "--no-video", resolved_sound],
+                    ["ffplay", "-nodisp", "-autoexit", resolved_sound]
+                ]
+
+            played = False
+            for cmd in players:
+                if shutil.which(cmd[0]):
                     try:
-                        proc.wait(timeout=0.2)
+                        proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        while proc.poll() is None:
+                            if stop_event.is_set() or (time.time() - start) >= max_duration:
+                                proc.terminate()
+                                try:
+                                    proc.wait(timeout=0.2)
+                                except Exception:
+                                    proc.kill()
+                                return
+                            time.sleep(0.05)
+                        played = True
+                        break
                     except Exception:
-                        proc.kill()
-                    return
-                time.sleep(0.05)
+                        continue
+
+            if not played:
+                try:
+                    from audio.player import AudioPlayer
+                    AudioPlayer.play(resolved_sound)
+                except Exception:
+                    time.sleep(1)
+
+    @classmethod
+    def _notify_system(cls, title: str, message: str, is_critical: bool = True):
+        print(f"\n[Geraldo:Alerta] {title}: {message}")
+        if os.getenv("PYTEST_CURRENT_TEST"):
+            return
+
+        if sys.platform == "win32":
+            def _win_toast():
+                try:
+                    ps_cmd = (
+                        "[reflection.assembly]::loadwithpartialname('System.Windows.Forms') | Out-Null; "
+                        "$n = New-Object System.Windows.Forms.NotifyIcon; "
+                        "$n.Icon = [System.Drawing.SystemIcons]::Exclamation; "
+                        "$n.Visible = $true; "
+                        f"$n.ShowBalloonTip(10000, '{title}', '{message}', [System.Windows.Forms.ToolTipIcon]::Info); "
+                        "Start-Sleep -Seconds 2; $n.Dispose()"
+                    )
+                    subprocess.run(
+                        ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", ps_cmd],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000),
+                        timeout=5
+                    )
+                except Exception:
+                    pass
+            threading.Thread(target=_win_toast, daemon=True).start()
+        elif sys.platform == "darwin":
+            try:
+                apple_script = f'display notification "{message}" with title "{title}"'
+                subprocess.Popen(["osascript", "-e", apple_script], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception:
+                pass
+        else:
+            try:
+                cmd = ["notify-send", "-a", "Geraldo"]
+                if is_critical:
+                    cmd.extend(["-u", "critical"])
+                cmd.extend([title, message])
+                subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception:
+                pass
 
     @classmethod
     def _start_ringing_alarm(cls, aid: str, label: str, time_str: str):
@@ -659,21 +764,18 @@ class TimerManager:
             "time_str": time_str
         }
         cls._alarm_stop_event = threading.Event()
+        sound_path = str(resolve_asset_path("alarm.wav") or cls._alarm_sound_path)
         t = threading.Thread(
             target=cls._play_sound_loop,
-            args=(cls._alarm_sound_path, cls._alarm_stop_event, 60.0),
+            args=(sound_path, cls._alarm_stop_event, 60.0),
             daemon=True
         )
         t.start()
         cls._export_status_for_waybar()
-        try:
-            subprocess.Popen([
-                "notify-send", "-u", "critical", "-a", "Geraldo",
-                "⏰ ALARME DISPARADO!",
-                f"{label} ({time_str})\nClique na Waybar para silenciar."
-            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        except Exception:
-            pass
+        cls._notify_system(
+            "⏰ ALARME DISPARADO!",
+            f"Alarme '{label}' ({time_str})\nSilencie pela interface ou comando de voz."
+        )
 
     @classmethod
     def _start_ringing_timer(cls, tid: str, label: str):
@@ -683,29 +785,32 @@ class TimerManager:
             "id": tid,
             "label": label,
             "start_time": now,
-            "max_duration": 20.0
+            "max_duration": 60.0
         }
         cls._timer_stop_event = threading.Event()
+        sound_path = str(resolve_asset_path("timer.wav") or cls._timer_sound_path)
         t = threading.Thread(
             target=cls._play_sound_loop,
-            args=(cls._timer_sound_path, cls._timer_stop_event, 20.0),
+            args=(sound_path, cls._timer_stop_event, 60.0),
             daemon=True
         )
         t.start()
         cls._export_status_for_waybar()
-        try:
-            subprocess.Popen([
-                "notify-send", "-u", "critical", "-a", "Geraldo",
-                "⏱ TIMER FINALIZADO!",
-                f"O timer '{label}' terminou!\nClique na Waybar para silenciar."
-            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        except Exception:
-            pass
+        cls._notify_system(
+            "⏰ ALARME DISPARADO!",
+            f"O timer '{label}' terminou!\nSilencie pela interface ou comando de voz."
+        )
 
     @classmethod
     def _stop_ringing_alarm(cls):
         if cls._alarm_stop_event:
             cls._alarm_stop_event.set()
+        if sys.platform == "win32":
+            try:
+                import winsound
+                winsound.PlaySound(None, winsound.SND_PURGE)
+            except Exception:
+                pass
         cls._ringing_alarm = None
         cls._export_status_for_waybar()
 
@@ -713,6 +818,12 @@ class TimerManager:
     def _stop_ringing_timer(cls):
         if cls._timer_stop_event:
             cls._timer_stop_event.set()
+        if sys.platform == "win32":
+            try:
+                import winsound
+                winsound.PlaySound(None, winsound.SND_PURGE)
+            except Exception:
+                pass
         cls._ringing_timer = None
         cls._export_status_for_waybar()
 
@@ -723,11 +834,7 @@ class TimerManager:
 
     @classmethod
     def _notify(cls, message: str):
-        print(f"\n[Geraldo:Alerta] {message}")
-        try:
-            subprocess.Popen(["notify-send", "Geraldo", message], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        except Exception:
-            pass
+        cls._notify_system("Geraldo", message)
 
     @classmethod
     def get_active_summary(cls) -> str:
@@ -770,6 +877,18 @@ class TimerManager:
         if seconds > 0:
             partes.append(f"{seconds} segundo" if seconds == 1 else f"{seconds} segundos")
         duracao_str = " e ".join(partes) if partes else f"{total_seconds} segundos"
+
+        # Notifica o sistema operacional que o timer foi iniciado com sucesso
+        cls._notify_system(
+            "⏱ Geraldo - Timer Iniciado",
+            f"Timer de {duracao_str} para '{label}' em andamento."
+        )
+        if not os.getenv("PYTEST_CURRENT_TEST"):
+            try:
+                from audio.player import AudioPlayer
+                threading.Thread(target=AudioPlayer.play_beep, daemon=True).start()
+            except Exception:
+                pass
 
         return f"Timer de {duracao_str} iniciado para {label}."
 

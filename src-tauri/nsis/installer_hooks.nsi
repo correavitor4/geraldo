@@ -49,6 +49,8 @@ skip_path:
   DetailPrint "Exportacao de 'geraldo_tui' no PATH ignorada a pedido do usuario."
 
 done_install:
+  DetailPrint "Garantindo modelo neural de voz oficial (Piper pt_BR Faber)..."
+  nsExec::ExecToLog 'powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; $d = Join-Path $env:APPDATA ''Geraldo\models''; [System.IO.Directory]::CreateDirectory($d) | Out-Null; $m = Join-Path $d ''voz_faber.onnx''; $j = Join-Path $d ''voz_faber.onnx.json''; if (-not (Test-Path $m)) { try { (New-Object Net.WebClient).DownloadFile(''https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/pt/pt_BR/faber/medium/pt_BR-faber-medium.onnx'', $m) } catch {} }; if (-not (Test-Path $j)) { try { (New-Object Net.WebClient).DownloadFile(''https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/pt/pt_BR/faber/medium/pt_BR-faber-medium.onnx.json'', $j) } catch {} }; Copy-Item -Path $m, $j -Destination ''$INSTDIR'' -Force -ErrorAction SilentlyContinue"'
 !macroend
 
 !macro customUnInstall

@@ -347,6 +347,47 @@ fn ensure_cli_path() {
     }
 }
 
+fn ensure_voice_downloaded() {
+    let mut model_found = false;
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(parent) = exe_path.parent() {
+            for name in &["voz_faber.onnx", "voz.onnx"] {
+                if parent.join(name).exists() {
+                    model_found = true;
+                    break;
+                }
+            }
+        }
+    }
+    if !model_found {
+        if let Ok(app_data) = std::env::var("APPDATA") {
+            let user_models = std::path::PathBuf::from(app_data).join("Geraldo").join("models");
+            if user_models.join("voz_faber.onnx").exists() || user_models.join("voz.onnx").exists() {
+                model_found = true;
+            }
+        }
+    }
+    if !model_found {
+        println!("[Tauri] Modelo neural de voz não encontrado. Baixando automaticamente...");
+        #[cfg(target_os = "windows")]
+        {
+            let _ = Command::new("powershell")
+                .args([
+                    "-NoProfile",
+                    "-Command",
+                    "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; \
+                     $d = Join-Path $env:APPDATA 'Geraldo/models'; \
+                     New-Item -ItemType Directory -Force -Path $d | Out-Null; \
+                     $m = Join-Path $d 'voz_faber.onnx'; \
+                     $j = Join-Path $d 'voz_faber.onnx.json'; \
+                     if (-not (Test-Path $m)) { try { (New-Object System.Net.WebClient).DownloadFile('https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/pt/pt_BR/faber/medium/pt_BR-faber-medium.onnx', $m) } catch {} }; \
+                     if (-not (Test-Path $j)) { try { (New-Object System.Net.WebClient).DownloadFile('https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/pt/pt_BR/faber/medium/pt_BR-faber-medium.onnx.json', $j) } catch {} };"
+                ])
+                .status();
+        }
+    }
+}
+
 fn main() {
     // Corrige compatibilidade do WebKitGTK em ambientes Wayland (Hyprland, Sway, GNOME)
     #[cfg(target_os = "linux")]
@@ -359,6 +400,9 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
+            // Garante modelo de voz baixado se não presente
+            ensure_voice_downloaded();
+
             // Garante comando CLI geraldo_tui no PATH do sistema
             ensure_cli_path();
 
@@ -382,30 +426,12 @@ fn main() {
                 .item(&quit_item)
                 .build()?;
 
-            let _tray = TrayIconBuilder::with_id("main-tray")
-                .menu(&tray_menu)
-                .show_menu_on_left_click(false)
-                .tooltip("Geraldo - Assistente de Voz Local")
-                .on_menu_event(|app, event| {
-                    match event.id().as_ref() {
-                        "open" => {
-                            if let Some(window) = app.get_webview_window("main") {
-                                let _ = window.show();
-                                let _ = window.unminimize();
-                                let _ = window.set_focus();
-                            }
-                        }
-                        "tui" => {
-                            open_tui();
-                        }
-                        "quit" => {
-                            stop_sidecar();
-                            app.exit(0);
-                        }
-                        _ => {}
-                    }
-                })
-                .on_tray_icon_event(|tray, event| {
+            // Se o ícone da bandeja já foi instanciado pelo tauri.conf.json, vincula o menu e eventos nele
+            if let Some(tray) = app.tray_by_id("main-tray") {
+                let _ = tray.set_menu(Some(tray_menu.clone()));
+                let _ = tray.set_show_menu_on_left_click(false);
+                let _ = tray.set_tooltip(Some("Geraldo - Assistente de Voz Local"));
+                let _ = tray.on_tray_icon_event(|tray, event| {
                     if let TrayIconEvent::Click {
                         button: MouseButton::Left,
                         button_state: MouseButtonState::Up,
@@ -424,8 +450,55 @@ fn main() {
                             }
                         }
                     }
-                })
-                .build(app)?;
+                });
+            } else {
+                let _tray = TrayIconBuilder::with_id("main-tray")
+                    .menu(&tray_menu)
+                    .show_menu_on_left_click(false)
+                    .tooltip("Geraldo - Assistente de Voz Local")
+                    .on_tray_icon_event(|tray, event| {
+                        if let TrayIconEvent::Click {
+                            button: MouseButton::Left,
+                            button_state: MouseButtonState::Up,
+                            ..
+                        } = event
+                        {
+                            let app = tray.app_handle();
+                            if let Some(window) = app.get_webview_window("main") {
+                                let is_visible = window.is_visible().unwrap_or(false);
+                                if is_visible {
+                                    let _ = window.hide();
+                                } else {
+                                    let _ = window.show();
+                                    let _ = window.unminimize();
+                                    let _ = window.set_focus();
+                                }
+                            }
+                        }
+                    })
+                    .build(app)?;
+            }
+
+            // Escuta eventos de clique do menu de contexto
+            app.on_menu_event(|app, event| {
+                match event.id().as_ref() {
+                    "open" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.unminimize();
+                            let _ = window.set_focus();
+                        }
+                    }
+                    "tui" => {
+                        open_tui();
+                    }
+                    "quit" => {
+                        stop_sidecar();
+                        app.exit(0);
+                    }
+                    _ => {}
+                }
+            });
 
             Ok(())
         })

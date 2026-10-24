@@ -16,3 +16,6 @@ settings.json
 *.spec
 src-tauri/binaries/geraldo-core*
 src-tauri/binaries/*.exe
+src-tauri/binaries/assets/
+*.onnx
+*.onnx.json

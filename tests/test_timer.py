@@ -599,4 +599,30 @@ class TestTimerManagerDirectControls:
         assert "ativado" in msg_toggle2
         assert tm._alarms[aid]["enabled"] is True
 
+    def test_timer_and_alarm_ringing_lifecycle(self, isolated_timer_manager):
+        tm = isolated_timer_manager
+        with patch.object(tm, "_play_sound_loop") as mock_sound, \
+             patch.object(tm, "_notify_system") as mock_notify:
+            # Inicia timer tocando
+            tm._start_ringing_timer("t1", "Café")
+            assert tm._ringing_timer is not None
+            assert tm._ringing_timer["id"] == "t1"
+            assert tm._ringing_timer["label"] == "Café"
+            assert tm._ringing_timer["max_duration"] == 60.0
+            mock_notify.assert_called()
+
+            # Silencia
+            tm._stop_ringing_timer()
+            assert tm._ringing_timer is None
+
+            # Inicia alarme tocando
+            tm._start_ringing_alarm("a1", "Despertador", "07:00")
+            assert tm._ringing_alarm is not None
+            assert tm._ringing_alarm["label"] == "Despertador"
+
+            # Silencia tudo
+            tm.stop_all_ringing()
+            assert tm._ringing_alarm is None
+            assert tm._ringing_timer is None
+
 

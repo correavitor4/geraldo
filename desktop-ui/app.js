@@ -671,6 +671,27 @@ class GeraldoDesktopClient {
                 }).join("");
             }
         }
+
+        // 4. Banner de Alarme / Timer Disparado
+        const alarmBanner = document.getElementById("alarm-ringing-banner");
+        const alarmTitle = document.getElementById("alarm-banner-title");
+        const alarmSubtitle = document.getElementById("alarm-banner-subtitle");
+        if (alarmBanner && alarmTitle && alarmSubtitle) {
+            if (data.ringing_timer) {
+                alarmBanner.classList.remove("hidden");
+                const label = data.ringing_timer.label || "Timer";
+                alarmTitle.textContent = `⏰ TIMER FINALIZADO: ${label.toUpperCase()}`;
+                alarmSubtitle.textContent = `O timer "${label}" terminou! Clique ao lado para silenciar o alarme.`;
+            } else if (data.ringing_alarm) {
+                alarmBanner.classList.remove("hidden");
+                const label = data.ringing_alarm.label || "Alarme";
+                const timeStr = data.ringing_alarm.time ? ` (${data.ringing_alarm.time})` : "";
+                alarmTitle.textContent = `⏰ ALARME DISPARADO: ${label.toUpperCase()}${timeStr}`;
+                alarmSubtitle.textContent = `Horário atingido! Clique ao lado para silenciar o alarme.`;
+            } else {
+                alarmBanner.classList.add("hidden");
+            }
+        }
     }
 
     scrollToBottom() {
@@ -743,6 +764,16 @@ class GeraldoDesktopClient {
                     this.dom.chatStream.innerHTML = "";
                     this.appendSystemMessage("Histórico de mensagens limpo.");
                 }
+            });
+        }
+
+        // Botão de silenciar alarme disparado no banner
+        const btnSilenceBanner = document.getElementById("btn-silence-alarm-banner");
+        if (btnSilenceBanner) {
+            btnSilenceBanner.addEventListener("click", () => {
+                this.sendAction("cancel");
+                const banner = document.getElementById("alarm-ringing-banner");
+                if (banner) banner.classList.add("hidden");
             });
         }
 

@@ -21,15 +21,32 @@ class TextToSpeech:
 
         self.output_file = "/tmp/geraldo_response.wav"
         self._voice = None
+        try:
+            from piper.voice import PiperVoice
+            if os.path.exists(self.model_path):
+                self._voice = PiperVoice.load(self.model_path)
+        except Exception:
+            self._voice = None
 
     def synthesize(self, text: str) -> str:
-        """Sintetiza o texto para WAV usando o módulo oficial piper do venv."""
+        """Sintetiza o texto para WAV usando o módulo oficial piper do venv ou in-process."""
         if not text:
             return ""
 
         temp_dir = os.environ.get("GERALDO_TEMP_DIR", "/tmp")
         os.makedirs(temp_dir, exist_ok=True)
         out_path = os.path.join(temp_dir, f"geraldo_response_{threading.get_ident()}.wav")
+
+        # Prioriza síntese in-process de alta performance se a voz estiver carregada
+        if self._voice is not None:
+            try:
+                import wave
+                with wave.open(out_path, "wb") as wav_file:
+                    self._voice.synthesize_wav(text, wav_file)
+                return out_path
+            except Exception as e:
+                print(f"[Geraldo:TTS] Aviso: síntese in-process falhou ({e}), tentando subprocesso...")
+
         cmd = [
             sys.executable,
             "-X", "utf8",
