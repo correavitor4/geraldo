@@ -1649,7 +1649,7 @@ class GeraldoTUI(App):
             self.action_open_audio_settings()
 
         elif button_id == "btn-audio-quick-test":
-            self.run_worker(self._async_quick_beep_test(), exclusive=True)
+            self.run_worker(self._async_quick_beep_test, exclusive=True)
 
         elif button_id == "btn-timer-new":
             self.action_open_timer_modal()

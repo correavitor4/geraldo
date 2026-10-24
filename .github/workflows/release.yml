@@ -34,11 +34,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest pytest-asyncio anyio
 
       - name: Executar todos os testes
         run: |
-          python -m pytest -v
+          python -m pytest -v --tb=short
 
   release:
     needs: test

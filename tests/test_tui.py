@@ -882,6 +882,13 @@ async def test_tui_audio_card_and_quick_actions(monkeypatch):
 
     beep_played = []
     monkeypatch.setattr(AudioPlayer, "play_beep", lambda device=None: beep_played.append(device))
+    monkeypatch.setattr(
+        "audio.device_utils.list_audio_devices",
+        lambda: {
+            "inputs": [{"id": 1, "name": "Microfone USB"}],
+            "outputs": [{"id": 2, "name": "Fone Bluetooth"}]
+        }
+    )
 
     app = GeraldoTUI(auto_connect=False)
     async with app.run_test(size=(160, 50)) as pilot:
@@ -903,7 +910,8 @@ async def test_tui_audio_card_and_quick_actions(monkeypatch):
         # Preenche novos dispositivos e salva
         app.screen.query_one("#input-audio-mic", Input).value = "Microfone USB"
         app.screen.query_one("#input-audio-out", Input).value = "Fone Bluetooth"
-        app.screen.query_one("#btn-audio-save", Button).press()
+        btn_save = app.screen.query_one("#btn-audio-save", Button)
+        await pilot.click(btn_save)
         await pilot.pause()
 
         # Modal fechado e card lateral atualizado
