@@ -369,7 +369,10 @@ async def test_tui_integration_with_live_ipc_server():
 
             # Transmite um evento de mudança de estado a partir do servidor
             server.set_assistant_state("speaking")
-            await asyncio.sleep(0.3)
+            for _ in range(30):
+                if app._assistant_state == "speaking":
+                    break
+                await asyncio.sleep(0.1)
 
             assert app._assistant_state == "speaking"
             assert app.query_one("#state-badge", Label).has_class("state-speaking")
@@ -978,7 +981,10 @@ async def test_tui_timer_card_buttons_and_actions():
 
         # 1. Clica no botão de pausar/retomar
         app.query_one("#btn-timer-toggle", Button).press()
-        await pilot.pause()
+        for _ in range(20):
+            if app._send_queue.qsize() >= 1:
+                break
+            await pilot.pause(0.05)
         assert app._send_queue.qsize() == 1
         msg = json.loads(await app._send_queue.get())
         assert msg["action"] == "timer_pause"
@@ -991,14 +997,20 @@ async def test_tui_timer_card_buttons_and_actions():
 
         # Clica de novo no botão de pausar/retomar -> agora envia timer_resume
         app.query_one("#btn-timer-toggle", Button).press()
-        await pilot.pause()
+        for _ in range(20):
+            if app._send_queue.qsize() >= 1:
+                break
+            await pilot.pause(0.05)
         assert app._send_queue.qsize() == 1
         msg = json.loads(await app._send_queue.get())
         assert msg["action"] == "timer_resume"
 
         # 2. Clica no botão de limpar
         app.query_one("#btn-timer-clear", Button).press()
-        await pilot.pause()
+        for _ in range(20):
+            if app._send_queue.qsize() >= 1:
+                break
+            await pilot.pause(0.05)
         assert app._send_queue.qsize() == 1
         msg = json.loads(await app._send_queue.get())
         assert msg["action"] == "timer_cancel"
@@ -1064,7 +1076,10 @@ async def test_tui_alarm_card_buttons_and_actions():
 
         # 1. Clica no botão de alternar
         app.query_one("#btn-alarm-toggle-btn", Button).press()
-        await pilot.pause()
+        for _ in range(20):
+            if app._send_queue.qsize() >= 1:
+                break
+            await pilot.pause(0.05)
         assert app._send_queue.qsize() == 1
         msg = json.loads(await app._send_queue.get())
         assert msg["action"] == "alarm_toggle"
@@ -1072,7 +1087,10 @@ async def test_tui_alarm_card_buttons_and_actions():
 
         # 2. Clica no botão de limpar alarmes
         app.query_one("#btn-alarm-clear", Button).press()
-        await pilot.pause()
+        for _ in range(20):
+            if app._send_queue.qsize() >= 1:
+                break
+            await pilot.pause(0.05)
         assert app._send_queue.qsize() == 1
         msg = json.loads(await app._send_queue.get())
         assert msg["action"] == "alarm_clear_all"
@@ -1116,26 +1134,38 @@ async def test_tui_calendar_navigation_and_rendering():
 
         # Navega para o próximo mês
         app.query_one("#btn-cal-next-month", Button).press()
-        await pilot.pause()
         expected_month = today.month + 1 if today.month < 12 else 1
         expected_year = today.year if today.month < 12 else today.year + 1
+        for _ in range(20):
+            if app._cal_month == expected_month and app._cal_year == expected_year:
+                break
+            await pilot.pause(0.05)
         assert app._cal_month == expected_month
         assert app._cal_year == expected_year
 
         # Navega para o mês anterior duas vezes
         app.query_one("#btn-cal-prev-month", Button).press()
-        await pilot.pause()
+        for _ in range(20):
+            if app._cal_month == today.month and app._cal_year == today.year:
+                break
+            await pilot.pause(0.05)
         assert app._cal_month == today.month
         assert app._cal_year == today.year
 
         app.query_one("#btn-cal-prev-month", Button).press()
-        await pilot.pause()
         prev_month = today.month - 1 if today.month > 1 else 12
+        for _ in range(20):
+            if app._cal_month == prev_month:
+                break
+            await pilot.pause(0.05)
         assert app._cal_month == prev_month
 
         # Clica em Hoje
         app.query_one("#btn-cal-today", Button).press()
-        await pilot.pause()
+        for _ in range(20):
+            if app._cal_month == today.month and app._cal_year == today.year:
+                break
+            await pilot.pause(0.05)
         assert app._cal_month == today.month
         assert app._cal_year == today.year
 

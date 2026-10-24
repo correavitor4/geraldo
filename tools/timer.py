@@ -4,6 +4,7 @@ import subprocess
 import json
 import os
 import difflib
+import uuid
 from typing import Any, Dict, List, Optional, Union
 
 class TimerManager:
@@ -756,7 +757,7 @@ class TimerManager:
         
         target = time.time() + total_seconds
         with cls._lock:
-            tid = f"timer_{time.time_ns()}"
+            tid = f"timer_{time.time_ns()}_{uuid.uuid4().hex[:6]}"
             cls._timers[tid] = {"target": target, "label": label, "paused": False, "remaining": total_seconds}
             cls._save_state()
             cls._export_status_for_waybar()
@@ -910,7 +911,7 @@ class TimerManager:
 
         time_str = f"{hour:02d}:{minute:02d}"
         with cls._lock:
-            aid = f"alarm_{time.time_ns()}"
+            aid = f"alarm_{time.time_ns()}_{uuid.uuid4().hex[:6]}"
             cls._alarms[aid] = {"time_str": time_str, "label": label, "enabled": True}
             cls._save_state()
             cls._export_status_for_waybar()
