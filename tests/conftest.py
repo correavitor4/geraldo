@@ -8,6 +8,7 @@ from unittest.mock import MagicMock
 # Proteção para ambientes de CI headless onde PortAudio / PulseAudio não possuem servidor ativo
 try:
     import sounddevice as sd
+    sd.query_devices()
 except Exception:
     mock_sd = MagicMock()
     mock_sd.query_devices.return_value = []
