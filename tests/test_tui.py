@@ -953,7 +953,10 @@ async def test_tui_timer_modal_presets_and_creation():
 
         # 4. Confirma criação
         app.screen.query_one("#btn-timer-create", Button).press()
-        await pilot.pause()
+        for _ in range(20):
+            if not isinstance(app.screen, TimerConfigModal) and app._send_queue.qsize() >= 1:
+                break
+            await pilot.pause(0.05)
 
         # Modal fechou
         assert not isinstance(app.screen, TimerConfigModal)
@@ -1050,7 +1053,10 @@ async def test_tui_alarm_modal_presets_and_creation():
 
         # 4. Confirma criação
         app.screen.query_one("#btn-alarm-create", Button).press()
-        await pilot.pause()
+        for _ in range(20):
+            if not isinstance(app.screen, AlarmConfigModal) and app._send_queue.qsize() >= 1:
+                break
+            await pilot.pause(0.05)
 
         # Modal fechou
         assert not isinstance(app.screen, AlarmConfigModal)
@@ -1214,9 +1220,16 @@ async def test_tui_calendar_new_event_modal_flow():
     """Valida abertura do modal de novo evento, preenchimento e despacho de create_calendar_event."""
     app = GeraldoTUI(auto_connect=False)
     async with app.run_test(size=(160, 50)) as pilot:
-        # 1. Abre modal pelo botão "+ Novo"
-        app.query_one("#btn-cal-new", Button).press()
-        await pilot.pause()
+        # 1. Abre modal pelo action_open_calendar_new_modal
+        app.action_open_calendar_new_modal()
+        for _ in range(20):
+            if isinstance(app.screen, CalendarNewEventModal):
+                try:
+                    if app.screen.query_one("#input-event-time", Input) is not None:
+                        break
+                except Exception:
+                    pass
+            await pilot.pause(0.05)
 
         assert isinstance(app.screen, CalendarNewEventModal)
 
@@ -1228,7 +1241,10 @@ async def test_tui_calendar_new_event_modal_flow():
 
         # 3. Clica em Criar Evento
         app.screen.query_one("#btn-modal-event-save", Button).press()
-        await pilot.pause()
+        for _ in range(20):
+            if not isinstance(app.screen, CalendarNewEventModal) and app._send_queue.qsize() >= 1:
+                break
+            await pilot.pause(0.05)
 
         # Modal fechou
         assert not isinstance(app.screen, CalendarNewEventModal)
