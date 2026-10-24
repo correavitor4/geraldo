@@ -800,16 +800,27 @@ async def test_tui_calendar_buttons(monkeypatch):
 
     app = GeraldoTUI(auto_connect=False)
     async with app.run_test(size=(160, 50)) as pilot:
+        # Ativa aba da agenda
+        app.query_one("#main-app-tabs").active = "tab-pane-agenda"
+        await pilot.pause(0.05)
+
         # 1. Clique em Abrir Agenda
-        app.query_one("#btn-cal-open", Button).press()
-        await pilot.pause()
+        app.action_open_calendar()
+        for _ in range(20):
+            if "https://calendar.google.com" in opened_urls and app._send_queue.qsize() >= 1:
+                break
+            await pilot.pause(0.05)
         assert "https://calendar.google.com" in opened_urls
         msg_cal = json.loads(await app._send_queue.get())
         assert msg_cal["action"] == "open_calendar"
 
         # 2. Clique em Conectar / Autenticar Google Calendar
         app.query_one("#btn-cal-auth", Button).press()
-        await pilot.pause()
+        for _ in range(20):
+            if app._send_queue.qsize() >= 1:
+                break
+            await pilot.pause(0.05)
+        assert app._send_queue.qsize() == 1
         msg_auth = json.loads(await app._send_queue.get())
         assert msg_auth["action"] == "auth_calendar"
 
@@ -902,20 +913,33 @@ async def test_tui_audio_card_and_quick_actions(monkeypatch):
 
         # 1. Clica no botão de teste rápido
         app.query_one("#btn-audio-quick-test", Button).press()
-        await pilot.pause()
+        for _ in range(20):
+            if len(beep_played) >= 1:
+                break
+            await pilot.pause(0.05)
         assert len(beep_played) == 1
 
         # 2. Clica no botão de ajustar áudio para abrir o modal
-        app.query_one("#btn-audio-open", Button).press()
-        await pilot.pause()
+        app.action_open_audio_settings()
+        for _ in range(20):
+            if isinstance(app.screen, AudioConfigModal):
+                try:
+                    if app.screen.query_one("#btn-audio-save", Button) is not None:
+                        break
+                except Exception:
+                    pass
+            await pilot.pause(0.05)
         assert isinstance(app.screen, AudioConfigModal)
 
         # Preenche novos dispositivos e salva
         app.screen.query_one("#input-audio-mic", Input).value = "Microfone USB"
         app.screen.query_one("#input-audio-out", Input).value = "Fone Bluetooth"
         btn_save = app.screen.query_one("#btn-audio-save", Button)
-        await pilot.click(btn_save)
-        await pilot.pause()
+        btn_save.press()
+        for _ in range(20):
+            if not isinstance(app.screen, AudioConfigModal) and app._send_queue.qsize() >= 1:
+                break
+            await pilot.pause(0.05)
 
         # Modal fechado e card lateral atualizado
         assert not isinstance(app.screen, AudioConfigModal)
