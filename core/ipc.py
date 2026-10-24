@@ -83,6 +83,31 @@ class GeraldoIPCServer:
         self.register_handler("alarm_cancel", self._handle_alarm_cancel)
         self.register_handler("alarm_toggle", self._handle_alarm_toggle)
         self.register_handler("alarm_clear_all", self._handle_alarm_clear_all)
+        self.register_handler("meeting_start", self._handle_meeting_start)
+        self.register_handler("meeting_pause", self._handle_meeting_pause)
+        self.register_handler("meeting_resume", self._handle_meeting_resume)
+        self.register_handler("meeting_stop", self._handle_meeting_stop)
+        self.register_handler("meeting_status", self._handle_meeting_status)
+        self.register_handler("meeting_list", self._handle_meeting_list)
+        self.register_handler("meeting_get", self._handle_meeting_get)
+        self.register_handler("meeting_delete", self._handle_meeting_delete)
+        self.register_handler("get_meeting_config", self._handle_get_meeting_config)
+        self.register_handler("set_meeting_config", self._handle_set_meeting_config)
+
+        try:
+            from tools.meeting import MeetingTools
+            MeetingTools.register_status_callback(self._on_meeting_status_changed)
+        except Exception:
+            pass
+
+    def _on_meeting_status_changed(self, session) -> None:
+        """Disparado assincronamente pelo MeetingManager quando o status da reunião/ata muda."""
+        try:
+            from tools.meeting import MeetingTools
+            self.broadcast_event("meeting_changed", MeetingTools.get_live_state())
+            self.broadcast_event("meeting_list_updated", {"meetings": MeetingTools.list_meetings()})
+        except Exception as e:
+            print(f"[IPCServer:MeetingNotify Error]: {e}")
 
     def register_handler(self, action: str, handler: Callable) -> None:
         """Registra um manipulador para uma ação RPC."""
@@ -350,10 +375,18 @@ class GeraldoIPCServer:
         return {"pong": True, "server_time": time.time()}
 
     def _handle_get_state(self, params: dict) -> dict:
+        meeting_info = {}
+        try:
+            from tools.meeting import MeetingTools
+            meeting_info = MeetingTools.get_live_state()
+        except Exception:
+            pass
+
         return {
             "assistant_state": self._assistant_state,
             "is_muted": self._is_muted,
             "active_clients": len(self._clients),
+            "meeting": meeting_info,
         }
 
     def _handle_toggle_mute(self, params: dict) -> dict:
@@ -709,6 +742,75 @@ class GeraldoIPCServer:
         # Emite evento para sincronizar UIs conectadas
         self.broadcast_event("calendar_updated", {"action": "delete", "event_id": event_id})
         return {"status": "ok", "message": msg, "reply": msg}
+
+    # =========================================================================
+    # Handlers de Reuniões e Atas
+    # =========================================================================
+
+    def _handle_meeting_start(self, params: dict) -> dict:
+        from tools.meeting import MeetingTools
+        title = params.get("title")
+        provider = params.get("provider")
+        msg = MeetingTools.start_meeting(title=title, provider=provider)
+        self.broadcast_event("meeting_changed", MeetingTools.get_live_state())
+        return {"message": msg, "state": MeetingTools.get_live_state()}
+
+    def _handle_meeting_pause(self, params: dict) -> dict:
+        from tools.meeting import MeetingTools
+        msg = MeetingTools.pause_meeting()
+        self.broadcast_event("meeting_changed", MeetingTools.get_live_state())
+        return {"message": msg, "state": MeetingTools.get_live_state()}
+
+    def _handle_meeting_resume(self, params: dict) -> dict:
+        from tools.meeting import MeetingTools
+        msg = MeetingTools.resume_meeting()
+        self.broadcast_event("meeting_changed", MeetingTools.get_live_state())
+        return {"message": msg, "state": MeetingTools.get_live_state()}
+
+    def _handle_meeting_stop(self, params: dict) -> dict:
+        from tools.meeting import MeetingTools
+        msg = MeetingTools.stop_meeting()
+        self.broadcast_event("meeting_changed", MeetingTools.get_live_state())
+        return {"message": msg, "state": MeetingTools.get_live_state()}
+
+    def _handle_meeting_status(self, params: dict) -> dict:
+        from tools.meeting import MeetingTools
+        return {
+            "speech": MeetingTools.get_meeting_status(),
+            "state": MeetingTools.get_live_state()
+        }
+
+    def _handle_meeting_list(self, params: dict) -> dict:
+        from tools.meeting import MeetingTools
+        return {"meetings": MeetingTools.list_meetings()}
+
+    def _handle_meeting_get(self, params: dict) -> dict:
+        from tools.meeting import MeetingTools
+        session_id = params.get("session_id", "")
+        meeting = MeetingTools.get_meeting(session_id)
+        if not meeting:
+            raise KeyError(f"Reunião com ID '{session_id}' não encontrada.")
+        return {"meeting": meeting}
+
+    def _handle_meeting_delete(self, params: dict) -> dict:
+        from tools.meeting import MeetingTools
+        session_id = params.get("session_id", "")
+        success = MeetingTools.delete_meeting(session_id)
+        self.broadcast_event("meeting_changed", MeetingTools.get_live_state())
+        return {"deleted": success}
+
+    def _handle_get_meeting_config(self, params: dict) -> dict:
+        import config
+        return config.get_meeting_config()
+
+    def _handle_set_meeting_config(self, params: dict) -> dict:
+        import config
+        provider = params.get("provider")
+        storage_dir = params.get("storage_dir")
+        persist = params.get("persist", True)
+        cfg = config.update_meeting_config(provider=provider, storage_dir=storage_dir, persist=persist)
+        self.broadcast_event("meeting_config_updated", cfg)
+        return cfg
 
 
 class IPCManager:

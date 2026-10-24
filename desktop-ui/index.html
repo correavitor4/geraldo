@@ -74,6 +74,11 @@
                 <span class="tab-title">Temporizadores</span>
                 <span id="nav-timers-badge" class="nav-tab-badge hidden">0</span>
             </button>
+            <button class="main-nav-tab" data-view="view-meetings" id="tab-nav-meetings" role="tab" aria-selected="false">
+                <span class="tab-icon">📋</span>
+                <span class="tab-title">Reuniões & Atas</span>
+                <span id="nav-meetings-badge" class="nav-tab-pill hidden">Gravando</span>
+            </button>
             <button class="main-nav-tab" data-view="view-settings" id="tab-nav-settings" role="tab" aria-selected="false">
                 <span class="tab-icon">⚙️</span>
                 <span class="tab-title">Configurações</span>
@@ -594,6 +599,86 @@
 
                             <div id="full-alarms-stream" class="items-list wide-list">
                                 <div class="empty-state">Nenhum alarme configurado.</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ========================================================
+                 ABA: REUNIÕES & ATAS INTELIGENTES (ESCUTA ATIVA)
+                 ======================================================== -->
+            <div id="view-meetings" class="main-view-panel hidden">
+                <div class="meetings-full-container">
+                    <!-- PAINEL DE CONTROLE SUPERIOR -->
+                    <div class="dashboard-card meeting-control-card">
+                        <div class="card-header">
+                            <div>
+                                <h3>🎙️ Escuta Ativa & Atas de Reunião</h3>
+                                <span class="sub-label">Gravação contínua, transcrição em streaming e ata executiva automatizada</span>
+                            </div>
+                            <div class="meeting-provider-toggle-box">
+                                <span class="provider-badge-label">Modo de IA:</span>
+                                <select id="meeting-provider-select" class="provider-dropdown" title="Escolha onde processar a ata">
+                                    <option value="local">🔒 Local (Total Privacidade - Qwen / Whisper)</option>
+                                    <option value="cloud">⚡ Nuvem (Alta Velocidade - Gemini / OpenAI)</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="meeting-live-status-bar" id="meeting-live-status-bar">
+                            <div class="meeting-status-indicator">
+                                <span class="meeting-pulse-dot" id="meeting-pulse-dot"></span>
+                                <span id="meeting-status-text">Pronto para iniciar gravação</span>
+                            </div>
+                            <span id="meeting-timer-display" class="meeting-timer-display">00:00:00</span>
+                        </div>
+
+                        <div class="meeting-inputs-bar">
+                            <input type="text" id="meeting-title-input" placeholder="Título ou Pauta da Reunião (ex: Alinhamento Semanal, Reunião com Cliente)" value="Reunião de Alinhamento">
+                            <div class="meeting-buttons-group">
+                                <button type="button" id="btn-meeting-start" class="btn-action success">▶ Iniciar Reunião</button>
+                                <button type="button" id="btn-meeting-pause" class="btn-action warning hidden">⏸ Pausar</button>
+                                <button type="button" id="btn-meeting-resume" class="btn-action primary hidden">▶ Retomar</button>
+                                <button type="button" id="btn-meeting-stop" class="btn-action danger hidden">⏹ Encerrar e Gerar Ata</button>
+                                <button type="button" id="btn-meeting-refresh" class="btn-action" title="Recarregar histórico de atas">🔄 Atualizar</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- GRID DE DUAS COLUNAS: LISTA DE ATAS E LEITOR DE MARKDOWN -->
+                    <div class="meetings-split-grid">
+                        <!-- COLUNA ESQUERDA: LISTA DE REUNIÕES GRAVADAS -->
+                        <div class="dashboard-card meetings-list-card">
+                            <div class="card-header">
+                                <div>
+                                    <h4>📁 Histórico de Reuniões</h4>
+                                    <span class="sub-label" id="meetings-count-label">0 atas registradas</span>
+                                </div>
+                            </div>
+                            <div id="meetings-cards-list" class="meetings-cards-list">
+                                <div class="empty-state">
+                                    <span>Nenhuma reunião gravada ainda. Inicie sua primeira gravação acima!</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- COLUNA DIREITA: LEITOR DA ATA ATIVA -->
+                        <div class="dashboard-card meeting-viewer-card">
+                            <div class="card-header">
+                                <div>
+                                    <h4 id="meeting-viewer-title">Ata Selecionada</h4>
+                                    <span class="sub-label" id="meeting-viewer-meta">Selecione uma reunião para visualizar o resumo</span>
+                                </div>
+                                <div class="viewer-actions">
+                                    <button type="button" id="btn-copy-meeting-md" class="btn-action small" title="Copiar ata formatada">📋 Copiar Markdown</button>
+                                    <button type="button" id="btn-delete-meeting" class="btn-action small danger" title="Excluir reunião e áudio">🗑️ Excluir</button>
+                                </div>
+                            </div>
+                            <div id="meeting-viewer-content" class="meeting-viewer-content">
+                                <div class="empty-state">
+                                    <span>Clique em uma reunião da lista ao lado para ler o Resumo Executivo, Decisões e Tarefas geradas pela IA.</span>
+                                </div>
                             </div>
                         </div>
                     </div>

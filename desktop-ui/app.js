@@ -162,8 +162,32 @@ class GeraldoDesktopClient {
             fullAlarmLabel: document.getElementById("full-alarm-label"),
             fullAlarmTime: document.getElementById("full-alarm-time"),
             btnQuickOpenSettingsModal: document.getElementById("btn-quick-open-settings-modal"),
-            settingsViewCalBadge: document.getElementById("settings-view-cal-badge")
+            settingsViewCalBadge: document.getElementById("settings-view-cal-badge"),
+            // Elementos de Reuniões e Atas
+            tabNavMeetings: document.getElementById("tab-nav-meetings"),
+            navMeetingsBadge: document.getElementById("nav-meetings-badge"),
+            meetingProviderSelect: document.getElementById("meeting-provider-select"),
+            meetingStatusText: document.getElementById("meeting-status-text"),
+            meetingPulseDot: document.getElementById("meeting-pulse-dot"),
+            meetingTimerDisplay: document.getElementById("meeting-timer-display"),
+            meetingTitleInput: document.getElementById("meeting-title-input"),
+            btnMeetingStart: document.getElementById("btn-meeting-start"),
+            btnMeetingPause: document.getElementById("btn-meeting-pause"),
+            btnMeetingResume: document.getElementById("btn-meeting-resume"),
+            btnMeetingStop: document.getElementById("btn-meeting-stop"),
+            btnMeetingRefresh: document.getElementById("btn-meeting-refresh"),
+            meetingsCountLabel: document.getElementById("meetings-count-label"),
+            meetingsCardsList: document.getElementById("meetings-cards-list"),
+            meetingViewerTitle: document.getElementById("meeting-viewer-title"),
+            meetingViewerMeta: document.getElementById("meeting-viewer-meta"),
+            meetingViewerContent: document.getElementById("meeting-viewer-content"),
+            btnCopyMeetingMd: document.getElementById("btn-copy-meeting-md"),
+            btnDeleteMeeting: document.getElementById("btn-delete-meeting")
         };
+
+        this.meetingsList = [];
+        this.currentSelectedMeeting = null;
+        this.meetingState = { is_active: false, status: "idle", title: "", provider: "local", duration: 0 };
 
         const now = new Date();
         this.currentCalendarYear = now.getFullYear();
@@ -358,6 +382,24 @@ class GeraldoDesktopClient {
             case "audio_config_changed":
                 this.updateAudioDevicesDisplay(data);
                 break;
+
+            case "meeting_changed":
+                this.updateMeetingState(data);
+                this.loadMeetings();
+                break;
+
+            case "meeting_list_updated":
+                if (data && Array.isArray(data.meetings)) {
+                    this.meetingsList = data.meetings;
+                    this.renderMeetingsList();
+                }
+                break;
+
+            case "meeting_config_updated":
+                if (data && data.provider && this.dom.meetingProviderSelect) {
+                    this.dom.meetingProviderSelect.value = data.provider;
+                }
+                break;
         }
     }
 
@@ -390,6 +432,9 @@ class GeraldoDesktopClient {
                 this.updateAudioDevicesDisplay(msg.data);
             } else if (msg.id.startsWith("get_tui_path_status")) {
                 this.updateTuiPathBadge(msg.data);
+            } else if (msg.id.startsWith("meeting_list")) {
+                this.meetingsList = (msg.data && msg.data.meetings) || [];
+                this.renderMeetingsList(this.meetingsList);
             }
         }
     }
@@ -707,6 +752,88 @@ class GeraldoDesktopClient {
                 }
             });
         });
+
+        // Controles de Reuniões e Atas
+        if (this.dom.btnMeetingStart) {
+            this.dom.btnMeetingStart.addEventListener("click", () => {
+                const title = (this.dom.meetingTitleInput && this.dom.meetingTitleInput.value) || "Reunião de Alinhamento";
+                const provider = (this.dom.meetingProviderSelect && this.dom.meetingProviderSelect.value) || "local";
+                this.sendAction("meeting_start", { title, provider }, (ok, data) => {
+                    if (ok && data) {
+                        this.updateMeetingState(data.state);
+                        this.appendSystemMessage(`🎙️ Reunião iniciada: "${title}" (${provider})`);
+                    }
+                });
+            });
+        }
+
+        if (this.dom.btnMeetingPause) {
+            this.dom.btnMeetingPause.addEventListener("click", () => {
+                this.sendAction("meeting_pause", {}, (ok, data) => {
+                    if (ok && data) this.updateMeetingState(data.state);
+                });
+            });
+        }
+
+        if (this.dom.btnMeetingResume) {
+            this.dom.btnMeetingResume.addEventListener("click", () => {
+                this.sendAction("meeting_resume", {}, (ok, data) => {
+                    if (ok && data) this.updateMeetingState(data.state);
+                });
+            });
+        }
+
+        if (this.dom.btnMeetingStop) {
+            this.dom.btnMeetingStop.addEventListener("click", () => {
+                this.sendAction("meeting_stop", {}, (ok, data) => {
+                    if (ok && data) {
+                        this.updateMeetingState(data.state);
+                        this.appendSystemMessage("⏹ Reunião encerrada. A IA está gerando a ata executiva em segundo plano.");
+                        this.loadMeetings();
+                    }
+                });
+            });
+        }
+
+        if (this.dom.btnMeetingRefresh) {
+            this.dom.btnMeetingRefresh.addEventListener("click", () => {
+                this.loadMeetings();
+            });
+        }
+
+        if (this.dom.meetingProviderSelect) {
+            this.dom.meetingProviderSelect.addEventListener("change", (e) => {
+                this.sendAction("set_meeting_config", { provider: e.target.value });
+            });
+        }
+
+        if (this.dom.btnCopyMeetingMd) {
+            this.dom.btnCopyMeetingMd.addEventListener("click", () => {
+                if (this.currentSelectedMeeting) {
+                    const md = (this.currentSelectedMeeting.summary && this.currentSelectedMeeting.summary.raw_markdown) ||
+                               (this.dom.meetingViewerContent && this.dom.meetingViewerContent.innerText) || "";
+                    if (navigator.clipboard) {
+                        navigator.clipboard.writeText(md).then(() => {
+                            this.dom.btnCopyMeetingMd.innerText = "✓ Copiado!";
+                            setTimeout(() => { if (this.dom.btnCopyMeetingMd) this.dom.btnCopyMeetingMd.innerText = "📋 Copiar Markdown"; }, 2000);
+                        });
+                    }
+                }
+            });
+        }
+
+        if (this.dom.btnDeleteMeeting) {
+            this.dom.btnDeleteMeeting.addEventListener("click", () => {
+                if (this.currentSelectedMeeting && confirm(`Deseja excluir a ata da reunião "${this.currentSelectedMeeting.title}"?`)) {
+                    this.sendAction("meeting_delete", { session_id: this.currentSelectedMeeting.session_id }, (ok) => {
+                        if (ok) {
+                            this.currentSelectedMeeting = null;
+                            this.loadMeetings();
+                        }
+                    });
+                }
+            });
+        }
 
         // Planejamento do Pomodoro
         if (this.dom.btnTogglePlanPomo && this.dom.pomoPlanForm) {
@@ -1411,6 +1538,13 @@ class GeraldoDesktopClient {
 
         if (viewId === "view-calendar") {
             this.loadCalendarEvents();
+        } else if (viewId === "view-meetings") {
+            this.loadMeetings();
+            this.sendAction("get_meeting_config", {}, (ok, data) => {
+                if (ok && data && data.provider && this.dom.meetingProviderSelect) {
+                    this.dom.meetingProviderSelect.value = data.provider;
+                }
+            });
         }
     }
 
@@ -2304,6 +2438,197 @@ class GeraldoDesktopClient {
             }
         });
         this.dom.promptInput.value = "";
+    }
+
+    // ==========================================
+    // MÓDULO DE REUNIÕES & ATAS INTELIGENTES
+    // ==========================================
+    loadMeetings() {
+        this.sendAction("meeting_list", {}, (ok, data) => {
+            if (ok && data && Array.isArray(data.meetings)) {
+                this.meetingsList = data.meetings;
+                this.renderMeetingsList(this.meetingsList);
+            }
+        });
+        this.sendAction("meeting_status", {}, (ok, data) => {
+            if (ok && data && data.state) {
+                this.updateMeetingState(data.state);
+            }
+        });
+    }
+
+    renderMeetingsList(meetings) {
+        if (!this.dom.meetingsCardsList) return;
+        if (this.dom.meetingsCountLabel) {
+            this.dom.meetingsCountLabel.innerText = `${meetings.length} atas registradas`;
+        }
+
+        if (!meetings || meetings.length === 0) {
+            this.dom.meetingsCardsList.innerHTML = `
+                <div class="empty-state">
+                    <span>Nenhuma reunião gravada ainda. Inicie sua primeira gravação acima!</span>
+                </div>
+            `;
+            if (this.dom.meetingViewerContent) {
+                this.dom.meetingViewerContent.innerHTML = `
+                    <div class="empty-state">
+                        <span>Clique em uma reunião da lista ao lado para ler o Resumo Executivo e Decisões.</span>
+                    </div>
+                `;
+            }
+            return;
+        }
+
+        this.dom.meetingsCardsList.innerHTML = meetings.map((m) => {
+            const isSel = this.currentSelectedMeeting && this.currentSelectedMeeting.session_id === m.session_id;
+            const dur = Math.round(m.duration_seconds || 0);
+            const mins = Math.floor(dur / 60);
+            const secs = dur % 60;
+            const durStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+            const dateStr = new Date(m.created_at * 1000).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
+            const provIcon = m.provider === "local" ? "🔒 Local" : "⚡ Nuvem";
+            const badgeClass = m.status === "completed" ? "completed" : (m.status === "recording" ? "recording" : "transcribing");
+
+            return `
+                <div class="meeting-card ${isSel ? 'selected' : ''}" data-session-id="${m.session_id}">
+                    <div class="meeting-card-title">${m.title || "Reunião sem título"}</div>
+                    <div class="meeting-card-meta">
+                        <span>📅 ${dateStr}</span>
+                        <span>⏱️ ${durStr}</span>
+                        <span>${provIcon}</span>
+                        <span class="meeting-card-badge ${badgeClass}">${m.status}</span>
+                    </div>
+                </div>
+            `;
+        }).join("");
+
+        this.dom.meetingsCardsList.querySelectorAll(".meeting-card").forEach(card => {
+            card.addEventListener("click", () => {
+                const sid = card.getAttribute("data-session-id");
+                const m = this.meetingsList.find(item => item.session_id === sid);
+                if (m) {
+                    this.currentSelectedMeeting = m;
+                    this.renderMeetingViewer(m);
+                    this.dom.meetingsCardsList.querySelectorAll(".meeting-card").forEach(c => c.classList.remove("selected"));
+                    card.classList.add("selected");
+                }
+            });
+        });
+
+        if (!this.currentSelectedMeeting && meetings.length > 0) {
+            this.currentSelectedMeeting = meetings[0];
+            this.renderMeetingViewer(meetings[0]);
+            const firstCard = this.dom.meetingsCardsList.querySelector(".meeting-card");
+            if (firstCard) firstCard.classList.add("selected");
+        }
+    }
+
+    renderMeetingViewer(m) {
+        if (!this.dom.meetingViewerContent || !m) return;
+        if (this.dom.meetingViewerTitle) this.dom.meetingViewerTitle.innerText = m.title || "Ata de Reunião";
+        if (this.dom.meetingViewerMeta) {
+            const dateStr = new Date(m.created_at * 1000).toLocaleString("pt-BR");
+            this.dom.meetingViewerMeta.innerText = `Data: ${dateStr} • Modo: ${m.provider.toUpperCase()} • Status: ${m.status.toUpperCase()}`;
+        }
+
+        const summary = m.summary;
+        if (summary) {
+            let html = `
+                <div class="meeting-viewer-summary">
+                    <h3 style="color: #38bdf8; margin-top: 0;">📌 Resumo Executivo</h3>
+                    <p style="font-size: 14px; margin-bottom: 16px;">${summary.executive_summary || "Sem resumo."}</p>
+            `;
+
+            if (summary.topics && summary.topics.length > 0) {
+                html += `
+                    <h4 style="color: #93c5fd; margin-bottom: 6px;">💬 Principais Tópicos</h4>
+                    <ul style="padding-left: 20px; margin-bottom: 16px;">
+                        ${summary.topics.map(t => `<li>${t}</li>`).join("")}
+                    </ul>
+                `;
+            }
+
+            if (summary.decisions && summary.decisions.length > 0) {
+                html += `
+                    <h4 style="color: #10b981; margin-bottom: 6px;">✅ Decisões Tomadas</h4>
+                    <ul style="padding-left: 20px; margin-bottom: 16px;">
+                        ${summary.decisions.map(d => `<li>${d}</li>`).join("")}
+                    </ul>
+                `;
+            }
+
+            if (summary.action_items && summary.action_items.length > 0) {
+                html += `
+                    <h4 style="color: #f59e0b; margin-bottom: 8px;">📋 Tarefas e Prazos (Action Items)</h4>
+                    <table>
+                        <thead>
+                            <tr><th>Tarefa</th><th>Responsável</th><th>Prazo</th></tr>
+                        </thead>
+                        <tbody>
+                            ${summary.action_items.map(a => `
+                                <tr>
+                                    <td><strong>${a.task || "-"}</strong></td>
+                                    <td>${a.owner || "A definir"}</td>
+                                    <td>${a.deadline || "A definir"}</td>
+                                </tr>
+                            `).join("")}
+                        </tbody>
+                    </table>
+                `;
+            }
+
+            html += `</div>`;
+            this.dom.meetingViewerContent.innerHTML = html;
+        } else {
+            this.dom.meetingViewerContent.innerHTML = `
+                <div class="empty-state">
+                    <span>Esta reunião está no estado <strong>${m.status}</strong>. O resumo executivo estará disponível assim que o processamento terminar.</span>
+                </div>
+            `;
+        }
+    }
+
+    updateMeetingState(st) {
+        if (!st) return;
+        this.meetingState = st;
+
+        const isRec = st.status === "recording";
+        const isPaused = st.status === "paused";
+        const isProcessing = st.status === "transcribing" || st.status === "analyzing";
+
+        if (this.dom.btnMeetingStart) this.dom.btnMeetingStart.classList.toggle("hidden", isRec || isPaused);
+        if (this.dom.btnMeetingPause) this.dom.btnMeetingPause.classList.toggle("hidden", !isRec);
+        if (this.dom.btnMeetingResume) this.dom.btnMeetingResume.classList.toggle("hidden", !isPaused);
+        if (this.dom.btnMeetingStop) this.dom.btnMeetingStop.classList.toggle("hidden", !(isRec || isPaused));
+
+        if (this.dom.meetingPulseDot) {
+            this.dom.meetingPulseDot.className = "meeting-pulse-dot" + (isRec ? " recording" : (isPaused ? " paused" : (isProcessing ? " processing" : "")));
+        }
+
+        if (this.dom.meetingStatusText) {
+            if (isRec) this.dom.meetingStatusText.innerHTML = `<span style="color: #ef4444;">● Gravando Reunião... (${(st.provider || "LOCAL").toUpperCase()})</span>`;
+            else if (isPaused) this.dom.meetingStatusText.innerHTML = `<span style="color: #f59e0b;">⏸ Reunião Pausada</span>`;
+            else if (st.status === "transcribing") this.dom.meetingStatusText.innerHTML = `<span style="color: #38bdf8;">🔄 Transcrevendo áudio em segundo plano...</span>`;
+            else if (st.status === "analyzing") this.dom.meetingStatusText.innerHTML = `<span style="color: #a855f7;">✨ Analisando e gerando ata executiva com IA...</span>`;
+            else this.dom.meetingStatusText.innerText = "Pronto para iniciar gravação";
+        }
+
+        if (this.dom.navMeetingsBadge) {
+            this.dom.navMeetingsBadge.classList.toggle("hidden", !(isRec || isPaused || isProcessing));
+            if (isRec) {
+                this.dom.navMeetingsBadge.innerText = "Gravando";
+                this.dom.navMeetingsBadge.className = "nav-tab-pill recording";
+            } else if (isPaused) {
+                this.dom.navMeetingsBadge.innerText = "Pausada";
+                this.dom.navMeetingsBadge.className = "nav-tab-pill paused";
+            } else if (st.status === "transcribing") {
+                this.dom.navMeetingsBadge.innerText = "Transcrevendo...";
+                this.dom.navMeetingsBadge.className = "nav-tab-pill processing";
+            } else if (st.status === "analyzing") {
+                this.dom.navMeetingsBadge.innerText = "Gerando Ata...";
+                this.dom.navMeetingsBadge.className = "nav-tab-pill processing";
+            }
+        }
     }
 
     escapeHtml(str) {

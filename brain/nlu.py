@@ -112,6 +112,20 @@ TRAINING_DATA = {
         "próximo ciclo", "próxima pausa", "iniciar pausa", "ir para pausa", "pular fase", "avançar pomodoro", "próxima fase do pomodoro", "próximo pomodoro",
         "parar pomodoro", "cancele o pomodoro", "desative o pomodoro", "zerar pomodoro", "encerrar pomodoro", "parar o foco",
         "status do pomodoro", "quanto tempo falta no pomodoro", "como está o pomodoro"
+    ],
+    "meeting_control": [
+        "iniciar reunião", "inicie a reunião", "começar reunião", "comece a reunião",
+        "iniciar ata", "começar ata", "gravar reunião", "grave a reunião", "iniciar gravação da reunião",
+        "iniciar reunião chamada alinhamento", "iniciar reunião de planejamento", "iniciar reunião com cliente",
+        "iniciar conferência", "inicie a conferência", "começar conferência", "gravar conversa", "grave esta conversa",
+        "gravar áudio da reunião", "registrar ata", "fazer ata", "fazer ata da reunião", "conferência com cliente",
+        "iniciar reunião de conferência", "inicie uma reunião", "inicie gravação",
+        "pausar reunião", "pause a reunião", "pausar gravação da reunião", "congele a reunião", "pausar conferência",
+        "retomar reunião", "retome a reunião", "continuar reunião", "continue a reunião", "despausar reunião", "retomar conferência",
+        "encerrar reunião", "encerre a reunião", "finalizar reunião", "finalize a reunião", "encerrar conferência",
+        "parar reunião", "pare a reunião", "concluir reunião", "conclua a reunião", "fechar conferência",
+        "gerar ata da reunião", "gerar ata", "encerrar e gerar ata", "fechar reunião", "concluir ata",
+        "status da reunião", "como está a reunião", "está gravando a reunião", "reunião está ativa", "status da conferência"
     ]
 }
 
@@ -267,6 +281,25 @@ class IntentEngine:
         if "cronômetro" in norm or "cronometro" in norm:
             if "regressivo" not in norm:
                 return "control_stopwatch"
+
+        # Regras de reunião e ata executiva
+        is_meeting_target = (
+            any(t in norm for t in ["reunião", "reuniao", "conferência", "conferencia", " ata", "ata de", "escuta ativa"])
+            or norm.startswith("ata")
+        )
+        if is_meeting_target:
+            if any(w in norm for w in ["inici", "comec", "começ", "grav", "abr"]):
+                return "meeting_control"
+            if any(w in norm for w in ["paus", "congel"]):
+                return "meeting_control"
+            if any(w in norm for w in ["retom", "continu", "despaus"]):
+                return "meeting_control"
+            if any(w in norm for w in ["encerr", "finaliz", "termin", "conclu", "gerar ata", "parar", "fech"]):
+                return "meeting_control"
+            if any(w in norm for w in ["status", "como está", "como esta", "gravando", "ativa"]):
+                return "meeting_control"
+        elif any(t in norm for t in ["gravar conversa", "gravação da conversa", "gravar o áudio", "gravar o audio", "fazer ata"]):
+            return "meeting_control"
 
         # Regras de pausa e retomada de timer sem colidir com mídia ou cronômetro
         non_timer_targets = ["música", "musica", "som", "reprodução", "reproducao", "cronômetro", "cronometro"]
@@ -684,6 +717,26 @@ class IntentEngine:
                 flags=re.IGNORECASE
             ).strip()
             slots["query"] = q or raw_text.strip(" ?.")
+
+        elif intent == "meeting_control":
+            action = "start"
+            if any(w in norm for w in ["paus", "congel"]):
+                action = "pause"
+            elif any(w in norm for w in ["retom", "continu", "despaus"]):
+                action = "resume"
+            elif any(w in norm for w in ["encerr", "finaliz", "termin", "conclu", "gerar ata", "parar"]):
+                action = "stop"
+            elif any(w in norm for w in ["status", "como está", "como esta", "gravando", "ativa"]):
+                action = "status"
+
+            title = None
+            m_title = re.search(r'\b(?:chamada|chamado|de|sobre)\s+([^,.;]+)', raw_text, flags=re.IGNORECASE)
+            if m_title:
+                cand = m_title.group(1).strip()
+                if cand and len(cand) > 2 and cand.lower() not in ("alinhamento", "reunião", "reuniao", "ata"):
+                    title = cand.strip().title()
+            slots["action"] = action
+            slots["title"] = title
 
         return slots
 

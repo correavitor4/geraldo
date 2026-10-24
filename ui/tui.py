@@ -2,8 +2,16 @@ import asyncio
 import calendar
 import datetime
 import json
+import os
+import sys
 import time
+from pathlib import Path
 from typing import Any, Dict, Optional
+
+# Garante que a raiz do projeto esteja no sys.path mesmo se chamado diretamente como python ui/tui.py
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -114,7 +122,7 @@ Screen {
     text-style: bold;
 }
 
-#tab-pane-chat, #tab-pane-agenda, #tab-pane-pomodoro, #tab-pane-time-tasks, #tab-pane-system {
+#tab-pane-chat, #tab-pane-agenda, #tab-pane-meetings, #tab-pane-pomodoro, #tab-pane-time-tasks, #tab-pane-system {
     padding: 1;
     height: 1fr;
 }
@@ -586,6 +594,60 @@ AudioConfigModal {
 
 #input-audio-mic:focus, #input-audio-out:focus {
     border: tall #38bdf8;
+}
+
+#meetings-pane {
+    height: 100%;
+}
+
+#meeting-top-bar {
+    height: 3;
+    align: center middle;
+    margin-bottom: 1;
+}
+
+#meeting-top-bar Button {
+    margin: 0 1;
+    min-width: 12;
+    height: 3;
+}
+
+#meeting-status-label {
+    height: 1;
+    margin-bottom: 1;
+    color: #38bdf8;
+    text-align: center;
+}
+
+#meeting-content-container {
+    height: 1fr;
+}
+
+#meetings-list-pane {
+    width: 38%;
+    height: 100%;
+    border-right: solid #1f2937;
+    padding-right: 1;
+}
+
+#meetings-list-log {
+    height: 1fr;
+    background: #0f172a;
+    border: round #1e293b;
+    padding: 1;
+}
+
+#meeting-viewer-pane {
+    width: 62%;
+    height: 100%;
+    padding-left: 1;
+}
+
+#meeting-viewer-log {
+    height: 1fr;
+    background: #0f172a;
+    border: round #1e293b;
+    padding: 1;
 }
 """
 
@@ -1135,6 +1197,9 @@ class GeraldoTUI(App):
         self._send_queue: asyncio.Queue = asyncio.Queue()
         self._ws_worker_task = None
         self._last_user_prompt = None
+        self._meeting_state: dict = {"is_active": False, "status": "idle", "title": "", "provider": "local", "duration": 0.0}
+        self._meetings_list: list = []
+        self._meeting_provider: str = "local"
 
     def compose(self) -> ComposeResult:
         from core.paths import get_token_path
@@ -1175,6 +1240,26 @@ class GeraldoTUI(App):
                             with Vertical(id="cal-events-pane"):
                                 yield Label("📋 PRÓXIMOS COMPROMISSOS", classes="card-title")
                                 yield RichLog(id="cal-events-log", highlight=True, markup=True, wrap=True)
+
+                with TabPane("📋 Atas & Reuniões", id="tab-pane-meetings"):
+                    with Vertical(id="meetings-pane"):
+                        with Horizontal(id="meeting-top-bar"):
+                            yield Button("▶ Iniciar", id="btn-meeting-start", variant="success")
+                            yield Button("⏸ Pausar", id="btn-meeting-pause", variant="warning")
+                            yield Button("▶ Retomar", id="btn-meeting-resume", variant="primary")
+                            yield Button("⏹ Encerrar e Gerar Ata", id="btn-meeting-stop", variant="error")
+                            yield Button("🔄 Atualizar", id="btn-meeting-refresh", variant="default")
+                            yield Button("🔒 Modo: Local", id="btn-meeting-provider-toggle", variant="default")
+
+                        yield Label("Status: Nenhuma reunião ativa. Clique em [Iniciar] para começar.", id="meeting-status-label")
+
+                        with Horizontal(id="meeting-content-container"):
+                            with Vertical(id="meetings-list-pane"):
+                                yield Label("📁 HISTÓRICO DE REUNIÕES", classes="card-title")
+                                yield RichLog(id="meetings-list-log", highlight=True, markup=True, wrap=True)
+                            with Vertical(id="meeting-viewer-pane"):
+                                yield Label("📋 LEITOR DA ATA EXECUTIVA (MARKDOWN)", classes="card-title")
+                                yield RichLog(id="meeting-viewer-log", highlight=True, markup=True, wrap=True)
 
                 with TabPane("🍅 Pomodoro", id="tab-pane-pomodoro"):
                     with Vertical(classes="side-card", id="pomo-pane"):
@@ -1245,6 +1330,8 @@ class GeraldoTUI(App):
 
         self.update_calendar_grid()
         self.update_calendar_events_display()
+        self.update_meeting_display()
+        self.update_meetings_list_display()
 
         from core.paths import get_token_path
         if self.auto_connect and get_token_path().exists():
@@ -1266,6 +1353,8 @@ class GeraldoTUI(App):
                     self.send_action("get_config")
                     self.send_action("check_calendar")
                     self.send_action("get_calendar_events")
+                    self.send_action("meeting_status")
+                    self.send_action("meeting_list")
 
                     # Autenticação se houver token
                     if self.token:
@@ -1398,6 +1487,24 @@ class GeraldoTUI(App):
             self.send_action("check_calendar")
             self.send_action("get_calendar_events")
 
+        elif event_name == "meeting_changed":
+            self._meeting_state = data or {}
+            self.update_meeting_display()
+            self.send_action("meeting_list")
+
+        elif event_name == "meeting_list_updated":
+            if isinstance(data, dict) and "meetings" in data:
+                self._meetings_list = data.get("meetings", [])
+                self.update_meetings_list_display()
+
+        elif event_name == "meeting_config_updated":
+            self._meeting_provider = data.get("provider", self._meeting_provider)
+            try:
+                btn = self.query_one("#btn-meeting-provider-toggle", Button)
+                btn.label = "⚡ Modo: Nuvem" if self._meeting_provider == "cloud" else "🔒 Modo: Local"
+            except Exception:
+                pass
+
         elif event_name == "cancelled":
             chat.write("[bold yellow]⚡ Ação / som cancelado.[/]")
 
@@ -1463,6 +1570,20 @@ class GeraldoTUI(App):
                 else:
                     msg = data.get("message", "Falha na autenticação.")
                     chat.write(f"[bold red]❌ {msg}[/]")
+            elif (req_s.startswith("meeting_list") or act == "meeting_list") and isinstance(data, dict):
+                self._meetings_list = data.get("meetings", [])
+                self.update_meetings_list_display()
+            elif (req_s.startswith("meeting_start") or act == "meeting_start") and isinstance(data, dict):
+                self._meeting_state = data.get("state", {})
+                self.update_meeting_display()
+                self.send_action("meeting_list")
+            elif (req_s.startswith("meeting_stop") or act == "meeting_stop") and isinstance(data, dict):
+                self._meeting_state = data.get("state", {})
+                self.update_meeting_display()
+                self.send_action("meeting_list")
+            elif (req_s.startswith("meeting_status") or act == "meeting_status") and isinstance(data, dict):
+                self._meeting_state = data.get("state", {})
+                self.update_meeting_display()
         else:
             chat.write(f"[bold red]❌ Erro no comando:[/] {error or 'Falha desconhecida'}")
 
@@ -1605,6 +1726,109 @@ class GeraldoTUI(App):
                 lines.append(f"⏰ [bold yellow]{a.get('label', 'Alarme')}:[/] {a.get('time', '--:--')} ({status})")
             alarms_box.update("\n".join(lines))
 
+    def update_meeting_display(self) -> None:
+        """Atualiza a barra de status e botões de gravação da reunião na aba Atas & Reuniões."""
+        try:
+            lbl = self.query_one("#meeting-status-label", Label)
+            btn_start = self.query_one("#btn-meeting-start", Button)
+            btn_pause = self.query_one("#btn-meeting-pause", Button)
+            btn_resume = self.query_one("#btn-meeting-resume", Button)
+            btn_stop = self.query_one("#btn-meeting-stop", Button)
+            btn_prov = self.query_one("#btn-meeting-provider-toggle", Button)
+
+            prov_mode = getattr(self, "_meeting_provider", "local")
+            btn_prov.label = "🔒 Modo: Local" if prov_mode == "local" else "⚡ Modo: Nuvem"
+
+            st = getattr(self, "_meeting_state", {})
+            if st.get("is_active"):
+                status_val = st.get("status", "recording")
+                dur = int(st.get("duration", 0))
+                mins = dur // 60
+                secs = dur % 60
+                t_str = f"{mins:02d}:{secs:02d}"
+                prov = "🔒 Local" if st.get("provider", prov_mode) == "local" else "⚡ Nuvem"
+                title = st.get("title") or "Reunião"
+
+                btn_start.display = False
+                btn_stop.display = True
+
+                if status_val == "paused":
+                    btn_pause.display = False
+                    btn_resume.display = True
+                    lbl.update(f"Status: [bold yellow]⏸ REUNIÃO PAUSADA[/] ({t_str}) - Modo {prov} - '{title}'")
+                else:
+                    btn_pause.display = True
+                    btn_resume.display = False
+                    lbl.update(f"Status: [bold green]● GRAVANDO REUNIÃO[/] ({t_str}) - Modo {prov} - '{title}'")
+            else:
+                btn_start.display = True
+                btn_pause.display = False
+                btn_resume.display = False
+                btn_stop.display = False
+
+                status_val = st.get("status", "idle")
+                if status_val == "transcribing":
+                    lbl.update("Status: [bold cyan]🔄 Transcrevendo gravação em segundo plano...[/]")
+                elif status_val == "analyzing":
+                    lbl.update("Status: [bold magenta]✨ Analisando transcrição e gerando ata executiva com IA...[/]")
+                else:
+                    lbl.update("Status: [dim]Nenhuma reunião ativa. Clique em [▶ Iniciar] para começar a gravação.[/]")
+        except Exception:
+            pass
+
+    def update_meetings_list_display(self) -> None:
+        """Renderiza a lista de reuniões salvas e exibe a última ata no leitor Markdown."""
+        try:
+            list_log = self.query_one("#meetings-list-log", RichLog)
+            viewer_log = self.query_one("#meeting-viewer-log", RichLog)
+            list_log.clear()
+
+            meetings = getattr(self, "_meetings_list", [])
+            if not meetings:
+                list_log.write("[dim italic]Nenhuma reunião gravada ainda.[/]")
+                viewer_log.clear()
+                viewer_log.write("[dim italic]As atas executivas geradas aparecerão aqui formatadas em Markdown.[/]")
+                return
+
+            import os
+            for idx, meet in enumerate(meetings):
+                title = meet.get("title", "Reunião")
+                status = meet.get("status", "completed")
+                dur = int(meet.get("duration_seconds", 0))
+                mins = dur // 60
+                secs = dur % 60
+                t_str = f"{mins}m {secs}s" if mins > 0 else f"{secs}s"
+                date_str = time.strftime("%d/%m/%Y %H:%M", time.localtime(meet.get("created_at", time.time())))
+                prov = "🔒 Local" if meet.get("provider") == "local" else "⚡ Nuvem"
+                status_badge = "[bold green]✓ Concluída[/]" if status == "completed" else f"[bold yellow]{status}[/]"
+
+                list_log.write(f"[bold cyan]#{idx+1} {title}[/]")
+                list_log.write(f"  📅 {date_str} | ⏱️ {t_str} | {prov} | {status_badge}")
+                list_log.write("[dim]────────────────────────────────────────[/]")
+
+            # Exibe a ata mais recente no leitor
+            latest = meetings[0]
+            summary = latest.get("summary")
+            viewer_log.clear()
+            if summary and isinstance(summary, dict):
+                viewer_log.write(f"[bold cyan]# 📋 Ata: {summary.get('title', latest.get('title'))}[/]\n")
+                viewer_log.write(f"[bold]Data:[/] {summary.get('date', '')}\n")
+                viewer_log.write(f"[bold yellow]📌 Resumo Executivo:[/]\n{summary.get('executive_summary', '')}\n")
+                viewer_log.write("[bold green]✅ Decisões Tomadas:[/]")
+                for dec in summary.get("decisions", []):
+                    viewer_log.write(f"  • {dec}")
+                viewer_log.write("\n[bold magenta]📋 Ações e Prazos:[/]")
+                for act in summary.get("action_items", []):
+                    viewer_log.write(f"  • [bold]{act.get('task')}[/] (Resp: {act.get('owner')}, Prazo: {act.get('deadline')})")
+            elif latest.get("output_markdown_path") and os.path.exists(latest["output_markdown_path"]):
+                try:
+                    with open(latest["output_markdown_path"], "r", encoding="utf-8") as f:
+                        viewer_log.write(f.read())
+                except Exception:
+                    viewer_log.write("[dim italic]Não foi possível ler o arquivo de ata.[/]")
+        except Exception:
+            pass
+
     # ==========================================
     # EVENTOS DE INTERAÇÃO DO USUÁRIO
     # ==========================================
@@ -1702,6 +1926,36 @@ class GeraldoTUI(App):
         elif button_id == "btn-system-ollama-cfg":
             self.action_open_ollama_settings()
 
+        elif button_id == "btn-meeting-start":
+            self.send_action("meeting_start", {"title": "Reunião de Alinhamento", "provider": self._meeting_provider})
+            chat = self.query_one("#chat-log", RichLog)
+            chat.write("[bold green]🎙️ Iniciando gravação da reunião...[/]\n")
+
+        elif button_id == "btn-meeting-pause":
+            self.send_action("meeting_pause", {})
+
+        elif button_id == "btn-meeting-resume":
+            self.send_action("meeting_resume", {})
+
+        elif button_id == "btn-meeting-stop":
+            self.send_action("meeting_stop", {})
+            chat = self.query_one("#chat-log", RichLog)
+            chat.write("[bold yellow]⏹ Reunião encerrada. Processando ata executiva em segundo plano...[/]\n")
+
+        elif button_id == "btn-meeting-refresh":
+            self.send_action("meeting_list", {})
+            self.send_action("meeting_status", {})
+
+        elif button_id == "btn-meeting-provider-toggle":
+            new_prov = "cloud" if self._meeting_provider == "local" else "local"
+            self._meeting_provider = new_prov
+            try:
+                btn = self.query_one("#btn-meeting-provider-toggle", Button)
+                btn.label = "⚡ Modo: Nuvem" if new_prov == "cloud" else "🔒 Modo: Local"
+            except Exception:
+                pass
+            self.send_action("set_meeting_config", {"provider": new_prov})
+
     # ==========================================
     # AÇÕES DOS ATALHOS DE TECLADO E CALENDÁRIO
     # ==========================================
@@ -1763,9 +2017,15 @@ class GeraldoTUI(App):
 
     def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated) -> None:
         """Disparado quando uma aba do Textual é ativada."""
-        if getattr(event.pane, "id", "") == "tab-pane-agenda":
+        pane_id = getattr(event.pane, "id", "")
+        if pane_id == "tab-pane-agenda":
             self.update_calendar_grid()
             self.update_calendar_events_display()
+        elif pane_id == "tab-pane-meetings":
+            self.update_meeting_display()
+            self.update_meetings_list_display()
+            self.send_action("meeting_status", {})
+            self.send_action("meeting_list", {})
 
     def update_calendar_events_display(self) -> None:
         try:

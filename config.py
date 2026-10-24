@@ -230,6 +230,38 @@ def update_google_oauth_config(client_id: str = None, client_secret: str = None,
 
     return get_google_oauth_config()
 
+# Configuração de Escuta Ativa e Atas de Reuniões (Híbrido: Local vs Nuvem)
+MEETING_PROVIDER = os.getenv(
+    "MEETING_PROVIDER",
+    _user_settings.get("meeting_provider", "local")
+).lower()
+MEETING_STORAGE_DIR = os.getenv(
+    "MEETING_STORAGE_DIR",
+    _user_settings.get("meeting_storage_dir", os.path.expanduser("~/Geraldo/reunioes"))
+)
+
+def get_meeting_config() -> dict:
+    return {
+        "provider": MEETING_PROVIDER,
+        "storage_dir": MEETING_STORAGE_DIR,
+        "supported_providers": ["local", "cloud"],
+    }
+
+def update_meeting_config(provider: str = None, storage_dir: str = None, persist: bool = True) -> dict:
+    global MEETING_PROVIDER, MEETING_STORAGE_DIR
+    if provider:
+        p_clean = provider.strip().lower()
+        if p_clean in ("local", "cloud"):
+            MEETING_PROVIDER = p_clean
+    if storage_dir:
+        MEETING_STORAGE_DIR = os.path.abspath(os.path.expanduser(storage_dir.strip()))
+    if persist:
+        save_settings({
+            "meeting_provider": MEETING_PROVIDER,
+            "meeting_storage_dir": MEETING_STORAGE_DIR,
+        })
+    return get_meeting_config()
+
 # Parâmetros de Áudio
 SAMPLE_RATE = 16000
 CHUNK_SIZE = 512

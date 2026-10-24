@@ -39,6 +39,8 @@ class SpeechToText:
         self.vocab_prompt = (
             "Geraldo, assistente virtual. Que horas são, previsão do tempo, clima, "
             "agenda do Google, compromissos, timer, alarme, tocar música, YouTube Music, "
+            "reunião, ata, ata executiva, gravar reunião, iniciar reunião, pausar reunião, "
+            "retomar reunião, encerrar reunião, gerar ata, pauta da reunião, conferência, "
             "Anápolis Goiás."
         )
 

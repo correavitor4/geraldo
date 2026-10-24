@@ -1283,6 +1283,69 @@ async def test_tui_calendar_new_event_modal_flow():
         assert msg["params"]["duration_minutes"] == 45
 
 
+@pytest.mark.anyio
+async def test_tui_meetings_tab_and_button_actions():
+    """Valida widgets da aba de reuniões, alternância de provedor e envio de ações de gravação."""
+    app = GeraldoTUI(auto_connect=False)
+    async with app.run_test(size=(160, 50)) as pilot:
+        # 1. Verifica presença dos widgets
+        assert app.query_one("#meetings-pane") is not None
+        assert app.query_one("#meeting-status-label", Label) is not None
+        assert app.query_one("#btn-meeting-start", Button) is not None
+        assert app.query_one("#btn-meeting-pause", Button) is not None
+        assert app.query_one("#btn-meeting-resume", Button) is not None
+        assert app.query_one("#btn-meeting-stop", Button) is not None
+        assert app.query_one("#btn-meeting-provider-toggle", Button) is not None
+        assert app.query_one("#btn-meeting-refresh", Button) is not None
+
+        # 2. Testa alternar provedor (Local -> Nuvem)
+        btn_provider = app.query_one("#btn-meeting-provider-toggle", Button)
+        btn_provider.press()
+        await pilot.pause(0.05)
+        assert app._meeting_provider == "cloud"
+        assert app._send_queue.qsize() == 1
+        msg_cfg = json.loads(await app._send_queue.get())
+        assert msg_cfg["action"] == "set_meeting_config"
+        assert msg_cfg["params"]["provider"] == "cloud"
+
+        # 3. Testa iniciar reunião
+        app.query_one("#btn-meeting-start", Button).press()
+        await pilot.pause(0.05)
+
+        assert app._send_queue.qsize() == 1
+        msg_start = json.loads(await app._send_queue.get())
+        assert msg_start["action"] == "meeting_start"
+        assert msg_start["params"]["title"] == "Reunião de Alinhamento"
+
+        # 4. Testa atualização do display de estado da reunião
+        app._meeting_state = {
+            "is_active": True,
+            "status": "recording",
+            "title": "Alinhamento de Sprint",
+            "duration": 42.0,
+            "session_id": "test-meet-1"
+        }
+        app.update_meeting_display()
+        status_lbl = app.query_one("#meeting-status-label", Label)
+        assert "GRAVANDO" in str(status_lbl.render())
+        assert "00:42" in str(status_lbl.render())
+
+        # 5. Testa listagem de atas
+        sessions = [
+            {
+                "id": "sess-1",
+                "title": "Ata Semanal",
+                "started_at": "2026-10-22T10:00:00",
+                "status": "completed",
+                "markdown_path": "/tmp/ata.md"
+            }
+        ]
+        app._meetings_list = sessions
+        app.update_meetings_list_display()
+        assert len(app._meetings_list) == 1
+
+
+
 
 
 

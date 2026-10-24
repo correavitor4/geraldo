@@ -4,6 +4,8 @@ set -e
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 cd "$DIR"
 
+export PYTHONPATH="$DIR:${PYTHONPATH:-}"
+
 # 1. Garante que o serviço do Geraldo esteja rodando se disponível
 if command -v systemctl >/dev/null 2>&1; then
     if ! systemctl --user is-active --quiet geraldo.service; then

@@ -115,6 +115,28 @@ def test_html_all_critical_dom_elements():
         "cfg-llm-model",
         "test-result-box",
         "specs-llm-text",
+        # Atas e Reuniões (Escuta Ativa)
+        "tab-nav-meetings",
+        "nav-meetings-badge",
+        "view-meetings",
+        "meeting-provider-select",
+        "meeting-live-status-bar",
+        "meeting-pulse-dot",
+        "meeting-status-text",
+        "meeting-timer-display",
+        "meeting-title-input",
+        "btn-meeting-start",
+        "btn-meeting-pause",
+        "btn-meeting-resume",
+        "btn-meeting-stop",
+        "btn-meeting-refresh",
+        "meetings-count-label",
+        "meetings-cards-list",
+        "meeting-viewer-title",
+        "meeting-viewer-meta",
+        "btn-copy-meeting-md",
+        "btn-delete-meeting",
+        "meeting-viewer-content",
     ]
 
     for elem_id in required_ids:
@@ -1164,6 +1186,112 @@ async def test_desktop_gui_calendar_ipc_integration(monkeypatch):
             assert resp.get("data", {}).get("status") == "error"
     finally:
         server.stop()
+
+
+# ==========================================
+# TESTES DE REUNIÕES & ESCUTA ATIVA
+# ==========================================
+
+def test_html_meetings_panel_structure():
+    """Valida a estrutura do painel de Atas & Reuniões no HTML."""
+    with open(HTML_PATH, "r", encoding="utf-8") as f:
+        html = f.read()
+
+    assert 'id="view-meetings"' in html
+    assert 'id="tab-nav-meetings"' in html
+    assert 'id="meeting-provider-select"' in html
+    assert '<option value="local">' in html
+    assert '<option value="cloud">' in html
+    assert 'id="meeting-title-input"' in html
+    assert 'id="btn-meeting-start"' in html
+    assert 'id="btn-meeting-pause"' in html
+    assert 'id="btn-meeting-resume"' in html
+    assert 'id="btn-meeting-stop"' in html
+    assert 'id="btn-meeting-refresh"' in html
+    assert 'id="meetings-cards-list"' in html
+    assert 'id="meeting-viewer-content"' in html
+
+
+def test_css_meetings_styles_defined():
+    """Valida se as classes CSS de reuniões estão presentes no styles.css."""
+    with open(CSS_PATH, "r", encoding="utf-8") as f:
+        css = f.read()
+
+    assert ".meetings-full-container" in css
+    assert ".meeting-live-status-bar" in css
+    assert ".meeting-pulse-dot" in css
+    assert ".meetings-split-grid" in css
+    assert ".meeting-card" in css
+    assert ".meeting-viewer-card" in css
+
+
+@pytest.mark.anyio
+async def test_ipc_meeting_websocket_flow(monkeypatch, tmp_path):
+    """Valida ciclo de vida de reuniões via IPC WebSocket: config, status e list."""
+    from tools.meeting import MeetingTools
+    from config import update_meeting_config
+
+    # Mock storage em diretório temporário sem poluir settings.json do usuário
+    test_dir = str(tmp_path / "geraldo_reunioes_test")
+    update_meeting_config(provider="local", storage_dir=test_dir, persist=False)
+
+    server = GeraldoIPCServer(host=TEST_GUI_IPC_HOST, port=8802)
+    server.start()
+    await asyncio.sleep(0.1)
+
+    async def recv_resp(ws, req_id, timeout=3.0):
+        t0 = asyncio.get_event_loop().time()
+        while asyncio.get_event_loop().time() - t0 < timeout:
+            msg_raw = await asyncio.wait_for(ws.recv(), timeout=1.5)
+            data = json.loads(msg_raw)
+            if data.get("type") == "response" and data.get("id") == req_id:
+                return data
+        return {}
+
+    try:
+        async with connect(f"ws://{TEST_GUI_IPC_HOST}:8802") as ws:
+            # 1. get_meeting_config
+            await ws.send(json.dumps({
+                "id": "meet-cfg-1",
+                "action": "get_meeting_config"
+            }))
+            resp = await recv_resp(ws, "meet-cfg-1")
+            assert resp.get("status") == "ok"
+            assert resp.get("data", {}).get("provider") == "local"
+
+            # 2. set_meeting_config para 'cloud' com persist=False
+            await ws.send(json.dumps({
+                "id": "meet-cfg-2",
+                "action": "set_meeting_config",
+                "params": {"provider": "cloud", "persist": False}
+            }))
+            resp = await recv_resp(ws, "meet-cfg-2")
+            assert resp.get("status") == "ok"
+            assert resp.get("data", {}).get("provider") == "cloud"
+
+            # 3. meeting_status
+            await ws.send(json.dumps({
+                "id": "meet-status-1",
+                "action": "meeting_status"
+            }))
+            resp = await recv_resp(ws, "meet-status-1")
+            assert resp.get("status") == "ok"
+            status_data = resp.get("data", {})
+            assert "state" in status_data
+            assert status_data["state"]["status"] == "idle"
+
+            # 4. meeting_list
+            await ws.send(json.dumps({
+                "id": "meet-list-1",
+                "action": "meeting_list"
+            }))
+            resp = await recv_resp(ws, "meet-list-1")
+            assert resp.get("status") == "ok"
+            assert "meetings" in resp.get("data", {})
+            assert isinstance(resp["data"]["meetings"], list)
+    finally:
+        server.stop()
+
 
 
 

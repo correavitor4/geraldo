@@ -18,6 +18,7 @@ from tools.timer import TimerManager
 from tools.calendar import CalendarTools
 from tools.hyprland import HyprlandTools
 from tools.waybar import WaybarTools
+from tools.meeting import MeetingTools
 
 # num_ctx fixo para todas as chamadas: o Ollama recarrega o modelo se o contexto mudar entre requisições.
 # 2048 comporta o prompt do roteador (lista de comandos) + histórico curto.
@@ -60,6 +61,10 @@ LLM_ROUTES = {
         "target": None,
     }),
     "restart_waybar": ("reiniciar a waybar", {}),
+    "meeting_control": ("iniciar, pausar, retomar, encerrar gravação de reunião ou ver status da ata", {
+        "action": {"start", "pause", "resume", "stop", "status"},
+        "title": None,
+    }),
 }
 
 # Validação extra de formato para campos livres sensíveis
@@ -576,6 +581,20 @@ class BrainLLM:
             action = slots.pop("action", "start")
             res = TimerManager.pomodoro_control(action, **slots)
             return clean_for_speech(str(res))
+
+        if intent == "meeting_control":
+            action = slots.get("action", "start")
+            title = slots.get("title")
+            if action == "pause":
+                return clean_for_speech(MeetingTools.pause_meeting())
+            elif action == "resume":
+                return clean_for_speech(MeetingTools.resume_meeting())
+            elif action == "stop":
+                return clean_for_speech(MeetingTools.stop_meeting(speak_fn=self._do_speak_sync))
+            elif action == "status":
+                return clean_for_speech(MeetingTools.get_meeting_status())
+            else:
+                return clean_for_speech(MeetingTools.start_meeting(title=title))
 
 
         if intent == "hyprland_control":

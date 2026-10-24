@@ -12,4 +12,6 @@ if [ ! -f "$VENV_PYTHON" ]; then
     exit 1
 fi
 
+export PYTHONPATH="$DIR:${PYTHONPATH:-}"
+
 exec "$VENV_PYTHON" ui/tui.py "$@"

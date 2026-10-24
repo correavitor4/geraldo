@@ -6,6 +6,12 @@ import os
 import sys
 import time
 import shutil
+from pathlib import Path
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 from core.paths import get_base_dir
 from core.ipc import IPCManager
 
