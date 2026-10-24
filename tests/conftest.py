@@ -1,7 +1,27 @@
 import pytest
 import os
+import sys
 import tempfile
 import shutil
+from unittest.mock import MagicMock
+
+# Proteção para ambientes de CI headless onde PortAudio / PulseAudio não possuem servidor ativo
+try:
+    import sounddevice as sd
+except Exception:
+    mock_sd = MagicMock()
+    mock_sd.query_devices.return_value = []
+    mock_sd.default = MagicMock()
+    mock_sd.default.device = [0, 0]
+    mock_sd.default.samplerate = 16000
+    mock_sd.default.channels = 1
+    mock_sd.InputStream = MagicMock
+    mock_sd.OutputStream = MagicMock
+    mock_sd.play = MagicMock()
+    mock_sd.wait = MagicMock()
+    mock_sd.stop = MagicMock()
+    sys.modules["sounddevice"] = mock_sd
+
 from brain.nlu import IntentEngine
 from tools.timer import TimerManager
 
