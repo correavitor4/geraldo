@@ -60,6 +60,43 @@ class TestSpeechToText:
         assert stt.transcribe(None) == ""
         assert stt.transcribe(np.array([])) == ""
 
+    @patch("brain.stt.WhisperModel")
+    def test_transcribe_vad_failure_fallback(self, mock_whisper):
+        stt = SpeechToText()
+        stt._vad_available = True
+        
+        # Simula falha na chamada com vad_filter=True e sucesso na chamada com vad_filter=False
+        seg = MagicMock(text="Comando executado com sucesso")
+        def mock_transcribe(*args, **kwargs):
+            if kwargs.get("vad_filter") is True:
+                raise RuntimeError("Silero VAD model missing")
+            return ([seg], None)
+        
+        stt.model_cmd.transcribe.side_effect = mock_transcribe
+        fake_audio = np.ones(16000, dtype=np.float32)
+        res = stt.transcribe(fake_audio)
+        assert res == "Comando executado com sucesso"
+        assert stt._vad_available is False
+
+    @patch("brain.stt.WhisperModel")
+    def test_transcribe_quick_vad_failure_fallback(self, mock_whisper):
+        stt = SpeechToText()
+        stt._vad_available = True
+        
+        seg = MagicMock(text="Geraldo bom dia")
+        seg.no_speech_prob = 0.1
+        seg.avg_logprob = -0.5
+        def mock_transcribe(*args, **kwargs):
+            if kwargs.get("vad_filter") is True:
+                raise RuntimeError("Silero VAD model missing")
+            return ([seg], None)
+        
+        stt.model_wake.transcribe.side_effect = mock_transcribe
+        fake_audio = np.ones(16000, dtype=np.float32)
+        res = stt.transcribe_quick(fake_audio)
+        assert "geraldo" in res
+        assert stt._vad_available is False
+
 class TestTextToSpeech:
     def test_init_model_not_found(self):
         with pytest.raises(FileNotFoundError):

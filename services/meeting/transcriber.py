@@ -69,27 +69,47 @@ class LocalMeetingTranscriber(MeetingTranscriber):
         except Exception:
             audio_input = audio_path
 
-        segments_gen, _ = model.transcribe(
-            audio_input,
-            language=self.language,
-            beam_size=2,
-            temperature=0.0,
-            vad_filter=True,
-            vad_parameters=dict(min_silence_duration_ms=500),
-        )
-
-        segments = []
-        for s in segments_gen:
-            text = s.text.strip()
-            if text:
-                segments.append(
-                    MeetingSegment(
-                        start=float(s.start),
-                        end=float(s.end),
-                        text=text,
+        try:
+            segments_gen, _ = model.transcribe(
+                audio_input,
+                language=self.language,
+                beam_size=2,
+                temperature=0.0,
+                vad_filter=True,
+                vad_parameters=dict(min_silence_duration_ms=500),
+            )
+            segments = []
+            for s in segments_gen:
+                text = s.text.strip()
+                if text:
+                    segments.append(
+                        MeetingSegment(
+                            start=float(s.start),
+                            end=float(s.end),
+                            text=text,
+                        )
                     )
-                )
-        return segments
+            return segments
+        except Exception:
+            segments_gen, _ = model.transcribe(
+                audio_input,
+                language=self.language,
+                beam_size=2,
+                temperature=0.0,
+                vad_filter=False,
+            )
+            segments = []
+            for s in segments_gen:
+                text = s.text.strip()
+                if text:
+                    segments.append(
+                        MeetingSegment(
+                            start=float(s.start),
+                            end=float(s.end),
+                            text=text,
+                        )
+                    )
+            return segments
 
 
 class CloudMeetingTranscriber(MeetingTranscriber):

@@ -80,9 +80,21 @@ def build_sidecar(target_triple: str = None, dry_run: bool = False) -> Path:
     # Verifica se pyinstaller está disponível
     has_pyinstaller = shutil.which("pyinstaller") is not None
     if not has_pyinstaller:
-        venv_pyinstaller = REPO_ROOT / "venv" / "bin" / "pyinstaller"
-        if venv_pyinstaller.exists():
-            has_pyinstaller = True
+        try:
+            res = subprocess.run([sys.executable, "-m", "PyInstaller", "--version"], capture_output=True, text=True)
+            if res.returncode == 0:
+                has_pyinstaller = True
+        except Exception:
+            pass
+    if not has_pyinstaller:
+        for vp in [
+            REPO_ROOT / "venv" / "bin" / "pyinstaller",
+            REPO_ROOT / "venv" / "Scripts" / "pyinstaller.exe",
+            Path(sys.executable).parent / "Scripts" / "pyinstaller.exe",
+        ]:
+            if vp.exists():
+                has_pyinstaller = True
+                break
 
     host_system = platform.system().lower()
     target_system = "windows" if "windows" in triple else ("darwin" if ("darwin" in triple or "apple" in triple) else "linux")
@@ -142,6 +154,16 @@ def build_sidecar(target_triple: str = None, dry_run: bool = False) -> Path:
             m_path = REPO_ROOT / model_name
             if m_path.exists():
                 cmd.extend(["--add-data", f"{m_path}{os.pathsep}."])
+        # Coleta assets e arquivos de dados do faster_whisper (incluindo silero_vad_v6.onnx)
+        cmd.extend(["--collect-data", "faster_whisper"])
+        try:
+            import faster_whisper.vad as fw_vad
+            fw_assets = Path(fw_vad.get_assets_path())
+            if fw_assets.exists():
+                cmd.extend(["--add-data", f"{fw_assets}{os.pathsep}faster_whisper{os.sep}assets"])
+        except Exception:
+            pass
+
         assets_dir = REPO_ROOT / "assets"
         if assets_dir.exists():
             cmd.extend(["--add-data", f"{assets_dir}{os.pathsep}assets"])
@@ -159,6 +181,15 @@ def build_sidecar(target_triple: str = None, dry_run: bool = False) -> Path:
             if src_binary.exists():
                 shutil.copy2(src_binary, dest_path)
                 print(f"[Build Sidecar] Sucesso! Binário congelado copiado para: {dest_path}")
+                local_appdata = os.getenv("LOCALAPPDATA")
+                if local_appdata:
+                    local_inst = Path(local_appdata) / "Geraldo" / ("geraldo-core.exe" if is_windows else "geraldo-core")
+                    if local_inst.parent.exists():
+                        try:
+                            shutil.copy2(src_binary, local_inst)
+                            print(f"[Build Sidecar] Binário atualizado na instalação local: {local_inst}")
+                        except Exception as e:
+                            print(f"[Build Sidecar] Aviso ao atualizar binário local: {e}")
                 return dest_path
         except Exception as e:
             if (os.getenv("CI") == "true" or os.getenv("GITHUB_ACTIONS") == "true") and not os.getenv("PYTEST_CURRENT_TEST"):
