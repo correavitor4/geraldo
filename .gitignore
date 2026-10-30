@@ -17,5 +17,6 @@ settings.json
 src-tauri/binaries/geraldo-core*
 src-tauri/binaries/*.exe
 src-tauri/binaries/assets/
+src-tauri/binaries/espeak-ng-data/
 *.onnx
 *.onnx.json

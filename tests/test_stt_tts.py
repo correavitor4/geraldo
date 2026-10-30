@@ -148,3 +148,20 @@ class TestTextToSpeech:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL
         )
+
+    @patch("audio.player.AudioPlayer.play")
+    @patch("subprocess.run", side_effect=FileNotFoundError("aplay not found"))
+    @patch("shutil.which", return_value=None)
+    @patch.object(TextToSpeech, "synthesize", return_value="/tmp/test.wav")
+    @patch("os.path.exists", return_value=True)
+    def test_speak_windows_audio_player_fallback(self, mock_exists, mock_synth, mock_which, mock_run, mock_player):
+        tts = TextToSpeech(model_path="voz_mock.onnx")
+        tts.speak("Fala no Windows")
+        mock_player.assert_called_once_with("/tmp/test.wav")
+
+    def test_resolve_espeak_data_dir(self):
+        from core.paths import resolve_espeak_data_dir
+        espeak_dir = resolve_espeak_data_dir()
+        assert espeak_dir is not None
+        assert espeak_dir.is_dir()
+

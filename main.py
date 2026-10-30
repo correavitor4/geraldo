@@ -44,11 +44,15 @@ if __name__ == "__main__":
         sys.exit(0)
 
     if "-m" in sys.argv and "piper" in sys.argv:
-        from piper import __main__ as piper_main
-        idx = sys.argv.index("piper")
-        sys.argv = [sys.argv[0]] + sys.argv[idx + 1:]
-        piper_main.main()
-        sys.exit(0)
+        try:
+            import piper.__main__ as piper_main
+            idx = sys.argv.index("piper")
+            sys.argv = [sys.argv[0]] + sys.argv[idx + 1:]
+            piper_main.main()
+            sys.exit(0)
+        except Exception as e:
+            print(f"[Geraldo:Piper CLI Error] {e}", file=sys.stderr)
+            sys.exit(1)
 
 from audio.wakeword import WakeWordDetector
 from audio.recorder import AudioRecorder
@@ -115,13 +119,23 @@ def main():
         sentences = split_into_sentences(text)
         if len(sentences) <= 1:
             t0 = time.perf_counter()
-            wav = tts.synthesize(text)
+            try:
+                wav = tts.synthesize(text)
+            except Exception as e:
+                print(f"[Geraldo:TTS Error] Falha na síntese de áudio: {e}")
+                wav = None
             ms_tts = (time.perf_counter() - t0) * 1000
             if wav:
                 if on_first_audio:
-                    on_first_audio()
+                    try:
+                        on_first_audio()
+                    except Exception:
+                        pass
                 print(f"[Geraldo:TTS] Síntese de áudio gerada em {ms_tts:.1f}ms")
-                player.play(wav)
+                try:
+                    player.play(wav)
+                except Exception as e:
+                    print(f"[Geraldo:Audio Error] Falha ao reproduzir áudio: {e}")
             return
 
         # Pipeline streaming: sintetiza a próxima frase enquanto a anterior toca no alto-falante
@@ -148,11 +162,17 @@ def main():
                 i, wav_file, ms_sent = item
                 if not first_played:
                     if on_first_audio:
-                        on_first_audio()
+                        try:
+                            on_first_audio()
+                        except Exception:
+                            pass
                     first_played = True
                 print(f"[Geraldo:TTS] Frase {i+1}/{len(sentences)} sintetizada em {ms_sent:.1f}ms -> Tocando")
                 if wav_file:
-                    player.play(wav_file)
+                    try:
+                        player.play(wav_file)
+                    except Exception as e:
+                        print(f"[Geraldo:Audio Error] Falha ao reproduzir áudio da frase: {e}")
                 audio_queue.task_done()
             except queue.Empty:
                 if synthesis_done.is_set() and audio_queue.empty():

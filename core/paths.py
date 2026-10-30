@@ -244,6 +244,64 @@ def ensure_model_available(model_filename: str = "voz_faber.onnx") -> Path:
 
 
 
+def resolve_espeak_data_dir() -> Optional[Path]:
+    """
+    Localiza o diretório de dados fonéticos espeak-ng-data do Piper TTS.
+    Garante compatibilidade em ambientes empacotados (PyInstaller/Tauri Sidecar)
+    e instalações locais em todos os sistemas operacionais (Windows, Linux, macOS).
+    """
+    env_dir = os.getenv("PIPER_ESPEAK_DATA_DIR") or os.getenv("ESPEAK_DATA_DIR")
+    if env_dir and os.path.isdir(env_dir):
+        return Path(env_dir)
+
+    candidates: list[Path] = []
+
+    # 1. Se estiver empacotado via PyInstaller (_MEIPASS)
+    if is_frozen():
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            candidates.append(Path(meipass) / "piper" / "espeak-ng-data")
+            candidates.append(Path(meipass) / "espeak-ng-data")
+        exe_dir = Path(sys.executable).parent.resolve()
+        candidates.append(exe_dir / "espeak-ng-data")
+        candidates.append(exe_dir / "resources" / "espeak-ng-data")
+        candidates.append(exe_dir / "binaries" / "espeak-ng-data")
+
+    # 2. Diretórios conhecidos do projeto
+    base = get_base_dir()
+    candidates.append(base / "src-tauri" / "binaries" / "espeak-ng-data")
+    candidates.append(base / "espeak-ng-data")
+    candidates.append(base / "assets" / "espeak-ng-data")
+
+    # 3. Diretório de dados do usuário (%APPDATA%/Geraldo ou ~/.config/geraldo)
+    user_data = get_user_data_dir()
+    candidates.append(user_data / "espeak-ng-data")
+    candidates.append(user_data / "models" / "espeak-ng-data")
+
+    # 4. Módulo piper instalado no ambiente Python atual
+    try:
+        import piper
+        piper_path = Path(piper.__file__).parent / "espeak-ng-data"
+        candidates.append(piper_path)
+    except Exception:
+        pass
+
+    # 5. Localizações padrão de site-packages no sistema Windows
+    if sys.platform == "win32":
+        local_appdata = os.getenv("LOCALAPPDATA")
+        if local_appdata:
+            import glob
+            for match in glob.glob(os.path.join(local_appdata, "Programs", "Python", "Python*", "Lib", "site-packages", "piper", "espeak-ng-data")):
+                if os.path.isdir(match):
+                    candidates.append(Path(match))
+
+    for cand in candidates:
+        if cand.exists() and cand.is_dir():
+            return cand
+
+    return None
+
+
 def get_credentials_path() -> Path:
     """Localiza o arquivo credentials.json do Google Calendar de forma agnóstica."""
     env_path = os.getenv("GOOGLE_CREDENTIALS_FILE")

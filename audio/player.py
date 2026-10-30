@@ -1,3 +1,4 @@
+import os
 import shutil
 import subprocess
 import numpy as np
@@ -33,6 +34,7 @@ class AudioPlayer:
             ["pw-play", audio_file],
             ["paplay", audio_file],
             ["aplay", audio_file],
+            ["afplay", audio_file],
             ["mpv", "--no-video", audio_file],
             ["ffplay", "-nodisp", "-autoexit", audio_file]
         ]
@@ -55,7 +57,8 @@ class AudioPlayer:
         if sys.platform == "win32":
             try:
                 import winsound
-                winsound.PlaySound(audio_file, winsound.SND_FILENAME)
+                norm_file = os.path.normpath(audio_file)
+                winsound.PlaySound(norm_file, winsound.SND_FILENAME)
                 return
             except Exception:
                 pass

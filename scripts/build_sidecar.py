@@ -154,8 +154,21 @@ def build_sidecar(target_triple: str = None, dry_run: bool = False) -> Path:
             m_path = REPO_ROOT / model_name
             if m_path.exists():
                 cmd.extend(["--add-data", f"{m_path}{os.pathsep}."])
-        # Coleta assets e arquivos de dados do faster_whisper (incluindo silero_vad_v6.onnx)
+        # Coleta assets e arquivos de dados do faster_whisper e piper (incluindo espeak-ng-data)
         cmd.extend(["--collect-data", "faster_whisper"])
+        cmd.extend(["--collect-all", "piper"])
+        cmd.extend(["--copy-metadata", "piper-tts"])
+        cmd.extend(["--hidden-import", "piper"])
+        cmd.extend(["--hidden-import", "piper.__main__"])
+        cmd.extend(["--hidden-import", "piper.voice"])
+        try:
+            import piper
+            piper_espeak = Path(piper.__file__).parent / "espeak-ng-data"
+            if piper_espeak.exists():
+                cmd.extend(["--add-data", f"{piper_espeak}{os.pathsep}piper{os.sep}espeak-ng-data"])
+                cmd.extend(["--add-data", f"{piper_espeak}{os.pathsep}espeak-ng-data"])
+        except Exception:
+            pass
         try:
             import faster_whisper.vad as fw_vad
             fw_assets = Path(fw_vad.get_assets_path())
